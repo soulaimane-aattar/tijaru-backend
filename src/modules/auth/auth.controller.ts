@@ -1,0 +1,123 @@
+import { Body, Controller, Get, HttpCode, Post, Req, UsePipes } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import type { Request } from 'express';
+
+import type { AuthUser } from '../../common/auth/auth-user.type';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { Public } from '../../common/guards/jwt.guard';
+import { PermissionsResolver } from '../../common/permissions-resolver.service';
+import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import { PrismaService } from '../../common/prisma.service';
+import {
+  CAPABILITIES,
+  CAPABILITY_IDS,
+  type CapabilityId,
+  ROLES,
+  ROLE_IDS,
+} from '../../domain/permissions';
+
+import { AuthService } from './application/auth.service';
+import {
+  type LoginInput,
+  LoginSchema,
+  type RefreshInput,
+  RefreshSchema,
+} from './dto/login.dto';
+
+@ApiTags('auth')
+@Controller({ path: 'auth', version: '1' })
+export class AuthController {
+  constructor(
+    private readonly auth: AuthService,
+    private readonly prisma: PrismaService,
+    private readonly permissions: PermissionsResolver,
+  ) {}
+
+  @Public()
+  @Post('login')
+  @HttpCode(200)
+  @UsePipes(new ZodValidationPipe(LoginSchema))
+  @ApiOperation({ summary: 'Email + password login. Returns access + refresh tokens.' })
+  async login(@Body() body: LoginInput, @Req() req: Request): Promise<unknown> {
+    const result = await this.auth.login(body.email, body.password, {
+      ip: req.ip,
+      userAgent: req.headers['user-agent'],
+      device: req.headers['user-agent'],
+    });
+    return {
+      accessToken: result.tokens.accessToken,
+      refreshToken: result.tokens.refreshToken,
+      refreshExpiresAt: result.tokens.refreshExpiresAt,
+      user: result.user,
+      capabilities: result.capabilities,
+    };
+  }
+
+  @Public()
+  @Post('refresh')
+  @HttpCode(200)
+  @UsePipes(new ZodValidationPipe(RefreshSchema))
+  @ApiOperation({ summary: 'Rotate refresh token, issue new access + refresh.' })
+  async refresh(@Body() body: RefreshInput, @Req() req: Request): Promise<unknown> {
+    const tokens = await this.auth.refresh(body.refreshToken, {
+      ip: req.ip,
+      userAgent: req.headers['user-agent'],
+      device: req.headers['user-agent'],
+    });
+    return tokens;
+  }
+
+  @Post('logout')
+  @HttpCode(204)
+  @UsePipes(new ZodValidationPipe(RefreshSchema))
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Revoke the supplied refresh token (current device).' })
+  async logout(@Body() body: RefreshInput, @CurrentUser() user: AuthUser): Promise<void> {
+    await this.auth.logout(user.id, body.refreshToken);
+  }
+
+  @Get('me')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Current user + effective capabilities.' })
+  async me(@CurrentUser() user: AuthUser): Promise<unknown> {
+    const fresh = await this.prisma.user.findUnique({
+      where: { id: user.id },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        role: true,
+        active: true,
+        lastLogin: true,
+        warehouses: { select: { warehouseId: true } },
+      },
+    });
+    if (!fresh) return null;
+    const roleCaps = await this.permissions.effectiveCapsForRole(user.role);
+    const effective = new Set<CapabilityId>(roleCaps);
+    for (const [cap, granted] of Object.entries(user.overrides)) {
+      if (granted) effective.add(cap as CapabilityId);
+      else effective.delete(cap as CapabilityId);
+    }
+    return {
+      ...fresh,
+      warehouseIds: fresh.warehouses.map((w) => w.warehouseId),
+      capabilities: [...effective],
+    };
+  }
+
+  @Public()
+  @Get('permissions')
+  @ApiOperation({
+    summary: 'Live role × capability matrix (defaults + role customizations). Clients cache this.',
+  })
+  async getPermissions(): Promise<unknown> {
+    const matrix = await this.permissions.effectiveMatrix();
+    return {
+      roles: ROLE_IDS.map((id) => ROLES[id]),
+      capabilities: CAPABILITY_IDS.map((id) => CAPABILITIES[id]),
+      matrix,
+    };
+  }
+}

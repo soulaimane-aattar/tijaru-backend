@@ -1,0 +1,36 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: stock-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: stock
+      POSTGRES_PASSWORD: stock
+      POSTGRES_DB: stock
+    ports:
+      - '5432:5432'
+    volumes:
+      - stock-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U stock -d stock']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: .
+    container_name: stock-backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Override .env: reach postgres over compose network, not localhost.
+      DATABASE_URL: postgresql://stock:stock@postgres:5432/stock?schema=public
+      NODE_ENV: production
+    ports:
+      - '3000:3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  stock-pg-data:
