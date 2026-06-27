@@ -15,6 +15,8 @@ const envSchema = z.object({
     .default('http://localhost:5173,http://localhost:8081')
     .transform((s) => s.split(',').map((x) => x.trim()).filter(Boolean)),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
+  PLATFORM_ADMIN_EMAIL: z.string().email(),
+  PLATFORM_ADMIN_PASSWORD: z.string().min(8),
 });
 
 export type Env = z.infer<typeof envSchema>;

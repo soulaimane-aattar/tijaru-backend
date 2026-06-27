@@ -2,6 +2,7 @@ import type { CapabilityId, RoleId } from '../../domain/permissions';
 
 export type AuthUser = {
   id: string;
+  businessId: string;
   role: RoleId;
   tokenVersion: number;
   /** Capabilities granted by the user's role (effective, including role customizations). */

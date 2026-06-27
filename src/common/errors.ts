@@ -45,6 +45,12 @@ export class ConflictError extends DomainError {
   }
 }
 
+export class BusinessSuspendedError extends DomainError {
+  constructor() {
+    super('business_suspended', 'Business is suspended', HttpStatus.FORBIDDEN);
+  }
+}
+
 export class ValidationError extends DomainError {
   constructor(detail: string, errors?: Record<string, string[]>) {
     super('validation', detail, HttpStatus.BAD_REQUEST);

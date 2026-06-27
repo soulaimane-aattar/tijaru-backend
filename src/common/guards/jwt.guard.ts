@@ -18,6 +18,7 @@ type AccessJwtPayload = {
   ver: number;
   caps: CapabilityId[];
   overrides?: Partial<Record<CapabilityId, boolean>>;
+  bid?: string;
 };
 
 @Injectable()
@@ -53,6 +54,7 @@ export class JwtAuthGuard implements CanActivate {
 
     request.user = {
       id: payload.sub,
+      businessId: payload.bid ?? '',
       role: payload.role,
       tokenVersion: payload.ver,
       roleCaps: payload.caps ?? [],
