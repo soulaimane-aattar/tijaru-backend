@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { APP_FILTER, APP_GUARD } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { LoggerModule } from 'nestjs-pino';
@@ -8,6 +8,8 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { CapsGuard } from './common/guards/caps.guard';
 import { JwtAuthGuard } from './common/guards/jwt.guard';
 import { PrismaService } from './common/prisma.service';
+import { TenantContext } from './common/tenant/tenant-context';
+import { TenantInterceptor } from './common/tenant/tenant.interceptor';
 import { ConfigModule, ENV_TOKEN } from './config/config.module';
 import type { Env } from './config/env';
 import { ActivityModule } from './modules/activity/activity.module';
@@ -60,10 +62,12 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module';
   ],
   providers: [
     PrismaService,
+    TenantContext,
     { provide: APP_FILTER, useClass: HttpExceptionFilter },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: CapsGuard },
+    { provide: APP_INTERCEPTOR, useClass: TenantInterceptor },
   ],
   exports: [PrismaService],
 })
