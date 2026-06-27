@@ -12,20 +12,39 @@ datasource db {
 
 // ─── Tenancy ─────────────────────────────────────────────────────────────────
 
+enum BusinessStatus {
+  active
+  suspended
+}
+
+model PlatformAdmin {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  tokenVersion Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("platform_admins")
+}
+
 model Business {
-  id        String   @id @default(cuid())
+  id        String         @id @default(cuid())
   name      String
-  ice       String   @unique
+  ice       String         @unique
   rc        String?
   patente   String?
-  ifNum     String?  @map("if_num")
+  ifNum     String?        @map("if_num")
   cnss      String?
   address   String?
   city      String?
   phone     String?
   logo      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  status    BusinessStatus @default(active)
+  createdBy String?        @map("created_by")
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
 
   securityPolicy SecurityPolicy?
 
