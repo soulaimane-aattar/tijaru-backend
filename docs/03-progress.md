@@ -20,6 +20,21 @@
 
 ## Log
 
+### 2026-08-03 — All four apps consolidated into one git repository
+- **Step:** Root workspace is now the single git repo. Backend's 7 commits rewritten into the `backend/` subdirectory and imported; `web/`, `mobile/`, `ocr-service/`, `docs/`, spec, plan and the standalone HTML mockup tracked for the first time; root `.gitignore` added; nested `.git` dirs removed.
+- **Result:** ✅
+  - **Pre-state (the reason):** `web/.git` and `mobile/.git` existed with **0 commits** (19 and 65 uncommitted files); `ocr-service/` and `docs/` had no repo; no repo had a remote. Only `backend/` had history.
+  - History preserved: `git log` shows all 7 commits, paths under `backend/`, 101 files in `HEAD`.
+  - **WIP safety verified:** backend's uncommitted multi-tenancy work untouched — 40 modified + 58 untracked before and after, file lists `IDENTICAL`, and the diff hash matched exactly (`00ce901cdd53…` old repo vs new repo).
+  - Consolidation commit `f432982` staged 191 files, **0** of them under `backend/` — the WIP stayed out of it.
+  - No `node_modules` leaked into the index (`grep -c node_modules` → 0). `.claude/settings.local.json` excluded by the user's global gitignore.
+  - Backups kept in the session scratchpad: `git-backup-backend.tgz`, `git-backup-nested.tgz`.
+- **Decisions:** D-009.
+- **Next / still open:**
+  - ⚠️ **No remote yet** — the project still exists on one disk only. Create a private remote and push; needs the user's host choice + `gh` auth.
+  - Add CI path filters (`paths: backend/**` etc.) so one push does not build all four apps.
+  - `backend/.github/workflows/ci.yml` paths now start one level deeper — verify it still triggers.
+
 ### 2026-08-03 — Prod deploy stack moved into `backend/` + Makefile
 - **Step:** `docker-compose.prod.yml` and `.env.prod.example` moved from the workspace root into `backend/` (build context `./backend` → `.`); added `backend/Makefile` wrapping both stacks; added the missing `ocr` service + `tijaru-uploads` volume to prod; `.env.prod` and `backup-*.sql` gitignored; `Dockerfile.prod` pre-creates `/srv/uploads` owned by `node`.
 - **Result:** ✅ verified from the resolved config, not from the source file.

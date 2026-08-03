@@ -2,6 +2,13 @@
 
 > One entry per significant decision. Newest on top. Format: date · decision · why · rejected alternatives.
 
+## D-009 — 2026-08-03 · One git repository for all four apps
+- **Decision:** Single repo at the workspace root covering `backend/`, `web/`, `mobile/`, `ocr-service/` and `docs/`. Supersedes the per-app repo layout. **Not** a monorepo in the tooling sense — no npm workspace, no turbo; each app keeps its own `package.json`, install and deploy (D-001 stands).
+- **Why:** Only `backend/` was actually versioned — `web/` and `mobile/` had git dirs with **zero commits**, `ocr-service/` and `docs/` had none, and no repo had a remote: one bad `rm` would have erased the project. Beyond that, `backend/docker-compose.prod.yml` builds `ocr` from `../ocr-service`, which only resolves inside one tree; and schema changes routinely touch backend + web + mobile together, which split repos turn into three PRs with a version-skew window.
+- **Migration:** backend history rewritten into the `backend/` subdirectory (`git filter-branch --index-filter` on a bare clone — `git-filter-repo` is unavailable under PEP 668), fetched into a fresh root repo, index restored with a mixed `git reset` so the uncommitted multi-tenancy WIP was never touched. Verified: uncommitted diff hash identical before/after (`00ce901c…`), 40 modified + 58 untracked files unchanged.
+- **Rejected:** separate repos per app (breaks the compose relative build context, splits atomic changes), git submodules (all the coordination cost of split repos plus detached-HEAD footguns), keeping the workspace root unversioned (docs and the mandatory progress log had no history at all).
+- **Cost accepted:** CI must path-filter (`paths: backend/**`) or every push builds all four apps.
+
 ## D-008 — 2026-08-03 · Prod compose lives in `backend/`, secrets only in `.env.prod`
 - **Decision:** `docker-compose.prod.yml` + `.env.prod.example` + `Makefile` moved from the workspace root into `backend/` (build context `.`). `DATABASE_URL` and every other secret come from `.env.prod` via `env_file` — never inline in the compose file. Prod publishes **zero** host ports (postgres and ocr internal-only, backend reachable only on the external `nginx-proxy` network); dev keeps `3002`/`5433`.
 - **Why:** `backend/` *is* the git repo — the workspace root is not versioned, so a root-level compose file was untracked and could not ship with the code. Inline `DATABASE_URL` in compose puts a production password in git; `env_file` keeps it in the gitignored `.env.prod`. Publishing prod ports would expose Postgres and the receipt OCR service directly to the host/internet, bypassing nginx and TLS.
