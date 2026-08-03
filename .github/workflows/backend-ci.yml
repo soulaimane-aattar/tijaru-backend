@@ -1,14 +1,24 @@
+# Single repo, four apps: this job runs only when backend/ (or this file) changes.
 name: backend-ci
 
 on:
   push:
     branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-ci.yml'
   pull_request:
     branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-ci.yml'
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
     services:
       postgres:
         image: postgres:16-alpine
@@ -36,6 +46,7 @@ jobs:
         with:
           node-version: 20
           cache: npm
+          cache-dependency-path: backend/package-lock.json
       - run: npm ci
       - run: npx prisma generate
       - run: npx prisma migrate deploy
