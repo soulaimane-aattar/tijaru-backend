@@ -43,6 +43,10 @@ export const CAPABILITY_IDS = [
   'users.manage',
   'suppliers.manage',
   'po.manage',
+  'expenses.view',
+  'expenses.create',
+  'expenses.edit',
+  'expenses.delete',
   'reports.view',
   'activity.view',
   'billing.manage',
@@ -61,6 +65,7 @@ export type CapabilityMeta = {
     | 'users'
     | 'suppliers'
     | 'achats'
+    | 'expenses'
     | 'reports'
     | 'journal'
     | 'billing'
@@ -87,6 +92,10 @@ export const CAPABILITIES: Record<CapabilityId, CapabilityMeta> = {
   'users.manage': { id: 'users.manage', domain: 'users', labelFr: 'Gérer utilisateurs' },
   'suppliers.manage': { id: 'suppliers.manage', domain: 'suppliers', labelFr: 'Gérer fournisseurs' },
   'po.manage': { id: 'po.manage', domain: 'achats', labelFr: 'Bons de commande' },
+  'expenses.view': { id: 'expenses.view', domain: 'expenses', labelFr: 'Voir dépenses' },
+  'expenses.create': { id: 'expenses.create', domain: 'expenses', labelFr: 'Créer dépenses' },
+  'expenses.edit': { id: 'expenses.edit', domain: 'expenses', labelFr: 'Modifier dépenses' },
+  'expenses.delete': { id: 'expenses.delete', domain: 'expenses', labelFr: 'Supprimer dépenses' },
   'reports.view': { id: 'reports.view', domain: 'reports', labelFr: 'Rapports' },
   'activity.view': { id: 'activity.view', domain: 'journal', labelFr: "Journal d'activité" },
   'billing.manage': { id: 'billing.manage', domain: 'billing', labelFr: 'Facturation' },
@@ -114,6 +123,10 @@ export const ROLE_PERMS: Record<RoleId, ReadonlySet<CapabilityId>> = {
     'users.manage',
     'suppliers.manage',
     'po.manage',
+    'expenses.view',
+    'expenses.create',
+    'expenses.edit',
+    'expenses.delete',
     'reports.view',
     'activity.view',
     'settings.manage',
@@ -130,6 +143,9 @@ export const ROLE_PERMS: Record<RoleId, ReadonlySet<CapabilityId>> = {
     'inventory.count',
     'suppliers.manage',
     'po.manage',
+    'expenses.view',
+    'expenses.create',
+    'expenses.edit',
     'reports.view',
   ]),
   stockkeeper: new Set<CapabilityId>([
@@ -141,7 +157,12 @@ export const ROLE_PERMS: Record<RoleId, ReadonlySet<CapabilityId>> = {
     'inventory.count',
   ]),
   cashier: new Set<CapabilityId>(['dashboard.view', 'products.view', 'stock.out']),
-  viewer: new Set<CapabilityId>(['dashboard.view', 'products.view', 'reports.view']),
+  viewer: new Set<CapabilityId>([
+    'dashboard.view',
+    'products.view',
+    'expenses.view',
+    'reports.view',
+  ]),
 };
 
 export type PermissionSubject = {

@@ -1,13 +1,17 @@
 import { Module } from '@nestjs/common';
 
-import { PrismaService } from '../../common/prisma.service';
 
 import { MovementsService } from './application/movements.service';
+import { MovementsRepository } from './domain/movements.repository';
+import { PrismaMovementsRepository } from './infrastructure/prisma-movements.repository';
 import { MovementsController } from './movements.controller';
 
 @Module({
   controllers: [MovementsController],
-  providers: [MovementsService, PrismaService],
+  providers: [
+    MovementsService,
+    { provide: MovementsRepository, useClass: PrismaMovementsRepository },
+  ],
   exports: [MovementsService],
 })
 export class MovementsModule {}

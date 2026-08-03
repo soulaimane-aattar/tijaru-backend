@@ -1,10 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
 
 import type { AuthUser } from '../../../common/auth/auth-user.type';
 import { DomainError, NotFoundError } from '../../../common/errors';
-import { PrismaService } from '../../../common/prisma.service';
 import { type CapabilityId, hasPermission } from '../../../domain/permissions';
+import { MovementsRepository, type StockDelta } from '../domain/movements.repository';
 import type { CreateMovementInput, ListMovementsQuery } from '../dto/movement.dto';
 
 const REQUIRED_CAP: Record<CreateMovementInput['type'], CapabilityId> = {
@@ -15,7 +14,7 @@ const REQUIRED_CAP: Record<CreateMovementInput['type'], CapabilityId> = {
 
 @Injectable()
 export class MovementsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly movements: MovementsRepository) {}
 
   async list(query: ListMovementsQuery): Promise<{
     items: unknown[];
@@ -23,34 +22,16 @@ export class MovementsService {
     pageSize: number;
     total: number;
   }> {
-    const where: Prisma.MovementWhereInput = {};
-    if (query.type) where.type = query.type;
-    if (query.productId) where.productId = query.productId;
-    if (query.warehouseId) {
-      where.OR = [{ warehouseId: query.warehouseId }, { toWarehouseId: query.warehouseId }];
-    }
-    if (query.userId) where.userId = query.userId;
-    if (query.from || query.to) {
-      where.date = {};
-      if (query.from) (where.date as { gte?: Date }).gte = query.from;
-      if (query.to) (where.date as { lte?: Date }).lte = query.to;
-    }
-
-    const [items, total] = await this.prisma.$transaction([
-      this.prisma.movement.findMany({
-        where,
-        include: {
-          product: { select: { id: true, name: true, sku: true, tone: true } },
-          warehouse: { select: { id: true, name: true, city: true } },
-          toWarehouse: { select: { id: true, name: true, city: true } },
-          user: { select: { id: true, name: true, role: true } },
-        },
-        orderBy: { date: 'desc' },
-        skip: (query.page - 1) * query.pageSize,
-        take: query.pageSize,
-      }),
-      this.prisma.movement.count({ where }),
-    ]);
+    const { items, total } = await this.movements.findPage({
+      type: query.type,
+      productId: query.productId,
+      warehouseId: query.warehouseId,
+      userId: query.userId,
+      from: query.from,
+      to: query.to,
+      skip: (query.page - 1) * query.pageSize,
+      take: query.pageSize,
+    });
     return { items, total, page: query.page, pageSize: query.pageSize };
   }
 
@@ -62,114 +43,70 @@ export class MovementsService {
    *  - out      → -qty at warehouse, reject if would go negative
    *  - transfer → -qty at source + +qty at destination, distinct warehouses
    *
-   * All effects + the Movement row are written in a single $transaction.
-   * StockLevel updates use Prisma's atomic `{ increment }` to avoid lost-update
-   * races; existence is ensured via upsert.
+   * Existence + available-stock rules are decided here; all stock deltas, the
+   * Movement row and the activity log are then persisted in one atomic write
+   * (the adapter uses atomic increments to avoid lost-update races).
    */
   async record(input: CreateMovementInput, actor: AuthUser): Promise<unknown> {
     if (!hasPermission(actor, REQUIRED_CAP[input.type])) {
       throw new DomainError('forbidden', `Missing capability: ${REQUIRED_CAP[input.type]}`, 403);
     }
 
-    const product = await this.prisma.product.findFirst({
-      where: { id: input.productId, deletedAt: null },
-    });
+    const product = await this.movements.findProductRef(input.productId);
     if (!product) throw new NotFoundError('Product', input.productId);
 
-    const sourceWh = await this.prisma.warehouse.findFirst({
-      where: { id: input.warehouseId, deletedAt: null },
-    });
-    if (!sourceWh) throw new NotFoundError('Warehouse', input.warehouseId);
-
+    if (!(await this.movements.warehouseExists(input.warehouseId))) {
+      throw new NotFoundError('Warehouse', input.warehouseId);
+    }
     if (input.type === 'transfer' && input.toWarehouseId) {
-      const destWh = await this.prisma.warehouse.findFirst({
-        where: { id: input.toWarehouseId, deletedAt: null },
-      });
-      if (!destWh) throw new NotFoundError('Warehouse', input.toWarehouseId);
+      if (!(await this.movements.warehouseExists(input.toWarehouseId))) {
+        throw new NotFoundError('Warehouse', input.toWarehouseId);
+      }
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      // Out / Transfer: verify available stock at source.
-      if (input.type === 'out' || input.type === 'transfer') {
-        const src = await tx.stockLevel.findUnique({
-          where: {
-            productId_warehouseId: {
-              productId: input.productId,
-              warehouseId: input.warehouseId,
-            },
-          },
-        });
-        const available = src?.qty ?? 0;
-        if (available < input.qty) {
-          throw new DomainError(
-            'insufficient_stock',
-            `Insufficient stock at source (${available} < ${input.qty})`,
-            422,
-          );
-        }
+    // Out / Transfer: verify available stock at source.
+    if (input.type === 'out' || input.type === 'transfer') {
+      const available = await this.movements.getStockQty(input.productId, input.warehouseId);
+      if (available < input.qty) {
+        throw new DomainError(
+          'insufficient_stock',
+          `Insufficient stock at source (${available} < ${input.qty})`,
+          422,
+        );
       }
+    }
 
-      // Apply source delta.
-      const sourceDelta = input.type === 'in' ? input.qty : -input.qty;
-      await tx.stockLevel.upsert({
-        where: {
-          productId_warehouseId: {
-            productId: input.productId,
-            warehouseId: input.warehouseId,
-          },
-        },
-        create: {
-          productId: input.productId,
-          warehouseId: input.warehouseId,
-          qty: sourceDelta,
-        },
-        update: { qty: { increment: sourceDelta } },
-      });
+    const deltas: StockDelta[] = [
+      {
+        warehouseId: input.warehouseId,
+        delta: input.type === 'in' ? input.qty : -input.qty,
+      },
+    ];
+    if (input.type === 'transfer' && input.toWarehouseId) {
+      deltas.push({ warehouseId: input.toWarehouseId, delta: input.qty });
+    }
 
-      // Transfer: apply destination delta.
-      if (input.type === 'transfer' && input.toWarehouseId) {
-        await tx.stockLevel.upsert({
-          where: {
-            productId_warehouseId: {
-              productId: input.productId,
-              warehouseId: input.toWarehouseId,
-            },
-          },
-          create: {
-            productId: input.productId,
-            warehouseId: input.toWarehouseId,
-            qty: input.qty,
-          },
-          update: { qty: { increment: input.qty } },
-        });
-      }
-
-      const movement = await tx.movement.create({
-        data: {
-          type: input.type,
-          productId: input.productId,
-          qty: input.qty,
-          warehouseId: input.warehouseId,
-          ...(input.toWarehouseId ? { toWarehouseId: input.toWarehouseId } : {}),
-          userId: actor.id,
-          ...(input.date ? { date: input.date } : {}),
-          reason: input.reason,
-          ...(input.ref ? { ref: input.ref } : {}),
-          ...(input.batch ? { batch: input.batch } : {}),
-          ...(input.expiry ? { expiry: input.expiry } : {}),
-        },
-      });
-
-      await tx.activity.create({
-        data: {
-          userId: actor.id,
-          action: input.type === 'transfer' ? 'transfer' : `stock.${input.type}`,
-          desc: `${input.type === 'in' ? 'Entrée' : input.type === 'out' ? 'Sortie' : 'Transfert'} ${input.qty} × ${product.name}`,
-          ...(actor.device ? { device: actor.device } : {}),
-        },
-      });
-
-      return movement;
-    });
+    return this.movements.executeStockMovement(
+      deltas,
+      {
+        type: input.type,
+        productId: input.productId,
+        qty: input.qty,
+        warehouseId: input.warehouseId,
+        toWarehouseId: input.toWarehouseId,
+        userId: actor.id,
+        date: input.date,
+        reason: input.reason,
+        ref: input.ref,
+        batch: input.batch,
+        expiry: input.expiry,
+      },
+      {
+        userId: actor.id,
+        action: input.type === 'transfer' ? 'transfer' : `stock.${input.type}`,
+        desc: `${input.type === 'in' ? 'Entrée' : input.type === 'out' ? 'Sortie' : 'Transfert'} ${input.qty} × ${product.name}`,
+        device: actor.device,
+      },
+    );
   }
 }

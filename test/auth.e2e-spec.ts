@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import type { INestApplication } from '@nestjs/common';
 
+import { CAPABILITY_IDS } from '../src/domain/permissions';
+
 import { api, bearer, bootTestApp, DEMO, DEMO_PASSWORD, login, seedFresh } from './helpers/test-app';
 
 describe('Auth (e2e)', () => {
@@ -53,8 +55,10 @@ describe('Auth (e2e)', () => {
     it('returns roles + capabilities + matrix', async () => {
       const res = await api(app).get('/api/v1/auth/permissions').expect(200);
       expect(res.body.roles).toHaveLength(6);
-      expect(res.body.capabilities).toHaveLength(18);
-      expect(res.body.matrix.owner).toHaveLength(18);
+      // Derived from the capability registry, not a magic number — adding a
+      // capability must not break this test.
+      expect(res.body.capabilities).toHaveLength(CAPABILITY_IDS.length);
+      expect(res.body.matrix.owner).toHaveLength(CAPABILITY_IDS.length);
       expect(res.body.matrix.viewer).toEqual(
         expect.arrayContaining(['dashboard.view', 'products.view', 'reports.view']),
       );

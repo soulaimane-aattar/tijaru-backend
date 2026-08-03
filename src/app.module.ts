@@ -7,8 +7,6 @@ import { LoggerModule } from 'nestjs-pino';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { CapsGuard } from './common/guards/caps.guard';
 import { JwtAuthGuard } from './common/guards/jwt.guard';
-import { PrismaService } from './common/prisma.service';
-import { TenantContext } from './common/tenant/tenant-context';
 import { TenantInterceptor } from './common/tenant/tenant.interceptor';
 import { ConfigModule, ENV_TOKEN } from './config/config.module';
 import type { Env } from './config/env';
@@ -17,6 +15,7 @@ import { AdminModule } from './modules/admin/admin.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CategoriesModule } from './modules/categories/categories.module';
 import { CustomersModule } from './modules/customers/customers.module';
+import { ExpensesModule } from './modules/expenses/expenses.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { MovementsModule } from './modules/movements/movements.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
@@ -46,6 +45,7 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module';
     ReportsModule,
     ActivityModule,
     NotificationsModule,
+    ExpensesModule,
     LoggerModule.forRootAsync({
       inject: [ENV_TOKEN],
       useFactory: (env: Env) => ({
@@ -61,14 +61,14 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module';
     JwtModule.register({ global: true }),
   ],
   providers: [
-    PrismaService,
-    TenantContext,
+    // PrismaService + TenantContext come from the global ConfigModule — a single
+    // instance each, so the tenant ALS store is shared between the HTTP
+    // interceptor and the Prisma middleware.
     { provide: APP_FILTER, useClass: HttpExceptionFilter },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: CapsGuard },
     { provide: APP_INTERCEPTOR, useClass: TenantInterceptor },
   ],
-  exports: [PrismaService],
 })
 export class AppModule {}

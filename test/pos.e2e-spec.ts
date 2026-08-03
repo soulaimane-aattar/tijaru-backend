@@ -26,8 +26,10 @@ describe('POS (e2e) — acceptance §13 #3', () => {
     prisma = new PrismaClient();
     salmaToken = (await login(app, 'cashier')).accessToken;
     // Viewer-like = read-only. We use a real user with no stock.out to confirm RBAC gate.
+    const business = await prisma.business.findFirstOrThrow();
     const viewer = await prisma.user.create({
       data: {
+        businessId: business.id,
         name: 'Viewer Bot',
         email: `viewer-${Date.now()}@elamrani.ma`,
         passwordHash: await (await import('bcrypt')).hash('demo1234', 10),

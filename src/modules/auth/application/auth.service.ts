@@ -6,10 +6,10 @@ import * as bcrypt from 'bcrypt';
 
 import { ConflictError, UnauthorizedError } from '../../../common/errors';
 import { PermissionsResolver } from '../../../common/permissions-resolver.service';
-import { PrismaService } from '../../../common/prisma.service';
 import { ENV_TOKEN } from '../../../config/config.module';
 import type { Env } from '../../../config/env';
 import { type CapabilityId, type RoleId } from '../../../domain/permissions';
+import { AuthRepository, type AuthUserView } from '../domain/auth.repository';
 
 type TokensResult = {
   accessToken: string;
@@ -26,7 +26,7 @@ type SessionMeta = {
 @Injectable()
 export class AuthService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly authRepo: AuthRepository,
     private readonly jwt: JwtService,
     private readonly permissions: PermissionsResolver,
     @Inject(ENV_TOKEN) private readonly env: Env,
@@ -37,10 +37,7 @@ export class AuthService {
     user: { id: string; name: string; email: string; role: RoleId };
     capabilities: CapabilityId[];
   }> {
-    const user = await this.prisma.user.findFirst({
-      where: { email: email.toLowerCase(), deletedAt: null },
-      include: { overrides: true },
-    });
+    const user = await this.authRepo.findUserByEmail(email.toLowerCase());
     if (!user || !user.active) {
       throw new UnauthorizedError('Invalid credentials');
     }
@@ -50,22 +47,16 @@ export class AuthService {
       throw new UnauthorizedError('Invalid credentials');
     }
 
-    const overrides: Partial<Record<CapabilityId, boolean>> = {};
-    for (const o of user.overrides) {
-      overrides[o.capId as CapabilityId] = o.granted;
-    }
+    const overrides = this.overridesOf(user);
     const role = user.role as RoleId;
     const roleCaps = await this.permissions.effectiveCapsForRole(role);
 
     const tokens = await this.issueTokens(
-      { id: user.id, role, ver: user.tokenVersion, roleCaps, overrides },
+      { id: user.id, businessId: user.businessId, role, ver: user.tokenVersion, roleCaps, overrides },
       meta,
     );
 
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: { lastLogin: new Date() },
-    });
+    await this.authRepo.recordLogin(user.id);
 
     const effective = roleCaps
       .filter((c) => overrides[c] !== false)
@@ -89,30 +80,22 @@ export class AuthService {
 
   async refresh(refreshToken: string, meta: SessionMeta): Promise<TokensResult> {
     const hash = this.hashRefresh(refreshToken);
-    const session = await this.prisma.session.findFirst({
-      where: { refreshTokenHash: hash, revokedAt: null },
-      include: { user: { include: { overrides: true } } },
-    });
+    const session = await this.authRepo.findSessionByTokenHash(hash);
     if (!session || session.expiresAt < new Date()) {
       throw new UnauthorizedError('Invalid or expired refresh token');
     }
 
     // Rotate: revoke old session, issue new
-    await this.prisma.session.update({
-      where: { id: session.id },
-      data: { revokedAt: new Date() },
-    });
+    await this.authRepo.revokeSession(session.id);
 
-    const overrides: Partial<Record<CapabilityId, boolean>> = {};
-    for (const o of session.user.overrides) {
-      overrides[o.capId as CapabilityId] = o.granted;
-    }
+    const overrides = this.overridesOf(session.user);
     const role = session.user.role as RoleId;
     const roleCaps = await this.permissions.effectiveCapsForRole(role);
 
     return this.issueTokens(
       {
         id: session.user.id,
+        businessId: session.user.businessId,
         role,
         ver: session.user.tokenVersion,
         roleCaps,
@@ -124,27 +107,27 @@ export class AuthService {
 
   async logout(userId: string, refreshToken: string): Promise<void> {
     const hash = this.hashRefresh(refreshToken);
-    await this.prisma.session.updateMany({
-      where: { userId, refreshTokenHash: hash, revokedAt: null },
-      data: { revokedAt: new Date() },
-    });
+    await this.authRepo.revokeSessionByTokenHash(userId, hash);
   }
 
   async logoutAllSessions(userId: string): Promise<void> {
-    await this.prisma.session.updateMany({
-      where: { userId, revokedAt: null },
-      data: { revokedAt: new Date() },
-    });
+    await this.authRepo.revokeAllSessions(userId);
     // bump token version → invalidate any outstanding access tokens
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { tokenVersion: { increment: 1 } },
-    });
+    await this.authRepo.bumpTokenVersion(userId);
+  }
+
+  private overridesOf(user: AuthUserView): Partial<Record<CapabilityId, boolean>> {
+    const overrides: Partial<Record<CapabilityId, boolean>> = {};
+    for (const o of user.overrides) {
+      overrides[o.capId as CapabilityId] = o.granted;
+    }
+    return overrides;
   }
 
   private async issueTokens(
     subject: {
       id: string;
+      businessId: string;
       role: RoleId;
       ver: number;
       roleCaps: CapabilityId[];
@@ -155,6 +138,7 @@ export class AuthService {
     const accessToken = await this.jwt.signAsync(
       {
         sub: subject.id,
+        bid: subject.businessId,
         role: subject.role,
         ver: subject.ver,
         caps: subject.roleCaps,
@@ -170,25 +154,39 @@ export class AuthService {
     const refreshHash = this.hashRefresh(refreshToken);
     const refreshExpiresAt = new Date(Date.now() + this.parseTtlMs(this.env.JWT_REFRESH_TTL));
 
-    await this.prisma.session.create({
-      data: {
-        userId: subject.id,
-        refreshTokenHash: refreshHash,
-        device: meta.device ?? null,
-        userAgent: meta.userAgent ?? null,
-        ip: meta.ip ?? null,
-        expiresAt: refreshExpiresAt,
-      },
+    await this.authRepo.createSession({
+      userId: subject.id,
+      refreshTokenHash: refreshHash,
+      device: meta.device ?? null,
+      userAgent: meta.userAgent ?? null,
+      ip: meta.ip ?? null,
+      expiresAt: refreshExpiresAt,
     });
 
     return { accessToken, refreshToken, refreshExpiresAt };
   }
 
+  /** Current profile + effective capabilities (role caps merged with per-user overrides). */
+  async me(
+    userId: string,
+    role: RoleId,
+    overrides: Record<string, boolean>,
+  ): Promise<unknown | null> {
+    const profile = await this.authRepo.findProfile(userId);
+    if (!profile) return null;
+    const roleCaps = await this.permissions.effectiveCapsForRole(role);
+    const effective = new Set<CapabilityId>(roleCaps);
+    for (const [cap, granted] of Object.entries(overrides)) {
+      if (granted) effective.add(cap as CapabilityId);
+      else effective.delete(cap as CapabilityId);
+    }
+    return { ...profile, capabilities: [...effective] };
+  }
+
   async ensureNoConflict(email: string): Promise<void> {
-    const existing = await this.prisma.user.findFirst({
-      where: { email: email.toLowerCase(), deletedAt: null },
-    });
-    if (existing) throw new ConflictError('Email already in use');
+    if (await this.authRepo.emailInUse(email.toLowerCase())) {
+      throw new ConflictError('Email already in use');
+    }
   }
 
   private hashRefresh(token: string): string {

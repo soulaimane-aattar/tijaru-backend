@@ -35,5 +35,5 @@ COPY --from=builder /app/tsconfig.json ./tsconfig.json
 
 EXPOSE 3000
 
-# Apply migrations + seed (seed wipes first → idempotent), then serve.
-CMD ["sh", "-c", "npx prisma migrate deploy && npx prisma db seed && node dist/src/main.js"]
+# Apply migrations, optionally seed demo data (SEED_DEMO=true), then serve.
+CMD ["sh", "-c", "npx prisma migrate deploy && if [ \"$SEED_DEMO\" = \"true\" ]; then npx prisma db seed; fi && node dist/src/main.js"]

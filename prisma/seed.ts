@@ -97,6 +97,7 @@ export async function runSeed(opts: { silent?: boolean } = {}): Promise<void> {
   // ─── Warehouses ─────────────────────────────────────────────────────────
   const wCasa = await prisma.warehouse.create({
     data: {
+      businessId: business.id,
       name: 'Dépôt Principal Casablanca',
       city: 'Casablanca',
       address: 'Aïn Sebaâ, Casablanca',
@@ -107,6 +108,7 @@ export async function runSeed(opts: { silent?: boolean } = {}): Promise<void> {
   });
   const wMarrakech = await prisma.warehouse.create({
     data: {
+      businessId: business.id,
       name: 'Magasin Marrakech Guéliz',
       city: 'Marrakech',
       address: 'Avenue Mohammed V, Guéliz',
@@ -117,6 +119,7 @@ export async function runSeed(opts: { silent?: boolean } = {}): Promise<void> {
   });
   const wRabat = await prisma.warehouse.create({
     data: {
+      businessId: business.id,
       name: 'Entrepôt Rabat Agdal',
       city: 'Rabat',
       address: 'Agdal, Rabat',
@@ -132,6 +135,7 @@ export async function runSeed(opts: { silent?: boolean } = {}): Promise<void> {
 
   const youssef = await prisma.user.create({
     data: {
+      businessId: business.id,
       name: 'Youssef El Amrani',
       email: 'youssef@elamrani.ma',
       phone: '+212661112233',
@@ -142,6 +146,7 @@ export async function runSeed(opts: { silent?: boolean } = {}): Promise<void> {
   });
   const fatima = await prisma.user.create({
     data: {
+      businessId: business.id,
       name: 'Fatima Zahra Bennani',
       email: 'fatima@elamrani.ma',
       phone: '+212662223344',
@@ -152,6 +157,7 @@ export async function runSeed(opts: { silent?: boolean } = {}): Promise<void> {
   });
   const karim = await prisma.user.create({
     data: {
+      businessId: business.id,
       name: 'Karim Tazi',
       email: 'karim@elamrani.ma',
       phone: '+212663334455',
@@ -162,6 +168,7 @@ export async function runSeed(opts: { silent?: boolean } = {}): Promise<void> {
   });
   const hassan = await prisma.user.create({
     data: {
+      businessId: business.id,
       name: 'Hassan Alaoui',
       email: 'hassan@elamrani.ma',
       phone: '+212664445566',
@@ -172,6 +179,7 @@ export async function runSeed(opts: { silent?: boolean } = {}): Promise<void> {
   });
   const salma = await prisma.user.create({
     data: {
+      businessId: business.id,
       name: 'Salma Idrissi',
       email: 'salma@elamrani.ma',
       phone: '+212665556677',
@@ -214,18 +222,19 @@ export async function runSeed(opts: { silent?: boolean } = {}): Promise<void> {
 
   // ─── Categories ─────────────────────────────────────────────────────────
   const [cAliment, cDrog, cCosm, cElec, cText, cBois] = await Promise.all([
-    prisma.category.create({ data: { name: 'Alimentation', icon: 'basket', tone: '#10b981' } }),
-    prisma.category.create({ data: { name: 'Droguerie', icon: 'package', tone: '#0ea5e9' } }),
-    prisma.category.create({ data: { name: 'Cosmétiques', icon: 'star', tone: '#ec4899' } }),
-    prisma.category.create({ data: { name: 'Électroménager', icon: 'cube', tone: '#8b5cf6' } }),
-    prisma.category.create({ data: { name: 'Textile', icon: 'tag', tone: '#f59e0b' } }),
-    prisma.category.create({ data: { name: 'Boissons', icon: 'wallet', tone: '#06b6d4' } }),
+    prisma.category.create({ data: { businessId: business.id, name: 'Alimentation', icon: 'basket', tone: '#10b981' } }),
+    prisma.category.create({ data: { businessId: business.id, name: 'Droguerie', icon: 'package', tone: '#0ea5e9' } }),
+    prisma.category.create({ data: { businessId: business.id, name: 'Cosmétiques', icon: 'star', tone: '#ec4899' } }),
+    prisma.category.create({ data: { businessId: business.id, name: 'Électroménager', icon: 'cube', tone: '#8b5cf6' } }),
+    prisma.category.create({ data: { businessId: business.id, name: 'Textile', icon: 'tag', tone: '#f59e0b' } }),
+    prisma.category.create({ data: { businessId: business.id, name: 'Boissons', icon: 'wallet', tone: '#06b6d4' } }),
   ]);
 
   // ─── Suppliers ──────────────────────────────────────────────────────────
   const [sCosumar, sLesieur, sArgan, sMahdia, sTria] = await Promise.all([
     prisma.supplier.create({
       data: {
+        businessId: business.id,
         name: 'Cosumar',
         contact: 'M. Bennis',
         phone: '+212522670000',
@@ -236,6 +245,7 @@ export async function runSeed(opts: { silent?: boolean } = {}): Promise<void> {
     }),
     prisma.supplier.create({
       data: {
+        businessId: business.id,
         name: 'Lesieur Cristal',
         contact: 'Mme El Idrissi',
         phone: '+212522345678',
@@ -246,6 +256,7 @@ export async function runSeed(opts: { silent?: boolean } = {}): Promise<void> {
     }),
     prisma.supplier.create({
       data: {
+        businessId: business.id,
         name: 'Coopérative Argan Tiznit',
         contact: 'M. Aït Ben',
         phone: '+212528861122',
@@ -256,6 +267,7 @@ export async function runSeed(opts: { silent?: boolean } = {}): Promise<void> {
     }),
     prisma.supplier.create({
       data: {
+        businessId: business.id,
         name: 'Mahdia Distribution',
         contact: 'M. Tahiri',
         phone: '+212522445566',
@@ -266,6 +278,7 @@ export async function runSeed(opts: { silent?: boolean } = {}): Promise<void> {
     }),
     prisma.supplier.create({
       data: {
+        businessId: business.id,
         name: 'Tria Couscous',
         contact: 'M. Berrada',
         phone: '+212522778899',
@@ -319,6 +332,7 @@ export async function runSeed(opts: { silent?: boolean } = {}): Promise<void> {
   for (const p of products) {
     const created = await prisma.product.create({
       data: {
+        businessId: business.id,
         name: p.name,
         barcode: ean(p.barcodePrefix12),
         sku: p.sku,
@@ -355,6 +369,7 @@ export async function runSeed(opts: { silent?: boolean } = {}): Promise<void> {
   const [cMounir, cAicha, cRachid] = await Promise.all([
     prisma.customer.create({
       data: {
+        businessId: business.id,
         name: 'Mounir Café & Co',
         phone: '+212661234567',
         city: 'Casablanca',
@@ -364,6 +379,7 @@ export async function runSeed(opts: { silent?: boolean } = {}): Promise<void> {
     }),
     prisma.customer.create({
       data: {
+        businessId: business.id,
         name: 'Aïcha Boutique',
         phone: '+212662345678',
         city: 'Marrakech',
@@ -371,7 +387,7 @@ export async function runSeed(opts: { silent?: boolean } = {}): Promise<void> {
       },
     }),
     prisma.customer.create({
-      data: { name: 'Rachid Épicerie', phone: '+212663456789', city: 'Rabat', purchases: 1180 },
+      data: { businessId: business.id, name: 'Rachid Épicerie', phone: '+212663456789', city: 'Rabat', purchases: 1180 },
     }),
   ]);
 
@@ -388,12 +404,13 @@ export async function runSeed(opts: { silent?: boolean } = {}): Promise<void> {
       { type: MovementType.transfer, productId: pid('Riz Basmati 5kg'),      qty: 20,  warehouseId: wCasa.id,      toWarehouseId: wRabat.id, userId: fatima.id, date: daysAgo(2), reason: MovementReason.transfert },
       { type: MovementType.out,      productId: pid('Lait Centrale UHT 1L'), qty: 18,  warehouseId: wMarrakech.id, userId: salma.id,   date: daysAgo(1), reason: MovementReason.vente,      ref: 'TKT-0003' },
       { type: MovementType.out,      productId: pid('Détergent Tide 3kg'),   qty: 4,   warehouseId: wCasa.id,      userId: hassan.id,  date: daysAgo(0), reason: MovementReason.casse },
-    ],
+    ].map((m) => ({ ...m, businessId: business.id })),
   });
 
   // ─── Purchase orders (1 sent + 1 partially received) ────────────────────
   await prisma.purchaseOrder.create({
     data: {
+      businessId: business.id,
       number: 'BC-2026-0004',
       supplierId: sLesieur.id,
       warehouseId: wCasa.id,
@@ -411,6 +428,7 @@ export async function runSeed(opts: { silent?: boolean } = {}): Promise<void> {
 
   await prisma.purchaseOrder.create({
     data: {
+      businessId: business.id,
       number: 'BC-2026-0005',
       supplierId: sMahdia.id,
       warehouseId: wMarrakech.id,
@@ -458,7 +476,7 @@ export async function runSeed(opts: { silent?: boolean } = {}): Promise<void> {
         date: daysAgo(6),
         read: true,
       },
-    ],
+    ].map((n) => ({ ...n, businessId: business.id })),
   });
 
   // ─── Activity log (7 entries) ───────────────────────────────────────────
@@ -471,7 +489,7 @@ export async function runSeed(opts: { silent?: boolean } = {}): Promise<void> {
       { userId: fatima.id,  action: 'product.created', desc: 'Création produit : Caftan brodé femme',          date: daysAgo(6), device: 'MacBook · Chrome' },
       { userId: youssef.id, action: 'user.invited',    desc: 'Invitation envoyée à salma@elamrani.ma',         date: daysAgo(7), device: 'iPhone 15 · iOS 18' },
       { userId: karim.id,   action: 'po.created',      desc: 'Bon de commande BC-2026-0005 créé',              date: daysAgo(6), device: 'iPhone 13 · iOS 18' },
-    ],
+    ].map((a) => ({ ...a, businessId: business.id })),
   });
 
   // ─── Summary ────────────────────────────────────────────────────────────

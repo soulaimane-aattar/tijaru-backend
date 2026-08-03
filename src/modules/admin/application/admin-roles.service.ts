@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import { DomainError, NotFoundError } from '../../../common/errors';
 import { PermissionsResolver } from '../../../common/permissions-resolver.service';
-import { PrismaService } from '../../../common/prisma.service';
+import { TenantContext } from '../../../common/tenant/tenant-context';
 import {
   CAPABILITIES,
   CAPABILITY_IDS,
@@ -12,13 +12,15 @@ import {
   type RoleId,
   ROLE_PERMS,
 } from '../../../domain/permissions';
+import { AdminRolesRepository, type CapabilityGrant } from '../domain/admin-roles.repository';
 import type { PatchOverridesInput, PatchRoleInput } from '../dto/admin.dto';
 
 @Injectable()
 export class AdminRolesService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly roles: AdminRolesRepository,
     private readonly permissions: PermissionsResolver,
+    private readonly tenant: TenantContext,
   ) {}
 
   async listRoles(): Promise<unknown> {
@@ -60,7 +62,7 @@ export class AdminRolesService {
     }
     const role = roleId as RoleId;
 
-    const writes = [];
+    const writes: CapabilityGrant[] = [];
     const deletes: CapabilityId[] = [];
     for (const cap of CAPABILITY_IDS) {
       const desired = input.capabilities[cap];
@@ -69,35 +71,25 @@ export class AdminRolesService {
       if (desired === def) {
         deletes.push(cap);
       } else {
-        writes.push({ role, capId: cap, granted: desired });
+        writes.push({ capId: cap, granted: desired });
       }
     }
 
-    await this.prisma.$transaction([
-      ...deletes.map((capId) =>
-        this.prisma.roleCustomization.deleteMany({ where: { role, capId } }),
-      ),
-      ...writes.map((w) =>
-        this.prisma.roleCustomization.upsert({
-          where: { role_capId: { role: w.role, capId: w.capId } },
-          create: w,
-          update: { granted: w.granted },
-        }),
-      ),
-      this.prisma.user.updateMany({
-        where: { role, deletedAt: null },
-        data: { tokenVersion: { increment: 1 } },
-      }),
-    ]);
+    const businessId = this.tenant.getBusinessId();
+    if (!businessId) {
+      throw new DomainError('forbidden', 'Tenant scope is required', 403);
+    }
+
+    await this.roles.applyRoleCustomizations(businessId, role, {
+      remove: deletes,
+      set: writes,
+    });
 
     return this.listRoles();
   }
 
   async getOverrides(userId: string): Promise<unknown> {
-    const user = await this.prisma.user.findFirst({
-      where: { id: userId, deletedAt: null },
-      include: { overrides: true },
-    });
+    const user = await this.roles.findUserWithOverrides(userId);
     if (!user) throw new NotFoundError('User', userId);
     const roleCaps = await this.permissions.effectiveCapsForRole(user.role as RoleId);
     const overrideMap = new Map(user.overrides.map((o) => [o.capId, o.granted]));
@@ -122,36 +114,18 @@ export class AdminRolesService {
    * Bumps the target user's tokenVersion to invalidate their outstanding tokens.
    */
   async patchOverrides(userId: string, input: PatchOverridesInput): Promise<unknown> {
-    const user = await this.prisma.user.findFirst({
-      where: { id: userId, deletedAt: null },
-    });
-    if (!user) throw new NotFoundError('User', userId);
+    if (!(await this.roles.userExists(userId))) throw new NotFoundError('User', userId);
 
-    const writes = [];
+    const writes: CapabilityGrant[] = [];
     const deletes: CapabilityId[] = [];
     for (const cap of CAPABILITY_IDS) {
       const v = input.overrides[cap];
       if (v === undefined) continue;
       if (v === 'role') deletes.push(cap);
-      else writes.push({ userId, capId: cap, granted: v });
+      else writes.push({ capId: cap, granted: v });
     }
 
-    await this.prisma.$transaction([
-      ...deletes.map((capId) =>
-        this.prisma.userOverride.deleteMany({ where: { userId, capId } }),
-      ),
-      ...writes.map((w) =>
-        this.prisma.userOverride.upsert({
-          where: { userId_capId: { userId, capId: w.capId } },
-          create: w,
-          update: { granted: w.granted },
-        }),
-      ),
-      this.prisma.user.update({
-        where: { id: userId },
-        data: { tokenVersion: { increment: 1 } },
-      }),
-    ]);
+    await this.roles.applyUserOverrides(userId, { remove: deletes, set: writes });
 
     return this.getOverrides(userId);
   }

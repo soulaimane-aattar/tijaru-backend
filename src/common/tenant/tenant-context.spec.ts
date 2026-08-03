@@ -24,4 +24,8 @@ describe('TenantContext', () => {
     expect(TENANT_MODELS.has('Business')).toBe(false);
     expect(TENANT_MODELS.has('PlatformAdmin')).toBe(false);
   });
+
+  it('auto-scopes the Expense model', () => {
+    expect(TENANT_MODELS.has('Expense')).toBe(true);
+  });
 });

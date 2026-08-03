@@ -24,7 +24,7 @@ async function bootstrap(): Promise<void> {
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
 
   const config = new DocumentBuilder()
-    .setTitle('Stock API')
+    .setTitle('Tijaru API')
     .setDescription('Inventory + POS + Admin API — Moroccan SMB')
     .setVersion('0.1.0')
     .addBearerAuth()
@@ -34,7 +34,7 @@ async function bootstrap(): Promise<void> {
 
   await app.listen(env.PORT);
   // eslint-disable-next-line no-console
-  console.log(`Stock API listening on http://localhost:${env.PORT}/api`);
+  console.log(`Tijaru API listening on http://localhost:${env.PORT}/api`);
   // eslint-disable-next-line no-console
   console.log(`Swagger UI:           http://localhost:${env.PORT}/api/docs`);
 }

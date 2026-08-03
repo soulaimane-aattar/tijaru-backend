@@ -1,6 +1,7 @@
 import { describe, expect, it } from '@jest/globals';
 
 import {
+  CAPABILITIES,
   CAPABILITY_IDS,
   type CapabilityId,
   ROLE_IDS,
@@ -30,6 +31,10 @@ const MATRIX: Record<CapabilityId, Record<RoleId, boolean>> = {
   'users.manage':              { owner: true, admin: true, manager: false, stockkeeper: false, cashier: false, viewer: false },
   'suppliers.manage':          { owner: true, admin: true, manager: true, stockkeeper: false, cashier: false, viewer: false },
   'po.manage':                 { owner: true, admin: true, manager: true, stockkeeper: false, cashier: false, viewer: false },
+  'expenses.view':             { owner: true, admin: true, manager: true, stockkeeper: false, cashier: false, viewer: true },
+  'expenses.create':           { owner: true, admin: true, manager: true, stockkeeper: false, cashier: false, viewer: false },
+  'expenses.edit':             { owner: true, admin: true, manager: true, stockkeeper: false, cashier: false, viewer: false },
+  'expenses.delete':           { owner: true, admin: true, manager: false, stockkeeper: false, cashier: false, viewer: false },
   'reports.view':              { owner: true, admin: true, manager: true, stockkeeper: false, cashier: false, viewer: true },
   'activity.view':             { owner: true, admin: true, manager: false, stockkeeper: false, cashier: false, viewer: false },
   'billing.manage':            { owner: true, admin: false, manager: false, stockkeeper: false, cashier: false, viewer: false },
@@ -44,13 +49,13 @@ describe('permissions matrix (spec §6.2)', () => {
     },
   );
 
-  it('owner has all 18 capabilities', () => {
+  it('owner has every capability', () => {
     expect(ROLE_PERMS.owner.size).toBe(CAPABILITY_IDS.length);
   });
 
-  it('viewer has only dashboard.view, products.view, reports.view', () => {
+  it('viewer is read-only: dashboard, products, expenses, reports', () => {
     expect([...ROLE_PERMS.viewer].sort()).toEqual(
-      ['dashboard.view', 'products.view', 'reports.view'].sort(),
+      ['dashboard.view', 'products.view', 'expenses.view', 'reports.view'].sort(),
     );
   });
 });
@@ -95,5 +100,41 @@ describe('effectiveCapabilities', () => {
     expect(caps).toContain('reports.view');
     expect(caps).toContain('stock.out');
     expect(caps).not.toContain('stock.in');
+  });
+});
+
+describe('expenses capabilities', () => {
+  const EXPENSE_CAPS = [
+    'expenses.view',
+    'expenses.create',
+    'expenses.edit',
+    'expenses.delete',
+  ] as const;
+
+  it('registers all four expense capability ids', () => {
+    for (const cap of EXPENSE_CAPS) {
+      expect(CAPABILITY_IDS).toContain(cap);
+      expect(CAPABILITIES[cap]?.domain).toBe('expenses');
+    }
+  });
+
+  it('grants owner and admin every expense capability', () => {
+    for (const cap of EXPENSE_CAPS) {
+      expect(ROLE_PERMS.owner.has(cap)).toBe(true);
+      expect(ROLE_PERMS.admin.has(cap)).toBe(true);
+    }
+  });
+
+  it('lets manager record expenses but not delete them', () => {
+    expect(ROLE_PERMS.manager.has('expenses.create')).toBe(true);
+    expect(ROLE_PERMS.manager.has('expenses.edit')).toBe(true);
+    expect(ROLE_PERMS.manager.has('expenses.delete')).toBe(false);
+  });
+
+  it('gives viewer read-only access and stockkeeper/cashier none', () => {
+    expect(ROLE_PERMS.viewer.has('expenses.view')).toBe(true);
+    expect(ROLE_PERMS.viewer.has('expenses.create')).toBe(false);
+    expect(ROLE_PERMS.stockkeeper.has('expenses.view')).toBe(false);
+    expect(ROLE_PERMS.cashier.has('expenses.view')).toBe(false);
   });
 });

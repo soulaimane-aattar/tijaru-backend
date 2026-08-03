@@ -15,6 +15,11 @@ const envSchema = z.object({
     .default('http://localhost:5173,http://localhost:8081')
     .transform((s) => s.split(',').map((x) => x.trim()).filter(Boolean)),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
+  /** Root directory for receipt images. Relative paths resolve from the API's cwd. */
+  UPLOADS_DIR: z.string().default('./uploads'),
+  /** Compose-network address of the Python OCR service. */
+  OCR_SERVICE_URL: z.string().url().default('http://ocr:8000'),
+  OCR_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
   PLATFORM_ADMIN_EMAIL: z.string().email(),
   PLATFORM_ADMIN_PASSWORD: z.string().min(8),
 });

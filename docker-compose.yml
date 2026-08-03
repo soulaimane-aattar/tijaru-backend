@@ -8,7 +8,8 @@ services:
       POSTGRES_PASSWORD: stock
       POSTGRES_DB: stock
     ports:
-      - '5432:5432'
+      # Host 5433: 5432 often taken by other local stacks. In-network stays 5432.
+      - '5433:5432'
     volumes:
       - stock-pg-data:/var/lib/postgresql/data
     healthcheck:
@@ -16,6 +17,17 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  ocr:
+    build: ./ocr-service
+    container_name: stock-ocr
+    restart: unless-stopped
+    environment:
+      # Arabic adds a second recognition pass and roughly doubles latency.
+      # Enable with OCR_LANGS=fr,ar when Arabic receipts become a real workload.
+      OCR_LANGS: fr
+    # Intentionally no `ports:` — receipts must not be reachable from the host
+    # network. The API talks to it over the compose network as http://ocr:8000.
 
   backend:
     build: .
@@ -26,11 +38,23 @@ services:
       # Override .env: reach postgres over compose network, not localhost.
       DATABASE_URL: postgresql://stock:stock@postgres:5432/stock?schema=public
       NODE_ENV: production
+      OCR_SERVICE_URL: http://ocr:8000
+      UPLOADS_DIR: /srv/uploads
+      # Demo data seeds only when explicitly requested:
+      #   SEED_DEMO=true docker compose up -d
+      SEED_DEMO: ${SEED_DEMO:-false}
     ports:
-      - '3000:3000'
+      # Host 3002: 3000/3001 taken by other local services. In-network stays 3000.
+      - '3002:3000'
+    volumes:
+      # Receipt images. Without this volume every rebuild deletes them.
+      - stock-uploads:/srv/uploads
     depends_on:
       postgres:
         condition: service_healthy
+      ocr:
+        condition: service_started
 
 volumes:
   stock-pg-data:
+  stock-uploads:

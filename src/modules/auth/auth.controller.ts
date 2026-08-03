@@ -7,14 +7,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/guards/jwt.guard';
 import { PermissionsResolver } from '../../common/permissions-resolver.service';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
-import { PrismaService } from '../../common/prisma.service';
-import {
-  CAPABILITIES,
-  CAPABILITY_IDS,
-  type CapabilityId,
-  ROLES,
-  ROLE_IDS,
-} from '../../domain/permissions';
+import { CAPABILITIES, CAPABILITY_IDS, ROLES, ROLE_IDS } from '../../domain/permissions';
 
 import { AuthService } from './application/auth.service';
 import {
@@ -29,7 +22,6 @@ import {
 export class AuthController {
   constructor(
     private readonly auth: AuthService,
-    private readonly prisma: PrismaService,
     private readonly permissions: PermissionsResolver,
   ) {}
 
@@ -79,32 +71,8 @@ export class AuthController {
   @Get('me')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Current user + effective capabilities.' })
-  async me(@CurrentUser() user: AuthUser): Promise<unknown> {
-    const fresh = await this.prisma.user.findUnique({
-      where: { id: user.id },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        phone: true,
-        role: true,
-        active: true,
-        lastLogin: true,
-        warehouses: { select: { warehouseId: true } },
-      },
-    });
-    if (!fresh) return null;
-    const roleCaps = await this.permissions.effectiveCapsForRole(user.role);
-    const effective = new Set<CapabilityId>(roleCaps);
-    for (const [cap, granted] of Object.entries(user.overrides)) {
-      if (granted) effective.add(cap as CapabilityId);
-      else effective.delete(cap as CapabilityId);
-    }
-    return {
-      ...fresh,
-      warehouseIds: fresh.warehouses.map((w) => w.warehouseId),
-      capabilities: [...effective],
-    };
+  me(@CurrentUser() user: AuthUser): Promise<unknown> {
+    return this.auth.me(user.id, user.role, user.overrides);
   }
 
   @Public()
