@@ -22,6 +22,15 @@ const envSchema = z.object({
   OCR_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
   PLATFORM_ADMIN_EMAIL: z.string().email(),
   PLATFORM_ADMIN_PASSWORD: z.string().min(8),
+  /**
+   * Serve Swagger at /api/docs. Left unset it follows NODE_ENV, so production
+   * never publishes the API map. The dockerised dev stack runs with
+   * NODE_ENV=production, hence the explicit override there.
+   */
+  SWAGGER_ENABLED: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === 'true')),
 });
 
 export type Env = z.infer<typeof envSchema>;

@@ -38,6 +38,8 @@ services:
       # Override .env: reach postgres over compose network, not localhost.
       DATABASE_URL: postgresql://stock:stock@postgres:5432/stock?schema=public
       NODE_ENV: production
+      # Local stack only: NODE_ENV=production above would otherwise hide the docs.
+      SWAGGER_ENABLED: 'true'
       OCR_SERVICE_URL: http://ocr:8000
       UPLOADS_DIR: /srv/uploads
       # Demo data seeds only when explicitly requested:

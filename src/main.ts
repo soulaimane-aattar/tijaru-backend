@@ -23,20 +23,27 @@ async function bootstrap(): Promise<void> {
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
 
-  const config = new DocumentBuilder()
-    .setTitle('Tijaru API')
-    .setDescription('Inventory + POS + Admin API — Moroccan SMB')
-    .setVersion('0.1.0')
-    .addBearerAuth()
-    .build();
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api/docs', app, document);
+  // Swagger describes every route, DTO and auth requirement. Behind the public
+  // nginx vhost that is a free API map for anyone, so it is dev/test only.
+  const swaggerEnabled = env.SWAGGER_ENABLED ?? env.NODE_ENV !== 'production';
+  if (swaggerEnabled) {
+    const config = new DocumentBuilder()
+      .setTitle('Tijaru API')
+      .setDescription('Inventory + POS + Admin API — Moroccan SMB')
+      .setVersion('0.1.0')
+      .addBearerAuth()
+      .build();
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('api/docs', app, document);
+  }
 
   await app.listen(env.PORT);
   // eslint-disable-next-line no-console
   console.log(`Tijaru API listening on http://localhost:${env.PORT}/api`);
-  // eslint-disable-next-line no-console
-  console.log(`Swagger UI:           http://localhost:${env.PORT}/api/docs`);
+  if (swaggerEnabled) {
+    // eslint-disable-next-line no-console
+    console.log(`Swagger UI:           http://localhost:${env.PORT}/api/docs`);
+  }
 }
 
 void bootstrap();
