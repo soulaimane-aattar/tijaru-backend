@@ -11,7 +11,7 @@
 #   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 #
 # Prereq: the nginx-proxy stack is up and owns the external `nginx-proxy` network,
-# and ../ocr-service exists next to this repo (it is the ocr build context).
+# ocr-service/ ships inside this repo, so no extra checkout is needed.
 
 services:
   postgres:
@@ -34,7 +34,7 @@ services:
       retries: 10
 
   ocr:
-    build: ../ocr-service
+    build: ./ocr-service
     image: tijaru-ocr:prod
     container_name: tijaru-ocr
     restart: unless-stopped

@@ -10,3 +10,12 @@ coverage
 .vscode
 .idea
 test
+
+# Not part of the Node image — ocr-service has its own Dockerfile, and the docs
+# (incl. the 2 MB standalone mockup) would otherwise bloat the build context.
+ocr-service
+docs
+*.md
+*.html
+mark.svg
+.claude

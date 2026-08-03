@@ -17,12 +17,11 @@ Only `nginx-proxy` publishes host ports. `tijaru-backend`, `tijaru-postgres` and
 ## 1. Backend + DB + OCR
 
 Prereqs: the nginx-proxy stack is up and owns the external `nginx-proxy` network,
-and `ocr-service/` sits next to `backend/` (it is the `ocr` build context).
+`ocr-service/` ships inside this repo, so a plain clone is enough.
 
-The prod stack lives in `backend/` (same folder as the dev `docker-compose.yml`).
+Run everything from the repo root (where `docker-compose.prod.yml` lives).
 
 ```bash
-cd backend
 cp .env.prod.example .env.prod
 # edit: strong POSTGRES_PASSWORD, matching DATABASE_URL, CORS_ORIGINS (Pages origin),
 #       admin creds, JWT secrets:  openssl rand -hex 32   (one per secret)
@@ -45,14 +44,14 @@ make deploy        # = docker compose -f docker-compose.prod.yml --env-file .env
 
 Every prod target aborts with a hint if `.env.prod` is missing.
 
-- `DATABASE_URL` is read straight from `backend/.env.prod` (backend `env_file`), host `postgres:5432`.
+- `DATABASE_URL` is read straight from `.env.prod` (backend `env_file`), host `postgres:5432`.
 - `.env.prod` is gitignored — never commit it.
 - OCR: `tijaru-ocr` on the internal net only; backend reaches it at `http://ocr:8000`.
   `OCR_LANGS=fr` by default; `fr,ar` adds an Arabic pass and roughly doubles latency.
 - Receipt images persist in the `tijaru-uploads` volume mounted at `/srv/uploads`.
 - Backend joins the `nginx-proxy` network with alias `tijaru-backend`.
 - Container runs `prisma migrate deploy` on start, then serves. No seed in prod.
-- Image: multi-stage `backend/Dockerfile.prod` (build context = `backend/`) — debian-slim,
+- Image: multi-stage `Dockerfile.prod` (build context = repo root) — debian-slim,
   dev deps pruned, non-root.
 
 ## 2. nginx route (api.tijaru.ma)

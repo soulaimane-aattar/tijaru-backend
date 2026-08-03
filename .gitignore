@@ -13,3 +13,12 @@ coverage/
 .idea/
 prisma/migrations/dev.db*
 backup-*.sql
+uploads/
+
+# ocr-service (Python) lives in this repo
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
