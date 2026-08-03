@@ -32,8 +32,8 @@
 - **Decisions:** D-009.
 - **Next / still open:**
   - ⚠️ **No remote yet** — the project still exists on one disk only. Create a private remote and push; needs the user's host choice + `gh` auth.
-  - Add CI path filters (`paths: backend/**` etc.) so one push does not build all four apps.
-  - `backend/.github/workflows/ci.yml` paths now start one level deeper — verify it still triggers.
+  - ✅ **CI fixed same session** (`9189558`): `backend/.github/workflows/ci.yml` → `.github/workflows/backend-ci.yml`. GitHub only reads `.github/workflows` at the **repo root**, so after consolidation the workflow would silently never have run. Job now sets `defaults.run.working-directory: backend`, `cache-dependency-path: backend/package-lock.json`, and `paths: ['backend/**', '.github/workflows/backend-ci.yml']` so one push does not build all four apps. Not yet executed on GitHub — no remote exists.
+  - Web / mobile / ocr-service still have no CI workflow at all.
 
 ### 2026-08-03 — Prod deploy stack moved into `backend/` + Makefile
 - **Step:** `docker-compose.prod.yml` and `.env.prod.example` moved from the workspace root into `backend/` (build context `./backend` → `.`); added `backend/Makefile` wrapping both stacks; added the missing `ocr` service + `tijaru-uploads` volume to prod; `.env.prod` and `backup-*.sql` gitignored; `Dockerfile.prod` pre-creates `/srv/uploads` owned by `node`.
