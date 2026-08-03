@@ -20,7 +20,23 @@
 
 ## Log
 
-### 2026-08-03 — All four apps consolidated into one git repository
+### 2026-08-03 — Split into three repos: backend+ocr, web, mobile
+- **Step:** Reversed the consolidation from the entry below (same session, user's call). `backend/` is now a repo whose **root is the old `backend/` directory**, with `ocr-service/` nested inside it and all product docs (`docs/`, plan, spec, `CLAUDE.md`, `DEPLOY.prod.md`, HTML mockup) moved in. `web/` and `mobile/` are separate repos.
+- **Result:** ✅
+  - Backend history came back at its **original SHAs** (`5723838`…`e5eab6c`) — hoisting `backend/*` to the root reproduced the pre-consolidation trees exactly. 11 commits, 129 files at HEAD, zero `web/`/`mobile/` paths.
+  - **WIP preserved a third time:** diff hash still `00ce901cdd53…`, 40 modified + 58 untracked.
+  - `web` and `mobile`: 1 commit each, 81 files each, clean tree. Their `main` initially pointed at backend-only history (nothing in it touched `web/`, so `--prune-empty` left the branch untouched) — repointed at the correct filtered commit and the stray `feat/multi-tenancy` branch dropped.
+  - Compose verified from resolved config: ocr context → `…/backend/ocr-service`, backend context → `…/backend`, `DATABASE_URL` still only from `.env.prod`, **0** published host ports. `docker compose -f docker-compose.yml config -q` → OK.
+  - Commits: `66b7661` (backend split fixes), `779dc2b` (web initial), `c988229` (mobile initial).
+- **Decisions:** D-010, supersedes D-009.
+- **Caveats / next:**
+  - ⚠️ **Still no remotes** — three repos, all local-only. This remains the top risk.
+  - `docker-compose.yml` (dev) carries the `./ocr-service` path fix **inside the uncommitted WIP**, since the file already had multi-tenancy edits and the two could not be separated cleanly. It ships when the WIP is committed.
+  - Workspace-root `CLAUDE.md` and `.claude` are **symlinks** into the backend repo — unversioned, recreate with `ln -s backend/CLAUDE.md CLAUDE.md && ln -s backend/.claude .claude` on a fresh checkout.
+  - `mobile/.gitignore` now drops the prebuild-generated `ios/` and `android/` trees.
+  - CI workflow edited but never executed — no remote to run it.
+
+### 2026-08-03 — All four apps consolidated into one git repository *(reverted same day — see the entry above)*
 - **Step:** Root workspace is now the single git repo. Backend's 7 commits rewritten into the `backend/` subdirectory and imported; `web/`, `mobile/`, `ocr-service/`, `docs/`, spec, plan and the standalone HTML mockup tracked for the first time; root `.gitignore` added; nested `.git` dirs removed.
 - **Result:** ✅
   - **Pre-state (the reason):** `web/.git` and `mobile/.git` existed with **0 commits** (19 and 65 uncommitted files); `ocr-service/` and `docs/` had no repo; no repo had a remote. Only `backend/` had history.

@@ -2,7 +2,13 @@
 
 > One entry per significant decision. Newest on top. Format: date · decision · why · rejected alternatives.
 
-## D-009 — 2026-08-03 · One git repository for all four apps
+## D-010 — 2026-08-03 · Three repos: backend+ocr, web, mobile — **supersedes D-009**
+- **Decision:** `backend` repo (root = the old `backend/`, with `ocr-service/` nested inside it and all product docs), `web` repo, `mobile` repo. Reverses D-009's single repo, decided the same day.
+- **Why:** Deployment coupling is the real boundary, and it runs backend↔ocr, not backend↔frontends. `docker-compose.prod.yml` builds both from one context, so they must clone together; web deploys to Cloudflare Pages and mobile to EAS, each with an independent release cadence and its own CI needs. Docs ride with the backend because `DEPLOY.prod.md` and the progress log track it most closely.
+- **Consequences:** `../ocr-service` → `./ocr-service` in both compose files. CI workflow returns to `.github/workflows/ci.yml` with no path filter or `working-directory`. `.dockerignore` must now exclude `ocr-service/`, `docs/` and the 2 MB HTML mockup from the Node build context. `CLAUDE.md` and `.claude/` live in the backend repo; the workspace root carries symlinks to them so tooling still resolves when run from the root — the symlinks are unversioned and must be recreated on a fresh checkout.
+- **Rejected:** single repo (D-009 — atomic cross-app commits are real, but they were bought at the price of tangled CI and a clone that drags three unrelated apps), ocr as a fourth standalone repo (would force a registry + image push just to deploy), git submodules (coordination cost without the benefit).
+
+## D-009 — 2026-08-03 · One git repository for all four apps *(superseded by D-010 the same day)*
 - **Decision:** Single repo at the workspace root covering `backend/`, `web/`, `mobile/`, `ocr-service/` and `docs/`. Supersedes the per-app repo layout. **Not** a monorepo in the tooling sense — no npm workspace, no turbo; each app keeps its own `package.json`, install and deploy (D-001 stands).
 - **Why:** Only `backend/` was actually versioned — `web/` and `mobile/` had git dirs with **zero commits**, `ocr-service/` and `docs/` had none, and no repo had a remote: one bad `rm` would have erased the project. Beyond that, `backend/docker-compose.prod.yml` builds `ocr` from `../ocr-service`, which only resolves inside one tree; and schema changes routinely touch backend + web + mobile together, which split repos turn into three PRs with a version-skew window.
 - **Migration:** backend history rewritten into the `backend/` subdirectory (`git filter-branch --index-filter` on a bare clone — `git-filter-repo` is unavailable under PEP 668), fetched into a fresh root repo, index restored with a mixed `git reset` so the uncommitted multi-tenancy WIP was never touched. Verified: uncommitted diff hash identical before/after (`00ce901c…`), 40 modified + 58 untracked files unchanged.
