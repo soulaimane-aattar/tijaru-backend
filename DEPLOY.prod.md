@@ -60,19 +60,38 @@ The site conf already lives at:
 `../euras/eurasians-proxy/nginx/sites-available/api.tijaru.ma.conf`
 (proxies `api.tijaru.ma` → `http://tijaru-backend:3000`).
 
+The vhost resolves `tijaru-backend:3000` through the Docker DNS at request time
+instead of using an `upstream {}` block. That matters: nginx resolves upstream
+hostnames at startup, so with a static upstream a missing backend container
+aborts the whole config and takes **every other site on that proxy** down. Now
+it returns a local 502 and recovers on its own once the backend is back.
+
+**Two blockers before this vhost can serve traffic:**
+
+1. **No certificate.** `euras/eurasians-proxy/ssl/api.tijaru.ma/` does not exist.
+   The conf is already included by `sites-available/*.conf`, so reloading the
+   proxy without the cert fails the config test and takes all sites with it.
+2. **Port 80 is not published.** `docker-compose.yml` in the proxy stack has
+   `# - "80:80"` commented out and mounts no `/var/www/certbot` webroot, so
+   HTTP-01 validation cannot work and the HTTP→HTTPS block never receives
+   traffic. Either issue via **DNS-01**, or publish 80 + mount a webroot.
+
 ```bash
-# Install the TLS cert (Let's Encrypt) where the conf expects it:
-#   /etc/nginx/ssl/api.tijaru.ma/fullchain.pem
-#   /etc/nginx/ssl/api.tijaru.ma/privkey.pem
-# i.e. euras/eurasians-proxy/ssl/api.tijaru.ma/{fullchain,privkey}.pem
+# Cert must land where the conf expects it:
+#   euras/eurasians-proxy/ssl/api.tijaru.ma/{fullchain,privkey}.pem
+#   -> /etc/nginx/ssl/api.tijaru.ma/... inside the container
 
 cd ../euras/eurasians-proxy
-docker exec nginx-proxy nginx -t     # validate (needs tijaru-backend up + cert present)
-docker exec nginx-proxy nginx -s reload
+make check      # nginx -t inside the proxy container
+make reload     # nginx -s reload
 ```
 
-Point DNS `api.tijaru.ma` → the server, and issue the cert before reload
-(nginx won't start a TLS server block without the cert files).
+Point DNS `api.tijaru.ma` → the server, and issue the cert **before** reloading.
+
+Verified locally against the real backend container (self-signed cert, nginx
+on :8443): `/api/health` → 200 `{"status":"ok","database":"up"}`, `/api/v1/products`
+→ 401, `/api/docs` → 404 at the edge, one copy each of HSTS / nosniff /
+Referrer-Policy, and a clean 502 (not a crash) with the backend disconnected.
 
 ## 3. Web (Cloudflare Pages)
 

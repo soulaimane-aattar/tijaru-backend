@@ -20,6 +20,22 @@
 
 ## Log
 
+### 2026-08-03 — nginx vhost hardened + /api/health + Swagger gated + .env.prod generated
+- **Step:** Prepared the `api.tijaru.ma` deployment path end to end: reworked `euras/eurasians-proxy/nginx/sites-available/api.tijaru.ma.conf`, added a real health endpoint, closed a Swagger exposure, and generated the production env file.
+- **Result:** ✅ verified against real containers, not by reading configs.
+  - **Dead probe fixed:** the vhost proxied `/api/health`, which **did not exist** — global prefix is `api` + URI versioning, so every route is `/api/v1/*`. Added a version-neutral `HealthController` (`/api/health`, public, `SELECT 1` DB probe) → `200 {"status":"ok","database":"up"}` unauthenticated.
+  - **Swagger exposure closed:** `SwaggerModule.setup` ran unconditionally, so `api.tijaru.ma/api/docs` would have published every route, DTO and auth requirement. Now `SWAGGER_ENABLED ?? NODE_ENV !== 'production'`. The dev compose stack sets `NODE_ENV=production`, so it opts back in explicitly — `/api/docs` still 200 locally, 404 with the flag unset. nginx returns 404 for `/api/docs` as a second layer.
+  - **Proxy-wide outage risk removed:** the conf used `upstream { server tijaru-backend:3000; }`. nginx resolves upstream names at **startup**, so a missing backend container fails the whole config — proven live: `nginx -t` over the real proxy repo aborted on `api.hub.conf` for exactly this reason. Switched to request-time Docker DNS (`proxy_pass http://$tijaru_api$request_uri`, resolver already declared once in `nginx.conf`). With the backend disconnected: config test still passes, container stays up, requests return **502**; reconnecting recovers automatically within the DNS TTL.
+  - **Duplicate headers deduped:** helmet and nginx both sent HSTS/nosniff/Referrer-Policy, including a weaker `max-age=15552000`. Added `proxy_hide_header` for the three; now exactly one copy each, `max-age=63072000; includeSubDomains; preload`.
+  - **End-to-end proof** (real `stock-backend` container behind nginx:alpine on :8443, self-signed cert): `/api/health` 200, `/api/v1/products` 401, `/api/docs` 404, headers single-copy.
+  - **`.env.prod` generated** at `backend/.env.prod`, `chmod 600`, gitignored (`git check-ignore` confirms) — strong DB password, two `openssl rand -hex 32` JWT secrets, admin password, CORS for `www.tijaru.ma`/`tijaru.ma`/`tijaru.pages.dev`. `make prod-config` resolves; password matches between `POSTGRES_PASSWORD` and `DATABASE_URL`; **0** published host ports.
+  - Gates: `tsc --noEmit` clean, `eslint --max-warnings=0` clean, `196/196` unit tests. Commit `6f8609f`.
+- **Blockers before this can actually serve traffic:**
+  - ⚠️ **No TLS cert** — `euras/eurasians-proxy/ssl/api.tijaru.ma/` does not exist. The conf is already picked up by `sites-available/*.conf`, so reloading the proxy without it fails config validation and takes **all** hosted sites down.
+  - ⚠️ **Port 80 unpublished** in the proxy compose (`# - "80:80"`) and no `/var/www/certbot` webroot mounted → HTTP-01 impossible, HTTP→HTTPS block inert. Use DNS-01, or publish 80 + mount a webroot.
+  - The proxy-repo conf change is **uncommitted** in `euras/eurasians-proxy` (that repo is separate; the file was untracked there to begin with).
+  - `PLATFORM_ADMIN_PASSWORD` in `.env.prod` is machine-generated — change it after first login.
+
 ### 2026-08-03 — Split into three repos: backend+ocr, web, mobile
 - **Step:** Reversed the consolidation from the entry below (same session, user's call). `backend/` is now a repo whose **root is the old `backend/` directory**, with `ocr-service/` nested inside it and all product docs (`docs/`, plan, spec, `CLAUDE.md`, `DEPLOY.prod.md`, HTML mockup) moved in. `web/` and `mobile/` are separate repos.
 - **Result:** ✅
