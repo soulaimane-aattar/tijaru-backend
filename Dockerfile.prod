@@ -1,0 +1,49 @@
+# Stock — backend (NestJS + Prisma). Production image: multi-stage, dev deps pruned.
+# Final image = debian-slim + openssl + prod-only node_modules + dist + prisma schema.
+# No src, no ts-node, no build toolchain.
+
+# ─── builder ───────────────────────────────────────────────────────────────
+FROM node:20-slim AS builder
+WORKDIR /app
+
+# openssl: Prisma engines. python3/make/g++: native deps (bcrypt) compile.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends openssl python3 make g++ \
+  && rm -rf /var/lib/apt/lists/*
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY . .
+RUN npx prisma generate \
+  && npm run build \
+  # Drop dev deps in place — keeps compiled bcrypt + generated prisma client,
+  # keeps `prisma` CLI (now a prod dep) for `migrate deploy` at runtime.
+  && npm prune --omit=dev \
+  && npm cache clean --force
+
+# ─── runner ────────────────────────────────────────────────────────────────
+FROM node:20-slim AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends openssl \
+  && rm -rf /var/lib/apt/lists/*
+
+# Only what production needs: pruned node_modules, compiled dist, prisma schema+migrations.
+COPY --from=builder --chown=node:node /app/node_modules ./node_modules
+COPY --from=builder --chown=node:node /app/dist ./dist
+COPY --from=builder --chown=node:node /app/prisma ./prisma
+COPY --from=builder --chown=node:node /app/package.json ./package.json
+
+# Receipt uploads mount point. Created here (owned by node) so the empty named
+# volume inherits that ownership — otherwise Docker makes it root-owned and the
+# non-root process cannot write receipts.
+RUN mkdir -p /srv/uploads && chown -R node:node /srv/uploads
+
+USER node
+EXPOSE 3000
+
+# Apply migrations, then serve. No seed in prod (ts-node is a dev dep).
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/src/main.js"]

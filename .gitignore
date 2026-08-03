@@ -3,9 +3,13 @@ dist/
 coverage/
 .env
 .env.local
+.env.prod
 .env.*.local
+!.env.example
+!.env.prod.example
 *.log
 .DS_Store
 .vscode/
 .idea/
 prisma/migrations/dev.db*
+backup-*.sql

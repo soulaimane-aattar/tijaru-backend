@@ -1,0 +1,90 @@
+# Tijaru — PRODUCTION: postgres + ocr + backend API.
+# Web is deployed separately (Cloudflare Pages) — not in this stack.
+#
+# Served through the EXTERNAL manual nginx reverse proxy at
+# ../euras/eurasians-proxy (container `nginx-proxy`, network `nginx-proxy`).
+# NOTHING here publishes a host port — only the nginx-proxy is exposed.
+# nginx routes api.tijaru.ma -> http://tijaru-backend:3000 (see its site conf).
+#
+# Run from this directory (backend/):
+#   cp .env.prod.example .env.prod && edit
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+#
+# Prereq: the nginx-proxy stack is up and owns the external `nginx-proxy` network,
+# and ../ocr-service exists next to this repo (it is the ocr build context).
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: tijaru-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - tijaru-pg-data:/var/lib/postgresql/data
+    networks:
+      - internal
+    # No ports / no expose to host — reachable only on the internal network.
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  ocr:
+    build: ../ocr-service
+    image: tijaru-ocr:prod
+    container_name: tijaru-ocr
+    restart: unless-stopped
+    environment:
+      # Arabic adds a second recognition pass and roughly doubles latency.
+      OCR_LANGS: ${OCR_LANGS:-fr}
+    networks:
+      - internal
+    # No ports / no expose to host — receipts are private data. The API reaches
+    # it on the internal network as http://ocr:8000.
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    image: tijaru-backend:prod
+    container_name: tijaru-backend
+    restart: unless-stopped
+    # All runtime config — including DATABASE_URL — comes from .env.prod.
+    env_file:
+      - .env.prod
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      OCR_SERVICE_URL: http://ocr:8000
+      UPLOADS_DIR: /srv/uploads
+    expose:
+      - '3000'
+    volumes:
+      # Receipt images. Without this volume every rebuild deletes them.
+      - tijaru-uploads:/srv/uploads
+    networks:
+      internal: {}
+      nginx-proxy:
+        aliases:
+          - ${NGINX_API_UPSTREAM:-tijaru-backend}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ocr:
+        condition: service_started
+
+volumes:
+  tijaru-pg-data:
+  tijaru-uploads:
+
+networks:
+  # Private net: postgres <-> backend. Never exposed.
+  internal:
+  # Shared net owned by the external nginx-proxy stack.
+  nginx-proxy:
+    external: true
+    name: ${NGINX_PROXY_NETWORK:-nginx-proxy}
