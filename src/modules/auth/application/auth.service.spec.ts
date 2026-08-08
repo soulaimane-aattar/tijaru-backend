@@ -120,4 +120,39 @@ describe('AuthService', () => {
       );
     });
   });
+
+  describe('full signup → approve → login flow', () => {
+    it('register creates pending business, login blocked, approve unblocks', async () => {
+      const repo = mockRepo();
+      repo.emailInUse.mockResolvedValue(false);
+      repo.createBusinessWithOwner = jest.fn().mockResolvedValue({ businessId: 'b1', userId: 'u1' });
+      const svc = new AuthService(repo, mockJwt(), mockPerms(), mockEnv);
+
+      // 1. Register
+      const registerResult = await svc.register({
+        businessName: 'Test Biz',
+        ownerName: 'Owner',
+        email: 'owner@test.com',
+        password: 'pass1234',
+      });
+      expect(registerResult.status).toBe('pending');
+
+      // 2. Login should fail (pending)
+      const pendingUser = makeUser({ email: 'owner@test.com', businessStatus: 'pending' });
+      pendingUser.passwordHash = await bcrypt.hash('pass1234', 4);
+      repo.findUserByEmail.mockResolvedValue(pendingUser);
+      await expect(svc.login('owner@test.com', 'pass1234', meta)).rejects.toBeInstanceOf(
+        ForbiddenError,
+      );
+
+      // 3. After approve (business.status → active), login succeeds
+      const activeUser = makeUser({ email: 'owner@test.com', businessStatus: 'active' });
+      activeUser.passwordHash = pendingUser.passwordHash;
+      repo.findUserByEmail.mockResolvedValue(activeUser);
+      repo.createSession.mockResolvedValue(undefined);
+      repo.recordLogin.mockResolvedValue(undefined);
+      const loginResult = await svc.login('owner@test.com', 'pass1234', meta);
+      expect(loginResult.tokens.accessToken).toBeTruthy();
+    });
+  });
 });
