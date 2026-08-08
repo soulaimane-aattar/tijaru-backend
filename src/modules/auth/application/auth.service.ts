@@ -4,7 +4,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 
-import { ConflictError, UnauthorizedError } from '../../../common/errors';
+import { ConflictError, ForbiddenError, UnauthorizedError } from '../../../common/errors';
 import { PermissionsResolver } from '../../../common/permissions-resolver.service';
 import { ENV_TOKEN } from '../../../config/config.module';
 import type { Env } from '../../../config/env';
@@ -40,6 +40,16 @@ export class AuthService {
     const user = await this.authRepo.findUserByEmail(email.toLowerCase());
     if (!user || !user.active) {
       throw new UnauthorizedError('Invalid credentials');
+    }
+
+    if (user.businessStatus !== 'active') {
+      const msg =
+        user.businessStatus === 'pending'
+          ? 'Your account is awaiting approval'
+          : user.businessStatus === 'rejected'
+            ? 'Your application was not approved'
+            : 'Business is suspended';
+      throw new ForbiddenError(msg);
     }
 
     const ok = await bcrypt.compare(password, user.passwordHash);

@@ -17,6 +17,7 @@ export interface AuthUserView {
   passwordHash: string;
   tokenVersion: number;
   overrides: { capId: string; granted: boolean }[];
+  businessStatus: string;
 }
 
 /** Active (non-revoked) session row; expiry is a business rule, checked by the service. */

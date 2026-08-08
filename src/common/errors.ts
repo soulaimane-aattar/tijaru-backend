@@ -28,8 +28,8 @@ export class NotFoundError extends DomainError {
 }
 
 export class ForbiddenError extends DomainError {
-  constructor(cap?: string) {
-    super('forbidden', cap ? `Missing capability: ${cap}` : 'Forbidden', HttpStatus.FORBIDDEN);
+  constructor(detail?: string) {
+    super('forbidden', detail ?? 'Forbidden', HttpStatus.FORBIDDEN);
   }
 }
 

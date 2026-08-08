@@ -15,11 +15,13 @@ export class PrismaAuthRepository extends AuthRepository {
     super();
   }
 
-  findUserByEmail(email: string): Promise<AuthUserView | null> {
-    return this.prisma.user.findFirst({
+  async findUserByEmail(email: string): Promise<AuthUserView | null> {
+    const user = await this.prisma.user.findFirst({
       where: { email, deletedAt: null },
-      include: { overrides: true },
+      include: { overrides: true, business: { select: { status: true } } },
     });
+    if (!user) return null;
+    return { ...user, businessStatus: user.business.status };
   }
 
   async findProfile(userId: string): Promise<UserProfileView | null> {
@@ -55,11 +57,23 @@ export class PrismaAuthRepository extends AuthRepository {
     });
   }
 
-  findSessionByTokenHash(hash: string): Promise<SessionView | null> {
-    return this.prisma.session.findFirst({
+  async findSessionByTokenHash(hash: string): Promise<SessionView | null> {
+    const session = await this.prisma.session.findFirst({
       where: { refreshTokenHash: hash, revokedAt: null },
-      include: { user: { include: { overrides: true } } },
+      include: {
+        user: {
+          include: {
+            overrides: true,
+            business: { select: { status: true } },
+          },
+        },
+      },
     });
+    if (!session) return null;
+    return {
+      ...session,
+      user: { ...session.user, businessStatus: session.user.business.status },
+    };
   }
 
   async createSession(data: CreateSessionData): Promise<void> {
