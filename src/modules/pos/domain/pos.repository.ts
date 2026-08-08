@@ -80,7 +80,7 @@ export interface ReceiptTicketView {
 
 export interface ReceiptBusinessView {
   name: string;
-  ice: string;
+  ice: string | null;
   address: string | null;
   city: string | null;
   phone: string | null;

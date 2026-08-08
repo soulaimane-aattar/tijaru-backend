@@ -15,6 +15,8 @@ datasource db {
 enum BusinessStatus {
   active
   suspended
+  pending
+  rejected
 }
 
 model PlatformAdmin {
@@ -32,7 +34,7 @@ model PlatformAdmin {
 model Business {
   id        String         @id @default(cuid())
   name      String
-  ice       String         @unique
+  ice       String?        @unique
   rc        String?
   patente   String?
   ifNum     String?        @map("if_num")
