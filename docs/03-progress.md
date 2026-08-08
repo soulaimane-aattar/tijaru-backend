@@ -20,6 +20,12 @@
 
 ## Log
 
+### 2026-08-08 — Task 3: `POST /auth/register` self-serve signup
+- **Step:** Added self-serve signup to the auth module (part of the signup+approval flow, task 3 of 3 planned backend tasks). New `RegisterSchema` Zod DTO (`src/modules/auth/dto/register.dto.ts`); `AuthRepository.createBusinessWithOwner` added to the abstract port and implemented in `PrismaAuthRepository` via `prisma.$transaction` (creates `Business` with `status: pending` + owner `User` in one transaction, using `BuiltInRole`/`BusinessStatus` enums); `AuthService.register()` (calls `ensureNoConflict`, hashes password with bcrypt, returns `{ status: 'pending' }`); `AuthController` gained `@Public() POST /auth/register` (`@HttpCode(201)`).
+- **Result:** ✅ `npx jest src/modules/auth/application/auth.service.spec.ts --no-cache` → 5/5 passed (3 pre-existing login-gate tests + 2 new register tests: conflict throws `ConflictError`, success returns `{status:'pending'}` and calls `createBusinessWithOwner` with the right shape). `npx tsc --noEmit` → clean. Commit `4230742`.
+- **Decisions:** none new — followed Task 1/2 conventions (`BusinessStatus` enum, nullable `ice`, `ForbiddenError`/`ConflictError` from `common/errors`). Minor TS-strict adaptation: `exactOptionalPropertyTypes` required a conditional spread (`...(input.phone !== undefined ? { phone: input.phone } : {})`) instead of directly assigning `phone: input.phone` in both `AuthService.register` and `PrismaAuthRepository.createBusinessWithOwner` — behavior unchanged, just satisfies the stricter TS config already enabled in this repo.
+- **Next:** wire up the admin-approval side (approve/reject pending businesses) and any web-side signup form, if not already covered by a separate task.
+
 ### 2026-08-03 — nginx vhost hardened + /api/health + Swagger gated + .env.prod generated
 - **Step:** Prepared the `api.tijaru.ma` deployment path end to end: reworked `euras/eurasians-proxy/nginx/sites-available/api.tijaru.ma.conf`, added a real health endpoint, closed a Swagger exposure, and generated the production env file.
 - **Result:** ✅ verified against real containers, not by reading configs.
