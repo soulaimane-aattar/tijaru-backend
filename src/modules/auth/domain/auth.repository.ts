@@ -49,6 +49,20 @@ export interface UserProfileView {
   warehouseIds: string[];
 }
 
+export interface CreateBusinessWithOwnerData {
+  businessName: string;
+  phone?: string;
+  status: string;
+  ownerName: string;
+  email: string;
+  passwordHash: string;
+}
+
+export interface CreateBusinessWithOwnerResult {
+  businessId: string;
+  userId: string;
+}
+
 export abstract class AuthRepository {
   /** Non-deleted user by (normalized) email, with capability overrides, or null. */
   abstract findUserByEmail(email: string): Promise<AuthUserView | null>;
@@ -77,4 +91,9 @@ export abstract class AuthRepository {
 
   /** Bump the user's token version → invalidates any outstanding access tokens. */
   abstract bumpTokenVersion(userId: string): Promise<void>;
+
+  /** Create a new Business (typically `pending`) with its owner User, atomically. */
+  abstract createBusinessWithOwner(
+    data: CreateBusinessWithOwnerData,
+  ): Promise<CreateBusinessWithOwnerResult>;
 }

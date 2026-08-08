@@ -199,6 +199,27 @@ export class AuthService {
     }
   }
 
+  /** Self-serve signup. Creates a pending Business + owner User. */
+  async register(input: {
+    businessName: string;
+    ownerName: string;
+    email: string;
+    phone?: string | undefined;
+    password: string;
+  }): Promise<{ status: string }> {
+    await this.ensureNoConflict(input.email);
+    const passwordHash = await bcrypt.hash(input.password, this.env.BCRYPT_COST);
+    await this.authRepo.createBusinessWithOwner({
+      businessName: input.businessName,
+      ...(input.phone !== undefined ? { phone: input.phone } : {}),
+      status: 'pending',
+      ownerName: input.ownerName,
+      email: input.email.toLowerCase(),
+      passwordHash,
+    });
+    return { status: 'pending' };
+  }
+
   private hashRefresh(token: string): string {
     return createHash('sha256').update(token).digest('hex');
   }

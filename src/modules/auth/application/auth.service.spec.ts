@@ -17,6 +17,7 @@ const mockRepo = (): jest.Mocked<AuthRepository> =>
     revokeSessionByTokenHash: jest.fn(),
     revokeAllSessions: jest.fn(),
     bumpTokenVersion: jest.fn(),
+    createBusinessWithOwner: jest.fn(),
   }) as never;
 
 const mockJwt = () => ({ signAsync: jest.fn().mockResolvedValue('tok') }) as never;
@@ -79,6 +80,44 @@ describe('AuthService', () => {
       const svc = new AuthService(repo, mockJwt(), mockPerms(), mockEnv);
       const result = await svc.login('test@example.com', 'pass1234', meta);
       expect(result.tokens.accessToken).toBe('tok');
+    });
+  });
+
+  describe('register', () => {
+    it('throws ConflictError when email already in use', async () => {
+      const repo = mockRepo();
+      repo.emailInUse.mockResolvedValue(true);
+      const svc = new AuthService(repo, mockJwt(), mockPerms(), mockEnv);
+      await expect(
+        svc.register({
+          businessName: 'Test Biz',
+          ownerName: 'Owner',
+          email: 'taken@example.com',
+          password: 'pass1234',
+        }),
+      ).rejects.toBeInstanceOf(ConflictError);
+    });
+
+    it('creates business with pending status and owner user', async () => {
+      const repo = mockRepo();
+      repo.emailInUse.mockResolvedValue(false);
+      repo.createBusinessWithOwner = jest.fn().mockResolvedValue({ businessId: 'b1', userId: 'u1' });
+      const svc = new AuthService(repo, mockJwt(), mockPerms(), mockEnv);
+      const result = await svc.register({
+        businessName: 'New Biz',
+        ownerName: 'Owner',
+        email: 'new@example.com',
+        password: 'pass1234',
+      });
+      expect(result).toEqual({ status: 'pending' });
+      expect(repo.createBusinessWithOwner).toHaveBeenCalledWith(
+        expect.objectContaining({
+          businessName: 'New Biz',
+          status: 'pending',
+          ownerName: 'Owner',
+          email: 'new@example.com',
+        }),
+      );
     });
   });
 });

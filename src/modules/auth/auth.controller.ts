@@ -16,6 +16,7 @@ import {
   type RefreshInput,
   RefreshSchema,
 } from './dto/login.dto';
+import { type RegisterInput, RegisterSchema } from './dto/register.dto';
 
 @ApiTags('auth')
 @Controller({ path: 'auth', version: '1' })
@@ -43,6 +44,15 @@ export class AuthController {
       user: result.user,
       capabilities: result.capabilities,
     };
+  }
+
+  @Public()
+  @Post('register')
+  @HttpCode(201)
+  @UsePipes(new ZodValidationPipe(RegisterSchema))
+  @ApiOperation({ summary: 'Self-serve signup. Creates a pending Business + owner User.' })
+  async register(@Body() body: RegisterInput): Promise<{ status: string }> {
+    return this.auth.register(body);
   }
 
   @Public()

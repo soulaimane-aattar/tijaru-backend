@@ -1,9 +1,12 @@
 import { Injectable } from '@nestjs/common';
+import { BuiltInRole, BusinessStatus } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma.service';
 import {
   AuthRepository,
   type AuthUserView,
+  type CreateBusinessWithOwnerData,
+  type CreateBusinessWithOwnerResult,
   type CreateSessionData,
   type SessionView,
   type UserProfileView,
@@ -105,6 +108,30 @@ export class PrismaAuthRepository extends AuthRepository {
     await this.prisma.user.update({
       where: { id: userId },
       data: { tokenVersion: { increment: 1 } },
+    });
+  }
+
+  async createBusinessWithOwner(
+    data: CreateBusinessWithOwnerData,
+  ): Promise<CreateBusinessWithOwnerResult> {
+    return this.prisma.$transaction(async (tx) => {
+      const business = await tx.business.create({
+        data: {
+          name: data.businessName,
+          ...(data.phone !== undefined ? { phone: data.phone } : {}),
+          status: data.status as BusinessStatus,
+        },
+      });
+      const user = await tx.user.create({
+        data: {
+          businessId: business.id,
+          name: data.ownerName,
+          email: data.email,
+          passwordHash: data.passwordHash,
+          role: BuiltInRole.owner,
+        },
+      });
+      return { businessId: business.id, userId: user.id };
     });
   }
 }
