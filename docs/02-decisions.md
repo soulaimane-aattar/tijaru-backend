@@ -2,6 +2,26 @@
 
 > One entry per significant decision. Newest on top. Format: date · decision · why · rejected alternatives.
 
+## D-014 — 2026-08-09 · Guard execution order: JWT → Subscription → Module → Limit → Caps
+- **Decision:** Five global guards registered via `APP_GUARD` in strict order. Super admin (`type: 'platform-admin'` in JWT) bypasses all except JwtAuthGuard.
+- **Why:** Each guard depends on the previous: Subscription needs `req.user` from JWT, Module needs businessId, Limit needs businessId, Caps needs roleCaps. Super admin bypass at each layer avoids DB lookups for PA requests.
+- **Rejected:** single mega-guard (hard to test, violates SRP), middleware-based checks (no access to route metadata/decorators).
+
+## D-013 — 2026-08-09 · Module gating via existing BusinessModule table + `@RequiresModule` decorator
+- **Decision:** Use existing `BusinessModule` table (businessId+moduleId+active). New `@RequiresModule('pos')` class/method decorator + `ModuleGuard`. Missing row = disabled (default off, super admin enables).
+- **Why:** Table already exists in schema. Decorator pattern matches existing `@RequireCap()`. Per-business granularity without schema changes.
+- **Rejected:** capability-based module flags (conflates roles with features), env-var feature flags (no per-business control).
+
+## D-012 — 2026-08-09 · Subscription model: flat fields on Business, no separate table
+- **Decision:** Add `plan` (enum), `subscriptionStart`, `subscriptionEnd`, `maxUsers`, `maxProducts`, `maxWarehouses` directly to Business model. Super admin sets duration manually (1mo/3mo/6mo/1yr). No payment integration.
+- **Why:** Simple duration-based model. No billing history needed. Flat fields avoid joins on every auth check. Can always extract to a table later if payment integration added.
+- **Rejected:** separate Subscription table with history (premature for manual management), Stripe/payment integration (not needed yet), per-module pricing (too complex for current scale).
+
+## D-011 — 2026-08-09 · Unified login: single endpoint, check PlatformAdmin first then User
+- **Decision:** Single `POST /auth/login` endpoint. Backend checks PlatformAdmin table by email first; if found + password matches, issue JWT with `type: 'platform-admin'`. Otherwise check User table (existing flow). PlatformAdmin stays as separate table from User.
+- **Why:** Single login UX eliminates user confusion (previous 401 when PA tried `/login`). Separate table preserves clean tenant isolation — PA has no businessId, never appears in tenant queries. PA-first check means PA emails are never leaked via "wrong endpoint" errors.
+- **Rejected:** merged PA into User table (contaminates tenant queries, requires null businessId handling everywhere), separate login endpoints (confusing UX, caused the original 401 bug).
+
 ## D-010 — 2026-08-03 · Three repos: backend+ocr, web, mobile — **supersedes D-009**
 - **Decision:** `backend` repo (root = the old `backend/`, with `ocr-service/` nested inside it and all product docs), `web` repo, `mobile` repo. Reverses D-009's single repo, decided the same day.
 - **Why:** Deployment coupling is the real boundary, and it runs backend↔ocr, not backend↔frontends. `docker-compose.prod.yml` builds both from one context, so they must clone together; web deploys to Cloudflare Pages and mobile to EAS, each with an independent release cadence and its own CI needs. Docs ride with the backend because `DEPLOY.prod.md` and the progress log track it most closely.

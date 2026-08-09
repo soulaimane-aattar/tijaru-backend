@@ -14,11 +14,18 @@
 | 6 | Mobile bootstrap + login + dashboard | mobile | ✅ retro — (auth)/(tabs) present |
 | 7 | Products vertical slice | web + mobile | ✅ retro — inventory screens present |
 | 8+ | POS, customers, suppliers, purchase-orders, admin, tenancy | all | 🟡 in progress — screens exist, gates unverified |
+| 10 | Unified auth + subscriptions + super admin panel | backend + web | 🟡 design approved, plan written — implementation pending |
 | 9 | Dépenses + receipt OCR | backend + ocr-service + web | ✅ migration applied, 196 unit + 132 e2e green, live OCR verified in browser |
 
 > **retro** = phase completed before this log existed; status inferred from code, gate not re-verified. First future session touching a retro phase: verify its gate, then flip to plain ✅.
 
 ## Log
+
+### 2026-08-09 — Unified auth + subscriptions + super admin panel: design + plan
+- **Step:** Brainstormed, designed, and wrote full implementation plan for unified auth system. Design spec at `docs/superpowers/specs/2026-08-09-unified-auth-subscriptions-design.md`. Implementation plan at `docs/superpowers/plans/2026-08-09-unified-auth-subscriptions.md`.
+- **Result:** ✅ Design approved by user. Plan covers 12 tasks: (1) Prisma migration — subscription fields on Business, (2) Unified login — single `/auth/login` checks PlatformAdmin then User, (3) SubscriptionGuard — block expired businesses, (4) ModuleGuard + `@RequiresModule` decorator, (5) LimitGuard — enforce maxUsers/Products/Warehouses, (6) Super admin API endpoints — CRUD + subscription + module management, (7) Web unified auth store + login redirect, (8) Web super admin panel pages — dashboard + business list/detail, (9) Registration email conflict check + default module seeding, (10) `/auth/me` includes modules + subscription, (11) Frontend module gating + subscription expired screen, (12) Deploy migration + seed existing businesses.
+- **Decisions:** D-011 unified login approach (check PA table first, fall through to User), D-012 subscription model (flat fields on Business, no separate table), D-013 module gating (existing BusinessModule table + `@RequiresModule` + ModuleGuard), D-014 guard order (JWT → Subscription → Module → Limit → Caps, super admin bypasses all except JWT)
+- **Next:** Begin Task 1 — Prisma migration to add subscription fields to Business model
 
 ### 2026-08-08 — Task 3: `POST /auth/register` self-serve signup
 - **Step:** Added self-serve signup to the auth module (part of the signup+approval flow, task 3 of 3 planned backend tasks). New `RegisterSchema` Zod DTO (`src/modules/auth/dto/register.dto.ts`); `AuthRepository.createBusinessWithOwner` added to the abstract port and implemented in `PrismaAuthRepository` via `prisma.$transaction` (creates `Business` with `status: pending` + owner `User` in one transaction, using `BuiltInRole`/`BusinessStatus` enums); `AuthService.register()` (calls `ensureNoConflict`, hashes password with bcrypt, returns `{ status: 'pending' }`); `AuthController` gained `@Public() POST /auth/register` (`@HttpCode(201)`).
