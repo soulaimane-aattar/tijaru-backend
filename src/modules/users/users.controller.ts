@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, UsePipes } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
+import { EnforceLimit } from '../../common/decorators/enforce-limit.decorator';
 import { RequireCap } from '../../common/decorators/require-cap.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 
@@ -32,6 +33,7 @@ export class UsersController {
 
   @Post()
   @RequireCap('users.manage')
+  @EnforceLimit('users')
   @UsePipes(new ZodValidationPipe(CreateUserSchema))
   create(@Body() body: CreateUserInput): Promise<unknown> {
     return this.users.create(body);

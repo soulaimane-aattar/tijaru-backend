@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
+import { EnforceLimit } from '../../common/decorators/enforce-limit.decorator';
 import { RequireCap } from '../../common/decorators/require-cap.decorator';
 import { StripPurchasePriceInterceptor } from '../../common/interceptors/strip-purchase-price.interceptor';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
@@ -50,6 +51,7 @@ export class ProductsController {
 
   @Post()
   @RequireCap('products.create')
+  @EnforceLimit('products')
   @UsePipes(new ZodValidationPipe(CreateProductSchema))
   create(@Body() body: CreateProductInput): Promise<unknown> {
     return this.products.create(body);
