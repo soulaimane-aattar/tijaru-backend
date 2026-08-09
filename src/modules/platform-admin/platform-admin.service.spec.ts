@@ -1,12 +1,14 @@
 import * as bcrypt from 'bcrypt';
 
-import { UnauthorizedError } from '../../common/errors';
+import { NotFoundError, UnauthorizedError } from '../../common/errors';
 
 import { PlatformAdminService } from './platform-admin.service';
 
 type MockPrisma = {
   platformAdmin: { findUnique: jest.Mock };
-  business: { findMany: jest.Mock; update: jest.Mock; findUnique: jest.Mock };
+  business: { findMany: jest.Mock; update: jest.Mock; findUnique: jest.Mock; count: jest.Mock };
+  businessModule: { upsert: jest.Mock };
+  $transaction: jest.Mock;
 };
 
 const mockPrisma = (): MockPrisma => ({
@@ -17,7 +19,12 @@ const mockPrisma = (): MockPrisma => ({
     findMany: jest.fn(),
     update: jest.fn(),
     findUnique: jest.fn(),
+    count: jest.fn(),
   },
+  businessModule: {
+    upsert: jest.fn(),
+  },
+  $transaction: jest.fn(async (ops: unknown[]) => Promise.all(ops)),
 });
 
 const mockJwt = () => ({ signAsync: jest.fn().mockResolvedValue('pa-token') }) as never;
@@ -64,5 +71,159 @@ describe('PlatformAdminService', () => {
     await expect(svc.login('ghost@tijaru.com', 'pass')).rejects.toBeInstanceOf(
       UnauthorizedError,
     );
+  });
+
+  describe('getBusinessDetail', () => {
+    it('returns business with owner and modules', async () => {
+      const prisma = mockPrisma();
+      prisma.business.findUnique.mockResolvedValue({ id: 'b1', users: [], modules: [] });
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv);
+      const result = await svc.getBusinessDetail('b1');
+      expect(result).toEqual({ id: 'b1', users: [], modules: [] });
+    });
+
+    it('throws NotFoundError when business does not exist', async () => {
+      const prisma = mockPrisma();
+      prisma.business.findUnique.mockResolvedValue(null);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv);
+      await expect(svc.getBusinessDetail('missing')).rejects.toBeInstanceOf(NotFoundError);
+    });
+  });
+
+  describe('updateBusiness', () => {
+    it('updates limits when business exists', async () => {
+      const prisma = mockPrisma();
+      prisma.business.findUnique.mockResolvedValue({ id: 'b1' });
+      prisma.business.update.mockResolvedValue({ id: 'b1', maxUsers: 10 });
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv);
+      const result = await svc.updateBusiness('b1', { maxUsers: 10 });
+      expect(prisma.business.update).toHaveBeenCalledWith({
+        where: { id: 'b1' },
+        data: { maxUsers: 10 },
+      });
+      expect(result).toEqual({ id: 'b1', maxUsers: 10 });
+    });
+
+    it('throws NotFoundError when business does not exist', async () => {
+      const prisma = mockPrisma();
+      prisma.business.findUnique.mockResolvedValue(null);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv);
+      await expect(svc.updateBusiness('missing', { maxUsers: 10 })).rejects.toBeInstanceOf(
+        NotFoundError,
+      );
+    });
+  });
+
+  describe('extendSubscription', () => {
+    it('sets plan active and computes subscription end from duration', async () => {
+      const prisma = mockPrisma();
+      prisma.business.findUnique.mockResolvedValue({ id: 'b1' });
+      prisma.business.update.mockImplementation(({ data }: { data: unknown }) => ({
+        id: 'b1',
+        ...(data as object),
+      }));
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv);
+      const before = Date.now();
+      const result = (await svc.extendSubscription('b1', '1mo')) as {
+        plan: string;
+        subscriptionStart: Date;
+        subscriptionEnd: Date;
+      };
+      expect(result.plan).toBe('active');
+      const deltaDays =
+        (result.subscriptionEnd.getTime() - result.subscriptionStart.getTime()) / 86_400_000;
+      expect(deltaDays).toBeCloseTo(30, 5);
+      expect(result.subscriptionStart.getTime()).toBeGreaterThanOrEqual(before);
+    });
+
+    it('throws NotFoundError when business does not exist', async () => {
+      const prisma = mockPrisma();
+      prisma.business.findUnique.mockResolvedValue(null);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv);
+      await expect(svc.extendSubscription('missing', '1yr')).rejects.toBeInstanceOf(
+        NotFoundError,
+      );
+    });
+  });
+
+  describe('suspendBusiness', () => {
+    it('sets status and plan to suspended', async () => {
+      const prisma = mockPrisma();
+      prisma.business.findUnique.mockResolvedValue({ id: 'b1' });
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv);
+      await svc.suspendBusiness('b1');
+      expect(prisma.business.update).toHaveBeenCalledWith({
+        where: { id: 'b1' },
+        data: { status: 'suspended', plan: 'suspended' },
+      });
+    });
+
+    it('throws NotFoundError when business does not exist', async () => {
+      const prisma = mockPrisma();
+      prisma.business.findUnique.mockResolvedValue(null);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv);
+      await expect(svc.suspendBusiness('missing')).rejects.toBeInstanceOf(NotFoundError);
+    });
+  });
+
+  describe('activateBusiness', () => {
+    it('sets status and plan to active', async () => {
+      const prisma = mockPrisma();
+      prisma.business.findUnique.mockResolvedValue({ id: 'b1' });
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv);
+      await svc.activateBusiness('b1');
+      expect(prisma.business.update).toHaveBeenCalledWith({
+        where: { id: 'b1' },
+        data: { status: 'active', plan: 'active' },
+      });
+    });
+
+    it('throws NotFoundError when business does not exist', async () => {
+      const prisma = mockPrisma();
+      prisma.business.findUnique.mockResolvedValue(null);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv);
+      await expect(svc.activateBusiness('missing')).rejects.toBeInstanceOf(NotFoundError);
+    });
+  });
+
+  describe('updateModules', () => {
+    it('upserts each module within a transaction', async () => {
+      const prisma = mockPrisma();
+      prisma.business.findUnique.mockResolvedValue({ id: 'b1' });
+      prisma.businessModule.upsert.mockResolvedValue({});
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv);
+      await svc.updateModules('b1', { pos: true, invoicing: false });
+      expect(prisma.businessModule.upsert).toHaveBeenCalledTimes(2);
+      expect(prisma.businessModule.upsert).toHaveBeenCalledWith({
+        where: { businessId_moduleId: { businessId: 'b1', moduleId: 'pos' } },
+        update: { active: true },
+        create: { businessId: 'b1', moduleId: 'pos', active: true },
+      });
+      expect(prisma.$transaction).toHaveBeenCalled();
+    });
+
+    it('throws NotFoundError when business does not exist', async () => {
+      const prisma = mockPrisma();
+      prisma.business.findUnique.mockResolvedValue(null);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv);
+      await expect(svc.updateModules('missing', { pos: true })).rejects.toBeInstanceOf(
+        NotFoundError,
+      );
+    });
+  });
+
+  describe('getStats', () => {
+    it('aggregates counts by plan and status', async () => {
+      const prisma = mockPrisma();
+      prisma.business.count
+        .mockResolvedValueOnce(10) // total
+        .mockResolvedValueOnce(6) // active
+        .mockResolvedValueOnce(1) // expired
+        .mockResolvedValueOnce(2) // pending
+        .mockResolvedValueOnce(1); // suspended
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv);
+      const result = await svc.getStats();
+      expect(result).toEqual({ total: 10, active: 6, expired: 1, pending: 2, suspended: 1 });
+    });
   });
 });
