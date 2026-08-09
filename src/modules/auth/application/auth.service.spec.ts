@@ -19,6 +19,8 @@ const mockRepo = (): jest.Mocked<AuthRepository> =>
     revokeAllSessions: jest.fn(),
     bumpTokenVersion: jest.fn(),
     createBusinessWithOwner: jest.fn(),
+    findBusinessById: jest.fn(),
+    findBusinessModules: jest.fn(),
   }) as never;
 
 const mockJwt = () => ({ signAsync: jest.fn().mockResolvedValue('tok') }) as never;
@@ -253,6 +255,67 @@ describe('AuthService', () => {
       repo.recordLogin.mockResolvedValue(undefined);
       const loginResult = await svc.login('owner@test.com', 'pass1234', meta);
       expect(loginResult.tokens.accessToken).toBeTruthy();
+    });
+  });
+
+  describe('me', () => {
+    const profile = {
+      id: 'u1',
+      name: 'Test',
+      email: 'test@example.com',
+      phone: null,
+      role: 'owner',
+      active: true,
+      lastLogin: null,
+      warehouses: [],
+      warehouseIds: [],
+    };
+
+    it('returns null when profile is not found', async () => {
+      const repo = mockRepo();
+      repo.findProfile.mockResolvedValue(null);
+      const svc = new AuthService(repo, mockJwt(), mockPerms(), mockEnv);
+      const result = await svc.me('missing', 'owner', {}, 'b1');
+      expect(result).toBeNull();
+    });
+
+    it('includes active modules and subscription info for a business user', async () => {
+      const repo = mockRepo();
+      repo.findProfile.mockResolvedValue(profile);
+      repo.findBusinessById.mockResolvedValue({
+        plan: 'pro',
+        subscriptionEnd: new Date('2026-12-31'),
+      });
+      repo.findBusinessModules.mockResolvedValue([
+        { moduleId: 'pos', active: true },
+        { moduleId: 'reports', active: false },
+      ]);
+      const svc = new AuthService(repo, mockJwt(), mockPerms(), mockEnv);
+      const result = await svc.me('u1', 'owner', {}, 'b1');
+      expect(result).toMatchObject({
+        modules: ['pos'],
+        subscription: { plan: 'pro', end: new Date('2026-12-31') },
+      });
+    });
+
+    it('returns empty modules and null subscription when business is not found', async () => {
+      const repo = mockRepo();
+      repo.findProfile.mockResolvedValue(profile);
+      repo.findBusinessById.mockResolvedValue(null);
+      repo.findBusinessModules.mockResolvedValue([]);
+      const svc = new AuthService(repo, mockJwt(), mockPerms(), mockEnv);
+      const result = await svc.me('u1', 'owner', {}, 'b1');
+      expect(result).toMatchObject({ modules: [], subscription: null });
+    });
+
+    it('returns empty modules and null subscription for super admin (no businessId)', async () => {
+      const repo = mockRepo();
+      repo.findProfile.mockResolvedValue(profile);
+      const svc = new AuthService(repo, mockJwt(), mockPerms(), mockEnv);
+      const result = await svc.me('u1', 'owner', {}, '');
+      expect(result).toMatchObject({ modules: [], subscription: null });
+      expect(repo.findBusinessById).not.toHaveBeenCalled();
+      expect(repo.findBusinessModules).not.toHaveBeenCalled();
     });
   });
 });

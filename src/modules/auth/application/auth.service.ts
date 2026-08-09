@@ -197,11 +197,17 @@ export class AuthService {
     return { accessToken, refreshToken, refreshExpiresAt };
   }
 
-  /** Current profile + effective capabilities (role caps merged with per-user overrides). */
+  /**
+   * Current profile + effective capabilities (role caps merged with per-user
+   * overrides), plus the business's active modules and subscription info.
+   * `businessId` is `''` for super-admin callers — module/subscription
+   * lookups are skipped in that case.
+   */
   async me(
     userId: string,
     role: RoleId,
     overrides: Record<string, boolean>,
+    businessId: string,
   ): Promise<unknown | null> {
     const profile = await this.authRepo.findProfile(userId);
     if (!profile) return null;
@@ -211,7 +217,22 @@ export class AuthService {
       if (granted) effective.add(cap as CapabilityId);
       else effective.delete(cap as CapabilityId);
     }
-    return { ...profile, capabilities: [...effective] };
+
+    if (!businessId) {
+      return { ...profile, capabilities: [...effective], modules: [], subscription: null };
+    }
+
+    const [business, modules] = await Promise.all([
+      this.authRepo.findBusinessById(businessId),
+      this.authRepo.findBusinessModules(businessId),
+    ]);
+
+    return {
+      ...profile,
+      capabilities: [...effective],
+      modules: modules.filter((m) => m.active).map((m) => m.moduleId),
+      subscription: business ? { plan: business.plan, end: business.subscriptionEnd } : null,
+    };
   }
 
   async ensureNoConflict(email: string): Promise<void> {

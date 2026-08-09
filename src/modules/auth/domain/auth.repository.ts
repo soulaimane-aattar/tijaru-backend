@@ -63,6 +63,18 @@ export interface CreateBusinessWithOwnerResult {
   userId: string;
 }
 
+/** Business plan/subscription fields surfaced on `/auth/me`. */
+export interface BusinessSubscriptionView {
+  plan: string;
+  subscriptionEnd: Date | null;
+}
+
+/** Business module activation flag. */
+export interface BusinessModuleView {
+  moduleId: string;
+  active: boolean;
+}
+
 export abstract class AuthRepository {
   /** Non-deleted user by (normalized) email, with capability overrides, or null. */
   abstract findUserByEmail(email: string): Promise<AuthUserView | null>;
@@ -105,4 +117,10 @@ export abstract class AuthRepository {
   abstract createBusinessWithOwner(
     data: CreateBusinessWithOwnerData,
   ): Promise<CreateBusinessWithOwnerResult>;
+
+  /** Plan + subscription end date of the business, or null when not found. */
+  abstract findBusinessById(businessId: string): Promise<BusinessSubscriptionView | null>;
+
+  /** Module activation flags for the business. */
+  abstract findBusinessModules(businessId: string): Promise<BusinessModuleView[]>;
 }

@@ -88,9 +88,9 @@ export class AuthController {
 
   @Get('me')
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Current user + effective capabilities.' })
+  @ApiOperation({ summary: 'Current user profile + capabilities + modules + subscription.' })
   me(@CurrentUser() user: AuthUser): Promise<unknown> {
-    return this.auth.me(user.id, user.role, user.overrides);
+    return this.auth.me(user.id, user.role, user.overrides, user.businessId);
   }
 
   @Public()

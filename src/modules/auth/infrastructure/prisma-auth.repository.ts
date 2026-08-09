@@ -5,6 +5,8 @@ import { PrismaService } from '../../../common/prisma.service';
 import {
   AuthRepository,
   type AuthUserView,
+  type BusinessModuleView,
+  type BusinessSubscriptionView,
   type CreateBusinessWithOwnerData,
   type CreateBusinessWithOwnerResult,
   type CreateSessionData,
@@ -144,6 +146,20 @@ export class PrismaAuthRepository extends AuthRepository {
         })),
       });
       return { businessId: business.id, userId: user.id };
+    });
+  }
+
+  async findBusinessById(businessId: string): Promise<BusinessSubscriptionView | null> {
+    return this.prisma.business.findUnique({
+      where: { id: businessId },
+      select: { plan: true, subscriptionEnd: true },
+    });
+  }
+
+  async findBusinessModules(businessId: string): Promise<BusinessModuleView[]> {
+    return this.prisma.businessModule.findMany({
+      where: { businessId },
+      select: { moduleId: true, active: true },
     });
   }
 }
