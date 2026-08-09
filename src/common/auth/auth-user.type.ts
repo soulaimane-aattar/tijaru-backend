@@ -10,4 +10,5 @@ export type AuthUser = {
   /** Per-user grants/denies that override role caps. */
   overrides: Partial<Record<CapabilityId, boolean>>;
   device?: string | undefined;
+  isSuperAdmin?: boolean;
 };

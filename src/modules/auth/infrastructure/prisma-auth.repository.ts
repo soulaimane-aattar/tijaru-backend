@@ -27,6 +27,10 @@ export class PrismaAuthRepository extends AuthRepository {
     return { ...user, businessStatus: user.business.status };
   }
 
+  async findPlatformAdminByEmail(email: string) {
+    return this.prisma.platformAdmin.findUnique({ where: { email } });
+  }
+
   async findProfile(userId: string): Promise<UserProfileView | null> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },

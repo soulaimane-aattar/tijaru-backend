@@ -67,6 +67,15 @@ export abstract class AuthRepository {
   /** Non-deleted user by (normalized) email, with capability overrides, or null. */
   abstract findUserByEmail(email: string): Promise<AuthUserView | null>;
 
+  /** Platform admin by (normalized) email, or null. */
+  abstract findPlatformAdminByEmail(email: string): Promise<{
+    id: string;
+    email: string;
+    name: string;
+    passwordHash: string;
+    tokenVersion: number;
+  } | null>;
+
   /** Current profile of the user (id, contact, role, assigned warehouses), or null. */
   abstract findProfile(userId: string): Promise<UserProfileView | null>;
 

@@ -29,6 +29,7 @@ export class CapsGuard implements CanActivate {
 
     const user = context.switchToHttp().getRequest<{ user?: AuthUser }>().user;
     if (!user) throw new UnauthorizedError();
+    if (user.isSuperAdmin) return true;
 
     for (const cap of required) {
       if (!userHasCap(user, cap)) throw new ForbiddenError(cap);

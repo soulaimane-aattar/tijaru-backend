@@ -30,8 +30,15 @@ export class AuthController {
   @Post('login')
   @HttpCode(200)
   @UsePipes(new ZodValidationPipe(LoginSchema))
-  @ApiOperation({ summary: 'Email + password login. Returns access + refresh tokens.' })
+  @ApiOperation({ summary: 'Unified login — checks platform admin first, then business user.' })
   async login(@Body() body: LoginInput, @Req() req: Request): Promise<unknown> {
+    // Try platform admin first; falls through silently on no-match/wrong-password.
+    const pa = await this.auth.loginPlatformAdmin(body.email, body.password);
+    if (pa) {
+      return { accessToken: pa.accessToken, type: 'platform-admin' };
+    }
+
+    // Fall through to business user login
     const result = await this.auth.login(body.email, body.password, {
       ip: req.ip,
       userAgent: req.headers['user-agent'],
@@ -43,6 +50,7 @@ export class AuthController {
       refreshExpiresAt: result.tokens.refreshExpiresAt,
       user: result.user,
       capabilities: result.capabilities,
+      type: 'user',
     };
   }
 

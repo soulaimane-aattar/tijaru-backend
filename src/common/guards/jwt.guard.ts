@@ -5,7 +5,7 @@ import type { Request } from 'express';
 
 import { ENV_TOKEN } from '../../config/config.module';
 import type { Env } from '../../config/env';
-import type { CapabilityId, RoleId } from '../../domain/permissions';
+import { CAPABILITY_IDS, type CapabilityId, type RoleId } from '../../domain/permissions';
 import type { AuthUser } from '../auth/auth-user.type';
 import { UnauthorizedError } from '../errors';
 
@@ -14,9 +14,10 @@ export const Public = (): MethodDecorator & ClassDecorator => SetMetadata(IS_PUB
 
 type AccessJwtPayload = {
   sub: string;
-  role: RoleId;
+  type?: 'platform-admin' | 'user';
+  role?: RoleId;
   ver: number;
-  caps: CapabilityId[];
+  caps?: CapabilityId[];
   overrides?: Partial<Record<CapabilityId, boolean>>;
   bid?: string;
 };
@@ -52,15 +53,28 @@ export class JwtAuthGuard implements CanActivate {
       throw new UnauthorizedError('Invalid or expired token');
     }
 
-    request.user = {
-      id: payload.sub,
-      businessId: payload.bid ?? '',
-      role: payload.role,
-      tokenVersion: payload.ver,
-      roleCaps: payload.caps ?? [],
-      overrides: payload.overrides ?? {},
-      device: request.headers['user-agent'],
-    };
+    if (payload.type === 'platform-admin') {
+      request.user = {
+        id: payload.sub,
+        businessId: '',
+        role: 'owner' as RoleId,
+        tokenVersion: payload.ver,
+        roleCaps: [...CAPABILITY_IDS],
+        overrides: {},
+        isSuperAdmin: true,
+        device: request.headers['user-agent'],
+      };
+    } else {
+      request.user = {
+        id: payload.sub,
+        businessId: payload.bid ?? '',
+        role: payload.role!,
+        tokenVersion: payload.ver,
+        roleCaps: payload.caps ?? [],
+        overrides: payload.overrides ?? {},
+        device: request.headers['user-agent'],
+      };
+    }
     return true;
   }
 }

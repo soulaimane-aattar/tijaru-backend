@@ -8,6 +8,7 @@ import { AuthService } from './auth.service';
 const mockRepo = (): jest.Mocked<AuthRepository> =>
   ({
     findUserByEmail: jest.fn(),
+    findPlatformAdminByEmail: jest.fn(),
     findProfile: jest.fn(),
     emailInUse: jest.fn(),
     recordLogin: jest.fn(),
@@ -80,6 +81,83 @@ describe('AuthService', () => {
       const svc = new AuthService(repo, mockJwt(), mockPerms(), mockEnv);
       const result = await svc.login('test@example.com', 'pass1234', meta);
       expect(result.tokens.accessToken).toBe('tok');
+    });
+  });
+
+  describe('loginPlatformAdmin', () => {
+    it('returns platform-admin token when credentials match', async () => {
+      const repo = mockRepo();
+      const passwordHash = await bcrypt.hash('adminpass1', 4);
+      repo.findPlatformAdminByEmail.mockResolvedValue({
+        id: 'pa1',
+        email: 'admin@tijaru.com',
+        name: 'Super Admin',
+        passwordHash,
+        tokenVersion: 0,
+      });
+      const svc = new AuthService(repo, mockJwt(), mockPerms(), mockEnv);
+      const result = await svc.loginPlatformAdmin('admin@tijaru.com', 'adminpass1');
+      expect(result).toEqual({ accessToken: 'tok', type: 'platform-admin' });
+    });
+
+    it('returns null when no platform admin matches the email', async () => {
+      const repo = mockRepo();
+      repo.findPlatformAdminByEmail.mockResolvedValue(null);
+      const svc = new AuthService(repo, mockJwt(), mockPerms(), mockEnv);
+      const result = await svc.loginPlatformAdmin('unknown@tijaru.com', 'whatever');
+      expect(result).toBeNull();
+    });
+
+    it('returns null (not throw) when the password is wrong, so caller can fall through', async () => {
+      const repo = mockRepo();
+      const passwordHash = await bcrypt.hash('adminpass1', 4);
+      repo.findPlatformAdminByEmail.mockResolvedValue({
+        id: 'pa1',
+        email: 'admin@tijaru.com',
+        name: 'Super Admin',
+        passwordHash,
+        tokenVersion: 0,
+      });
+      const svc = new AuthService(repo, mockJwt(), mockPerms(), mockEnv);
+      const result = await svc.loginPlatformAdmin('admin@tijaru.com', 'wrong-password');
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('unified login fallthrough (business user)', () => {
+    it('unknown email in both platform-admin and user tables rejects with 401', async () => {
+      const repo = mockRepo();
+      repo.findPlatformAdminByEmail.mockResolvedValue(null);
+      repo.findUserByEmail.mockResolvedValue(null);
+      const svc = new AuthService(repo, mockJwt(), mockPerms(), mockEnv);
+      await expect(svc.loginPlatformAdmin('nobody@test.com', 'x')).resolves.toBeNull();
+      await expect(svc.login('nobody@test.com', 'x', meta)).rejects.toBeInstanceOf(
+        UnauthorizedError,
+      );
+    });
+
+    it('falls through to user login when platform-admin password is wrong', async () => {
+      const repo = mockRepo();
+      const paHash = await bcrypt.hash('adminpass1', 4);
+      repo.findPlatformAdminByEmail.mockResolvedValue({
+        id: 'pa1',
+        email: 'shared@test.com',
+        name: 'Admin',
+        passwordHash: paHash,
+        tokenVersion: 0,
+      });
+      const user = makeUser({ email: 'shared@test.com' });
+      user.passwordHash = await bcrypt.hash('userpass1', 4);
+      repo.findUserByEmail.mockResolvedValue(user);
+      repo.createSession.mockResolvedValue(undefined);
+      repo.recordLogin.mockResolvedValue(undefined);
+      const svc = new AuthService(repo, mockJwt(), mockPerms(), mockEnv);
+
+      const paResult = await svc.loginPlatformAdmin('shared@test.com', 'wrong-password');
+      expect(paResult).toBeNull();
+
+      const userResult = await svc.login('shared@test.com', 'userpass1', meta);
+      expect(userResult.tokens.accessToken).toBe('tok');
     });
   });
 
