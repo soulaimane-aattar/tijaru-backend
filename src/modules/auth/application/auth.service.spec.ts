@@ -176,6 +176,28 @@ describe('AuthService', () => {
       ).rejects.toBeInstanceOf(ConflictError);
     });
 
+    it('throws ConflictError when email belongs to a platform admin', async () => {
+      const repo = mockRepo();
+      repo.emailInUse.mockResolvedValue(false);
+      repo.findPlatformAdminByEmail.mockResolvedValue({
+        id: 'pa1',
+        email: 'admin@tijaru.com',
+        name: 'Super Admin',
+        passwordHash: 'hash',
+        tokenVersion: 0,
+      });
+      const svc = new AuthService(repo, mockJwt(), mockPerms(), mockEnv);
+      await expect(
+        svc.register({
+          businessName: 'Test Biz',
+          ownerName: 'Owner',
+          email: 'admin@tijaru.com',
+          password: 'pass1234',
+        }),
+      ).rejects.toBeInstanceOf(ConflictError);
+      expect(repo.createBusinessWithOwner).not.toHaveBeenCalled();
+    });
+
     it('creates business with pending status and owner user', async () => {
       const repo = mockRepo();
       repo.emailInUse.mockResolvedValue(false);

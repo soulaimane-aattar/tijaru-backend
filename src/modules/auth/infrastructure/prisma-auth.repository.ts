@@ -135,6 +135,14 @@ export class PrismaAuthRepository extends AuthRepository {
           role: BuiltInRole.owner,
         },
       });
+      const defaultModules = ['pos', 'expenses', 'purchase-orders', 'inventory', 'reports'];
+      await tx.businessModule.createMany({
+        data: defaultModules.map((moduleId) => ({
+          businessId: business.id,
+          moduleId,
+          active: true,
+        })),
+      });
       return { businessId: business.id, userId: user.id };
     });
   }

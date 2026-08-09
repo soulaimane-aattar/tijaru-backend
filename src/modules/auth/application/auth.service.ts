@@ -215,7 +215,11 @@ export class AuthService {
   }
 
   async ensureNoConflict(email: string): Promise<void> {
-    if (await this.authRepo.emailInUse(email.toLowerCase())) {
+    const lower = email.toLowerCase();
+    if (await this.authRepo.emailInUse(lower)) {
+      throw new ConflictError('Email already in use');
+    }
+    if (await this.authRepo.findPlatformAdminByEmail(lower)) {
       throw new ConflictError('Email already in use');
     }
   }
