@@ -23,6 +23,7 @@
     "prisma:deploy": "prisma migrate deploy",
     "prisma:seed": "ts-node prisma/seed.ts",
     "seed:platform-admin": "ts-node prisma/seed-platform-admin.ts",
+    "seed:default-modules": "tsx prisma/seed-default-modules.ts",
     "prisma:studio": "prisma studio"
   },
   "dependencies": {
