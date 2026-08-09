@@ -2,7 +2,7 @@ import { type CanActivate, type ExecutionContext, Injectable } from '@nestjs/com
 import { Reflector } from '@nestjs/core';
 
 import type { AuthUser } from '../auth/auth-user.type';
-import { ForbiddenError } from '../errors';
+import { BusinessSuspendedError, ForbiddenError, SubscriptionExpiredError } from '../errors';
 import { PrismaService } from '../prisma.service';
 import { IS_PUBLIC_KEY } from './jwt.guard';
 
@@ -38,11 +38,11 @@ export class SubscriptionGuard implements CanActivate {
           data: { plan: 'expired' },
         });
       }
-      throw new ForbiddenError('subscription_expired');
+      throw new SubscriptionExpiredError();
     }
 
     if (business.plan === 'suspended') {
-      throw new ForbiddenError('business_suspended');
+      throw new BusinessSuspendedError();
     }
 
     return true;

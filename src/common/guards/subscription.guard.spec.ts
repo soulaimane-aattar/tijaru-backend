@@ -2,7 +2,7 @@ import type { ExecutionContext } from '@nestjs/common';
 import type { Reflector } from '@nestjs/core';
 
 import type { AuthUser } from '../auth/auth-user.type';
-import { ForbiddenError } from '../errors';
+import { BusinessSuspendedError, ForbiddenError, SubscriptionExpiredError } from '../errors';
 import type { PrismaService } from '../prisma.service';
 import { SubscriptionGuard } from './subscription.guard';
 
@@ -100,9 +100,9 @@ describe('SubscriptionGuard', () => {
       subscriptionEnd: new Date(Date.now() - 86_400_000),
     });
 
-    await expect(guard.canActivate(makeContext(makeUser()))).rejects.toThrow(ForbiddenError);
+    await expect(guard.canActivate(makeContext(makeUser()))).rejects.toThrow(SubscriptionExpiredError);
     await expect(guard.canActivate(makeContext(makeUser()))).rejects.toMatchObject({
-      response: expect.objectContaining({ title: 'subscription_expired' }),
+      response: expect.objectContaining({ code: 'subscription_expired' }),
     });
     expect(prisma.business.update).toHaveBeenCalledWith({
       where: { id: 'biz-1' },
@@ -116,7 +116,7 @@ describe('SubscriptionGuard', () => {
       subscriptionEnd: new Date(Date.now() - 86_400_000),
     });
 
-    await expect(guard.canActivate(makeContext(makeUser()))).rejects.toThrow(ForbiddenError);
+    await expect(guard.canActivate(makeContext(makeUser()))).rejects.toThrow(SubscriptionExpiredError);
     expect(prisma.business.update).not.toHaveBeenCalled();
   });
 
@@ -126,9 +126,9 @@ describe('SubscriptionGuard', () => {
       subscriptionEnd: null,
     });
 
-    await expect(guard.canActivate(makeContext(makeUser()))).rejects.toThrow(ForbiddenError);
+    await expect(guard.canActivate(makeContext(makeUser()))).rejects.toThrow(BusinessSuspendedError);
     await expect(guard.canActivate(makeContext(makeUser()))).rejects.toMatchObject({
-      response: expect.objectContaining({ title: 'business_suspended' }),
+      response: expect.objectContaining({ code: 'business_suspended' }),
     });
   });
 

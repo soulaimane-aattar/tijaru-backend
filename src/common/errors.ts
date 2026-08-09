@@ -51,6 +51,12 @@ export class BusinessSuspendedError extends DomainError {
   }
 }
 
+export class SubscriptionExpiredError extends DomainError {
+  constructor() {
+    super('subscription_expired', 'Subscription has expired', HttpStatus.FORBIDDEN);
+  }
+}
+
 export class ValidationError extends DomainError {
   constructor(detail: string, errors?: Record<string, string[]>) {
     super('validation', detail, HttpStatus.BAD_REQUEST);
