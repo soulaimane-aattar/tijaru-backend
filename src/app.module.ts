@@ -7,6 +7,7 @@ import { LoggerModule } from 'nestjs-pino';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { CapsGuard } from './common/guards/caps.guard';
 import { JwtAuthGuard } from './common/guards/jwt.guard';
+import { ModuleGuard } from './common/guards/module.guard';
 import { SubscriptionGuard } from './common/guards/subscription.guard';
 import { TenantInterceptor } from './common/tenant/tenant.interceptor';
 import { ConfigModule, ENV_TOKEN } from './config/config.module';
@@ -73,6 +74,7 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module';
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: SubscriptionGuard },
+    { provide: APP_GUARD, useClass: ModuleGuard },
     { provide: APP_GUARD, useClass: CapsGuard },
     { provide: APP_INTERCEPTOR, useClass: TenantInterceptor },
   ],

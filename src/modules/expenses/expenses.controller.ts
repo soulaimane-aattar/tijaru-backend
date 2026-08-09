@@ -19,6 +19,7 @@ import type { Response } from 'express';
 import type { AuthUser } from '../../common/auth/auth-user.type';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequireCap } from '../../common/decorators/require-cap.decorator';
+import { RequiresModule } from '../../common/decorators/require-module.decorator';
 import { ValidationError } from '../../common/errors';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { TenantContext } from '../../common/tenant/tenant-context';
@@ -43,6 +44,7 @@ const MIME_BY_EXT: Record<string, string> = {
 
 @ApiTags('expenses')
 @ApiBearerAuth()
+@RequiresModule('expenses')
 @Controller({ path: 'expenses', version: '1' })
 export class ExpensesController {
   constructor(

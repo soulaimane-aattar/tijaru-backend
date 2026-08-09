@@ -2,6 +2,7 @@ import { Controller, Get, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
 import { RequireCap } from '../../common/decorators/require-cap.decorator';
+import { RequiresModule } from '../../common/decorators/require-module.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 
 import { ReportsService } from './application/reports.service';
@@ -9,6 +10,7 @@ import { type DaysQuery, DaysQuerySchema } from './dto/report.dto';
 
 @ApiTags('reports')
 @ApiBearerAuth()
+@RequiresModule('reports')
 @Controller({ path: 'reports', version: '1' })
 export class ReportsController {
   constructor(private readonly svc: ReportsService) {}
