@@ -2,6 +2,16 @@
 
 > One entry per significant decision. Newest on top. Format: date · decision · why · rejected alternatives.
 
+## D-016 — 2026-08-10 · Invoices reuse the existing `billing.manage` capability instead of forking `invoices.view` / `invoices.manage`
+- **Decision:** `InvoicesController` decorates every route (list, get, create, pay, setStatus, cancel) with `@RequireCap('billing.manage')`. No new capability ids added to `src/domain/permissions.ts`. Access-control granularity for invoices lives at the module level (`@RequiresModule('invoices')`) + cap level (`billing.manage`, already granted to owner only in `ROLE_PERMS`).
+- **Why:** Forking `invoices.view` + `invoices.manage` would require touching the whole permissions matrix (owner/admin/manager/stockkeeper/cashier/viewer + `permissions.spec.ts` + web capability catalog + role-editor UI). `billing.manage` already exists and semantically maps to invoicing. Splitting is deferred until the product distinguishes readers from managers of invoices.
+- **Rejected:** dedicated `invoices.*` caps (out of scope for the batch, forces a full permissions-matrix migration and role-editor update); reusing `expenses.*` (semantically wrong — expenses ≠ invoices).
+
+## D-015 — 2026-08-10 · `Tijaru-Platform-Prototype` is the web visual contract; tokens live in SCSS, Tailwind consumes via CSS vars
+- **Decision:** Treat the `Tijaru-Platform-Prototype/` HTML/CSS export as the source of truth for web look-and-feel (colors, radii, shadows, shell dims, typography scale). Design tokens are declared in `web/src/index.scss` as CSS custom properties (`--brand-*`, `--r-card`, `--sidebar-w`, `--shadow-card`, `--success-700`, …); `tailwind.config.ts` binds utilities to those vars (`rounded-card`, `shadow-pop`, `bg-success-soft`, `text-success-700`, `w-sidebar`, …). Primitives in `web/src/ui/*` (Btn/Card/Badge/Input/Table/PageHeader) MUST use these tokens, never raw hex or ad-hoc Tailwind palette shades.
+- **Why:** Single source of truth prevents drift between prototype and app; a dark theme (or future rebrand) becomes a variable swap, not a component rewrite; the a11y-safe orange (`accent-700 = rgb(154,52,18)`) stays enforced because the token itself is fixed. Vite build proved variables survive PostCSS/Tailwind pipeline (opacity utilities still work via `rgb(var(--x) / <alpha-value>)`).
+- **Rejected:** hardcoding Tailwind palette values in primitives (breaks theming); Tailwind-native `@theme` (Tailwind v4-only, we're on v3); duplicating the prototype's raw `app.css` verbatim (would bypass Tailwind's utility+purge pipeline and double the CSS bundle).
+
 ## D-014 — 2026-08-09 · Guard execution order: JWT → Subscription → Module → Limit → Caps
 - **Decision:** Five global guards registered via `APP_GUARD` in strict order. Super admin (`type: 'platform-admin'` in JWT) bypasses all except JwtAuthGuard.
 - **Why:** Each guard depends on the previous: Subscription needs `req.user` from JWT, Module needs businessId, Limit needs businessId, Caps needs roleCaps. Super admin bypass at each layer avoids DB lookups for PA requests.
