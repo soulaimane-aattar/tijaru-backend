@@ -20,8 +20,9 @@ const envSchema = z.object({
   /** Compose-network address of the Python OCR service. */
   OCR_SERVICE_URL: z.string().url().default('http://ocr:8000'),
   OCR_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
-  PLATFORM_ADMIN_EMAIL: z.string().email(),
-  PLATFORM_ADMIN_PASSWORD: z.string().min(8),
+  /** Only read by `seed:platform-admin`; unused at app boot — optional so prod doesn't need it once the admin exists. */
+  PLATFORM_ADMIN_EMAIL: z.string().email().optional(),
+  PLATFORM_ADMIN_PASSWORD: z.string().min(8).optional(),
   /**
    * Serve Swagger at /api/docs. Left unset it follows NODE_ENV, so production
    * never publishes the API map. The dockerised dev stack runs with

@@ -15,6 +15,11 @@ const prisma = new PrismaClient();
 
 export async function seedPlatformAdmin(): Promise<void> {
   const env = loadEnv();
+  if (!env.PLATFORM_ADMIN_EMAIL || !env.PLATFORM_ADMIN_PASSWORD) {
+    throw new Error(
+      'PLATFORM_ADMIN_EMAIL and PLATFORM_ADMIN_PASSWORD are required to run this seed script.',
+    );
+  }
   const passwordHash = await bcrypt.hash(env.PLATFORM_ADMIN_PASSWORD, env.BCRYPT_COST);
 
   const admin = await prisma.platformAdmin.upsert({

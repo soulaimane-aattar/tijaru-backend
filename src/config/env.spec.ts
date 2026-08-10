@@ -13,4 +13,17 @@ describe('env', () => {
     expect(env.PLATFORM_ADMIN_PASSWORD).toBe('supersecret');
     process.env = prev;
   });
+
+  it('boots without platform admin credentials', () => {
+    const prev = { ...process.env };
+    delete process.env.PLATFORM_ADMIN_EMAIL;
+    delete process.env.PLATFORM_ADMIN_PASSWORD;
+    process.env.DATABASE_URL = 'postgresql://stock:stock@localhost:5432/stock?schema=public';
+    process.env.JWT_ACCESS_SECRET = 'change-me-access-secret-min-32-chars-xxxxx';
+    process.env.JWT_REFRESH_SECRET = 'change-me-refresh-secret-min-32-chars-xxxx';
+    const env = loadEnv();
+    expect(env.PLATFORM_ADMIN_EMAIL).toBeUndefined();
+    expect(env.PLATFORM_ADMIN_PASSWORD).toBeUndefined();
+    process.env = prev;
+  });
 });
