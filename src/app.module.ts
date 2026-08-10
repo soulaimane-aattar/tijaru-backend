@@ -18,6 +18,7 @@ import { AdminModule } from './modules/admin/admin.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CategoriesModule } from './modules/categories/categories.module';
 import { CustomersModule } from './modules/customers/customers.module';
+import { DeliveryNotesModule } from './modules/delivery-notes/delivery-notes.module';
 import { ExpensesModule } from './modules/expenses/expenses.module';
 import { HealthModule } from './modules/health/health.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
@@ -49,6 +50,7 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module';
     PurchaseOrdersModule,
     InventoryModule,
     InvoicesModule,
+    DeliveryNotesModule,
     ReportsModule,
     ActivityModule,
     NotificationsModule,

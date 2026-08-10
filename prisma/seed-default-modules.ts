@@ -1,7 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
-const MODULES = ['pos', 'expenses', 'purchase-orders', 'inventory', 'reports', 'invoices'];
+const MODULES = ['pos', 'expenses', 'purchase-orders', 'inventory', 'reports', 'invoices', 'delivery-notes'];
 
 async function main() {
   const businesses = await prisma.business.findMany({ select: { id: true } });

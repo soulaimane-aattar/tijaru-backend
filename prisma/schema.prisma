@@ -81,6 +81,7 @@ model Business {
   modules            BusinessModule[]
   expenses           Expense[]
   invoices           Invoice[]
+  deliveryNotes      DeliveryNote[]
 
   @@map("businesses")
 }
@@ -151,6 +152,7 @@ model User {
   posTickets        POTicket[]
   expenses          Expense[]
   invoicesIssued    Invoice[]       @relation("InvoiceIssuer")
+  deliveryNotes     DeliveryNote[]  @relation("DeliveryNoteIssuer")
 
   @@index([businessId])
   @@map("users")
@@ -296,6 +298,7 @@ model Supplier {
   products       Product[]
   purchaseOrders PurchaseOrder[]
   expenses       Expense[]
+  deliveryNotes  DeliveryNote[]
 
   @@index([businessId])
   @@map("suppliers")
@@ -312,9 +315,10 @@ model Customer {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  business Business   @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  tickets  POTicket[]
-  invoices Invoice[]
+  business      Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  tickets       POTicket[]
+  invoices      Invoice[]
+  deliveryNotes DeliveryNote[]
 
   @@index([businessId])
   @@map("customers")
@@ -361,6 +365,7 @@ model Product {
   poLines        PurchaseOrderLine[]
   ticketLines    POTicketLine[]
   invoiceLines   InvoiceLine[]
+  deliveryLines  DeliveryNoteLine[]
   inventoryLines InventoryCountLine[]
 
   @@unique([businessId, barcode])
@@ -750,4 +755,67 @@ model InvoiceLine {
 
   @@index([invoiceId])
   @@map("invoice_lines")
+}
+
+// ─── Delivery notes / Purchase notes (BC · BL · BR) ──────────────────────────
+
+enum DeliveryNoteType {
+  order // BC — bon de commande (vers fournisseur)
+  out // BL — bon de livraison (vers client)
+  in_ // BR — bon de réception (du fournisseur)  (`in` is a reserved SQL keyword)
+}
+
+enum DeliveryNoteStatus {
+  prepared
+  sent
+  shipped
+  partial
+  delivered
+  closed
+}
+
+model DeliveryNote {
+  id         String             @id @default(cuid())
+  businessId String             @map("business_id")
+  number     String // "BC-YYYY-NNNN" | "BL-YYYY-NNNN" | "BR-YYYY-NNNN"
+  type       DeliveryNoteType
+  date       DateTime           @default(now())
+  status     DeliveryNoteStatus @default(prepared)
+  customerId String?            @map("customer_id")
+  supplierId String?            @map("supplier_id")
+  issuedById String             @map("issued_by_id")
+  sourceRef  String?            @map("source_ref") // e.g. DV-XXXX, FA-XXXX, BC-XXXX
+  carrier    String?
+  signed     Boolean            @default(false)
+  signedAt   DateTime?          @map("signed_at")
+  notes      String?
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+
+  business Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer Customer?          @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  supplier Supplier?          @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  issuedBy User               @relation("DeliveryNoteIssuer", fields: [issuedById], references: [id], onDelete: Restrict)
+  lines    DeliveryNoteLine[]
+
+  @@unique([businessId, number])
+  @@index([businessId, date])
+  @@index([businessId, type])
+  @@index([businessId, status])
+  @@map("delivery_notes")
+}
+
+model DeliveryNoteLine {
+  id             String  @id @default(cuid())
+  deliveryNoteId String  @map("delivery_note_id")
+  productId      String  @map("product_id")
+  label          String
+  ordered        Decimal @db.Decimal(12, 3)
+  sent           Decimal @default(0) @db.Decimal(12, 3)
+
+  deliveryNote DeliveryNote @relation(fields: [deliveryNoteId], references: [id], onDelete: Cascade)
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([deliveryNoteId])
+  @@map("delivery_note_lines")
 }
