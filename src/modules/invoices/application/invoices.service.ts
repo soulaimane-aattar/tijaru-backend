@@ -2,12 +2,12 @@ import { Injectable } from '@nestjs/common';
 
 import type { AuthUser } from '../../../common/auth/auth-user.type';
 import { DomainError, NotFoundError } from '../../../common/errors';
-import type {
-  InvoiceCreateData,
-  InvoiceDetail,
-  InvoiceLineData,
-  InvoiceRow,
+import {
   InvoicesRepository,
+  type InvoiceCreateData,
+  type InvoiceDetail,
+  type InvoiceLineData,
+  type InvoiceRow,
 } from '../domain/invoices.repository';
 import type {
   CreateInvoiceInput,
