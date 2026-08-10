@@ -21,6 +21,7 @@ import { CustomersModule } from './modules/customers/customers.module';
 import { ExpensesModule } from './modules/expenses/expenses.module';
 import { HealthModule } from './modules/health/health.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
+import { InvoicesModule } from './modules/invoices/invoices.module';
 import { MovementsModule } from './modules/movements/movements.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { PlatformAdminModule } from './modules/platform-admin/platform-admin.module';
@@ -47,6 +48,7 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module';
     AdminModule,
     PurchaseOrdersModule,
     InventoryModule,
+    InvoicesModule,
     ReportsModule,
     ActivityModule,
     NotificationsModule,

@@ -8,6 +8,7 @@ type MockPrisma = {
   platformAdmin: { findUnique: jest.Mock };
   business: { findMany: jest.Mock; update: jest.Mock; findUnique: jest.Mock; count: jest.Mock };
   businessModule: { upsert: jest.Mock };
+  user: { findMany: jest.Mock; count: jest.Mock };
   $transaction: jest.Mock;
 };
 
@@ -23,6 +24,10 @@ const mockPrisma = (): MockPrisma => ({
   },
   businessModule: {
     upsert: jest.fn(),
+  },
+  user: {
+    findMany: jest.fn(),
+    count: jest.fn(),
   },
   $transaction: jest.fn(async (ops: unknown[]) => Promise.all(ops)),
 });
@@ -209,6 +214,70 @@ describe('PlatformAdminService', () => {
       await expect(svc.updateModules('missing', { pos: true })).rejects.toBeInstanceOf(
         NotFoundError,
       );
+    });
+  });
+
+  describe('listBusinesses', () => {
+    it('filters by both status and plan when both provided', async () => {
+      const prisma = mockPrisma();
+      prisma.business.findMany.mockResolvedValue([]);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv);
+      await svc.listBusinesses('active', 'trial');
+      expect(prisma.business.findMany.mock.calls[0]![0].where).toEqual({
+        status: 'active',
+        plan: 'trial',
+      });
+    });
+
+    it('applies no filter when both are undefined', async () => {
+      const prisma = mockPrisma();
+      prisma.business.findMany.mockResolvedValue([]);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv);
+      await svc.listBusinesses();
+      expect(prisma.business.findMany.mock.calls[0]![0].where).toEqual({});
+    });
+  });
+
+  describe('listUsers', () => {
+    it('returns paginated cross-business users', async () => {
+      const prisma = mockPrisma();
+      prisma.user.count.mockResolvedValue(42);
+      prisma.user.findMany.mockResolvedValue([{ id: 'u1', name: 'Ali', business: { id: 'b1', name: 'Biz' } }]);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv);
+      const out = await svc.listUsers({ page: 2, pageSize: 10 });
+      expect(out).toMatchObject({ total: 42, page: 2, pageSize: 10 });
+      expect(prisma.user.findMany.mock.calls[0]![0]).toMatchObject({ skip: 10, take: 10 });
+    });
+
+    it('narrows by businessId when provided', async () => {
+      const prisma = mockPrisma();
+      prisma.user.count.mockResolvedValue(0);
+      prisma.user.findMany.mockResolvedValue([]);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv);
+      await svc.listUsers({ businessId: 'b1', page: 1, pageSize: 25 });
+      expect(prisma.user.findMany.mock.calls[0]![0].where.businessId).toBe('b1');
+    });
+
+    it('searches name + email case-insensitively', async () => {
+      const prisma = mockPrisma();
+      prisma.user.count.mockResolvedValue(0);
+      prisma.user.findMany.mockResolvedValue([]);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv);
+      await svc.listUsers({ search: 'ali', page: 1, pageSize: 25 });
+      const where = prisma.user.findMany.mock.calls[0]![0].where;
+      expect(where.OR).toEqual([
+        { name: { contains: 'ali', mode: 'insensitive' } },
+        { email: { contains: 'ali', mode: 'insensitive' } },
+      ]);
+    });
+
+    it('never returns soft-deleted users', async () => {
+      const prisma = mockPrisma();
+      prisma.user.count.mockResolvedValue(0);
+      prisma.user.findMany.mockResolvedValue([]);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv);
+      await svc.listUsers({ page: 1, pageSize: 25 });
+      expect(prisma.user.findMany.mock.calls[0]![0].where.deletedAt).toBeNull();
     });
   });
 

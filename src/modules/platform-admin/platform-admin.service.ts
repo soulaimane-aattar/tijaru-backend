@@ -31,8 +31,11 @@ export class PlatformAdminService {
     return { accessToken };
   }
 
-  async listBusinesses(status?: string): Promise<unknown[]> {
-    const where = status ? { status: status as never } : {};
+  async listBusinesses(status?: string, plan?: string): Promise<unknown[]> {
+    const where = {
+      ...(status ? { status: status as never } : {}),
+      ...(plan ? { plan: plan as never } : {}),
+    };
     return this.prisma.business.findMany({
       where,
       include: {
@@ -44,6 +47,54 @@ export class PlatformAdminService {
       },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  /**
+   * Cross-business user listing for the platform-admin panel.
+   * Search hits both name + email (case-insensitive). Paginated.
+   */
+  async listUsers(params: {
+    search?: string;
+    businessId?: string;
+    role?: string;
+    page: number;
+    pageSize: number;
+  }): Promise<{ items: unknown[]; total: number; page: number; pageSize: number }> {
+    const { search, businessId, role, page, pageSize } = params;
+    const where = {
+      deletedAt: null,
+      ...(businessId ? { businessId } : {}),
+      ...(role ? { role: role as never } : {}),
+      ...(search
+        ? {
+            OR: [
+              { name: { contains: search, mode: 'insensitive' as const } },
+              { email: { contains: search, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
+    };
+    const [total, items] = await Promise.all([
+      this.prisma.user.count({ where }),
+      this.prisma.user.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          phone: true,
+          role: true,
+          active: true,
+          lastLogin: true,
+          createdAt: true,
+          business: { select: { id: true, name: true, plan: true, status: true } },
+        },
+      }),
+    ]);
+    return { items, total, page, pageSize };
   }
 
   async approveBusiness(id: string): Promise<void> {

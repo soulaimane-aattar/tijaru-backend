@@ -40,8 +40,31 @@ export class PlatformAdminController {
   @UseGuards(PlatformAdminGuard)
   @Get('admin/platform/businesses')
   @ApiOperation({ summary: 'List businesses by status (platform admin only).' })
-  async listBusinesses(@Query('status') status?: string): Promise<unknown[]> {
-    return this.svc.listBusinesses(status);
+  async listBusinesses(
+    @Query('status') status?: string,
+    @Query('plan') plan?: string,
+  ): Promise<unknown[]> {
+    return this.svc.listBusinesses(status, plan);
+  }
+
+  @Public()
+  @UseGuards(PlatformAdminGuard)
+  @Get('admin/platform/users')
+  @ApiOperation({ summary: 'List users across every business (platform admin only).' })
+  async listUsers(
+    @Query('search') search?: string,
+    @Query('businessId') businessId?: string,
+    @Query('role') role?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ): Promise<unknown> {
+    return this.svc.listUsers({
+      ...(search ? { search } : {}),
+      ...(businessId ? { businessId } : {}),
+      ...(role ? { role } : {}),
+      page: page ? Math.max(1, parseInt(page, 10) || 1) : 1,
+      pageSize: pageSize ? Math.min(100, Math.max(1, parseInt(pageSize, 10) || 25)) : 25,
+    });
   }
 
   @Public()
