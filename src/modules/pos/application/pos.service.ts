@@ -134,6 +134,7 @@ export class PosService {
 
     return this.pos.executeCheckout(
       {
+        businessId: actor.businessId,
         number: ticketNumber,
         cashierId: actor.id,
         warehouseId: input.warehouseId,

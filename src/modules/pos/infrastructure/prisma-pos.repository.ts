@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma.service';
 import { scoped } from '../../../common/tenant/tenant.helpers';
+import { StockLedgerService } from '../../stock-ledger/application/stock-ledger.service';
 import {
   PosRepository,
   type ActivityLog,
@@ -17,7 +18,10 @@ const dec = (n: number | Prisma.Decimal): number =>
 
 @Injectable()
 export class PrismaPosRepository extends PosRepository {
-  constructor(private readonly prisma: PrismaService) {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly stockLedger: StockLedgerService,
+  ) {
     super();
   }
 
@@ -84,25 +88,21 @@ export class PrismaPosRepository extends PosRepository {
       }
 
       if (!data.parked) {
-        for (const l of data.lines) {
-          await tx.stockLevel.update({
-            where: {
-              productId_warehouseId: { productId: l.productId, warehouseId: data.warehouseId },
-            },
-            data: { qty: { decrement: l.qty } },
-          });
-          await tx.movement.create({
-            data: scoped<Prisma.MovementUncheckedCreateInput>({
-              type: 'out',
+        await this.stockLedger.post(
+          {
+            businessId: data.businessId,
+            userId: data.cashierId,
+            type: 'out',
+            reason: 'vente',
+            ref: data.number,
+            lines: data.lines.map((l) => ({
               productId: l.productId,
-              qty: l.qty,
               warehouseId: data.warehouseId,
-              userId: data.cashierId,
-              reason: 'vente',
-              ref: data.number,
-            }),
-          });
-        }
+              delta: -l.qty,
+            })),
+          },
+          tx,
+        );
       }
 
       const ticket = await tx.pOTicket.create({

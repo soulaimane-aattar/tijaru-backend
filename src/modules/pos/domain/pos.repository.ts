@@ -22,6 +22,7 @@ export interface TicketLineData {
 }
 
 export interface CheckoutTicketData {
+  businessId: string;
   number: string;
   cashierId: string;
   warehouseId: string;

@@ -1,5 +1,5 @@
 import type { AuthUser } from '../../../common/auth/auth-user.type';
-import { DomainError, NotFoundError } from '../../../common/errors';
+import { ConflictError, DomainError, NotFoundError } from '../../../common/errors';
 import type { PosRepository, SaleProduct } from '../domain/pos.repository';
 import type { CreateTicketInput, PaymentInput } from '../dto/pos.dto';
 
@@ -123,6 +123,20 @@ describe('PosService — validations', () => {
     r.getStockQty.mockResolvedValue(1); // asked for 2
     await expect(new PosService(r).checkout(baseTicket(), actor)).rejects.toMatchObject({
       response: { code: 'insufficient_stock' },
+    });
+  });
+
+  it('rejects checkout when stock insufficient (StockLedger conditional decrement fires)', async () => {
+    const r = repo();
+    r.findSaleProducts.mockResolvedValue([PROD_A]);
+    // Pre-check passes (stock looked sufficient)...
+    r.getStockQty.mockResolvedValue(10);
+    // ...but the transactional ledger write races another sale and its
+    // conditional decrement (qty >= needed) finds none, so the repo/ledger
+    // rejects the whole transaction with ConflictError('insufficient_stock').
+    r.executeCheckout.mockRejectedValueOnce(new ConflictError('insufficient_stock'));
+    await expect(new PosService(r).checkout(baseTicket(), actor)).rejects.toMatchObject({
+      response: { title: 'insufficient_stock' },
     });
   });
 
