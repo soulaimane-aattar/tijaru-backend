@@ -8,7 +8,9 @@ type MockPrisma = {
   platformAdmin: { findUnique: jest.Mock };
   business: { findMany: jest.Mock; update: jest.Mock; findUnique: jest.Mock; count: jest.Mock };
   businessModule: { upsert: jest.Mock };
-  user: { findMany: jest.Mock; count: jest.Mock };
+  user: { findMany: jest.Mock; count: jest.Mock; findFirst: jest.Mock; update: jest.Mock };
+  securityPolicy: { findUnique: jest.Mock };
+  session: { updateMany: jest.Mock };
   $transaction: jest.Mock;
 };
 
@@ -28,6 +30,14 @@ const mockPrisma = (): MockPrisma => ({
   user: {
     findMany: jest.fn(),
     count: jest.fn(),
+    findFirst: jest.fn(),
+    update: jest.fn(),
+  },
+  securityPolicy: {
+    findUnique: jest.fn(),
+  },
+  session: {
+    updateMany: jest.fn(),
   },
   $transaction: jest.fn(async (ops: unknown[]) => Promise.all(ops)),
 });
@@ -37,6 +47,7 @@ const mockJwt = () => ({ signAsync: jest.fn().mockResolvedValue('pa-token') }) a
 const mockEnv = {
   JWT_ACCESS_SECRET: 'a'.repeat(32),
   JWT_ACCESS_TTL: '15m',
+  BCRYPT_COST: 4,
 } as never;
 
 describe('PlatformAdminService', () => {
@@ -278,6 +289,70 @@ describe('PlatformAdminService', () => {
       const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv);
       await svc.listUsers({ page: 1, pageSize: 25 });
       expect(prisma.user.findMany.mock.calls[0]![0].where.deletedAt).toBeNull();
+    });
+  });
+
+  describe('resetUserPassword', () => {
+    const activeUser = { id: 'u1', businessId: 'b1', deletedAt: null };
+
+    it('returns a temp password of length >= 10 from the unambiguous alphabet', async () => {
+      const prisma = mockPrisma();
+      prisma.user.findFirst.mockResolvedValue(activeUser);
+      prisma.securityPolicy.findUnique.mockResolvedValue(null);
+      prisma.user.update.mockResolvedValue({});
+      prisma.session.updateMany.mockResolvedValue({ count: 0 });
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv);
+      const { tempPassword } = await svc.resetUserPassword('u1');
+      expect(tempPassword.length).toBeGreaterThanOrEqual(10);
+      expect(tempPassword).toMatch(/^[A-HJ-NP-Za-hj-np-z2-9]+$/);
+    });
+
+    it('persists a bcrypt hash that verifies against the returned temp password', async () => {
+      const prisma = mockPrisma();
+      prisma.user.findFirst.mockResolvedValue(activeUser);
+      prisma.securityPolicy.findUnique.mockResolvedValue(null);
+      prisma.user.update.mockResolvedValue({});
+      prisma.session.updateMany.mockResolvedValue({ count: 0 });
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv);
+      const { tempPassword } = await svc.resetUserPassword('u1');
+      const data = prisma.user.update.mock.calls[0]![0].data;
+      expect(await bcrypt.compare(tempPassword, data.passwordHash)).toBe(true);
+    });
+
+    it('increments tokenVersion and revokes active sessions', async () => {
+      const prisma = mockPrisma();
+      prisma.user.findFirst.mockResolvedValue(activeUser);
+      prisma.securityPolicy.findUnique.mockResolvedValue(null);
+      prisma.user.update.mockResolvedValue({});
+      prisma.session.updateMany.mockResolvedValue({ count: 3 });
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv);
+      await svc.resetUserPassword('u1');
+      expect(prisma.user.update.mock.calls[0]![0]).toMatchObject({
+        where: { id: 'u1' },
+        data: { tokenVersion: { increment: 1 } },
+      });
+      expect(prisma.session.updateMany).toHaveBeenCalledWith({
+        where: { userId: 'u1', revokedAt: null },
+        data: { revokedAt: expect.any(Date) },
+      });
+    });
+
+    it('honors a larger passwordMinLen from the business policy', async () => {
+      const prisma = mockPrisma();
+      prisma.user.findFirst.mockResolvedValue(activeUser);
+      prisma.securityPolicy.findUnique.mockResolvedValue({ passwordMinLen: 16 });
+      prisma.user.update.mockResolvedValue({});
+      prisma.session.updateMany.mockResolvedValue({ count: 0 });
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv);
+      const { tempPassword } = await svc.resetUserPassword('u1');
+      expect(tempPassword.length).toBeGreaterThanOrEqual(16);
+    });
+
+    it('throws NotFoundError for an unknown or soft-deleted user', async () => {
+      const prisma = mockPrisma();
+      prisma.user.findFirst.mockResolvedValue(null);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv);
+      await expect(svc.resetUserPassword('ghost')).rejects.toBeInstanceOf(NotFoundError);
     });
   });
 

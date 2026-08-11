@@ -150,6 +150,15 @@ export class PlatformAdminController {
 
   @Public()
   @UseGuards(PlatformAdminGuard)
+  @Post('admin/platform/users/:id/reset-password')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Reset a user password, returning a one-time temp password (platform admin only).' })
+  async resetUserPassword(@Param('id') id: string): Promise<{ tempPassword: string }> {
+    return this.svc.resetUserPassword(id);
+  }
+
+  @Public()
+  @UseGuards(PlatformAdminGuard)
   @Patch('admin/platform/businesses/:id/modules')
   @UsePipes(new ZodValidationPipe(UpdateModulesSchema))
   @ApiOperation({ summary: 'Toggle business modules on/off (platform admin only).' })

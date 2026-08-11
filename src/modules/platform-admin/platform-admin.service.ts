@@ -1,3 +1,5 @@
+import { randomInt } from 'node:crypto';
+
 import { Inject, Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
@@ -6,6 +8,15 @@ import { ConflictError, NotFoundError, UnauthorizedError } from '../../common/er
 import { PrismaService } from '../../common/prisma.service';
 import { ENV_TOKEN } from '../../config/config.module';
 import type { Env } from '../../config/env';
+
+// Unambiguous alphabet: no O/0, I/1/l to avoid transcription errors when read aloud or copied.
+const TEMP_PW_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+
+function generateTempPassword(length: number): string {
+  let out = '';
+  for (let i = 0; i < length; i++) out += TEMP_PW_ALPHABET[randomInt(TEMP_PW_ALPHABET.length)];
+  return out;
+}
 
 @Injectable()
 export class PlatformAdminService {
@@ -193,6 +204,38 @@ export class PlatformAdminService {
       }),
     );
     await this.prisma.$transaction(upserts);
+  }
+
+  /**
+   * Admin-initiated password reset: generates a one-time temp password, revokes the user's
+   * active sessions, and bumps tokenVersion so the old refresh token is rejected. The plaintext
+   * is returned exactly once — only its bcrypt hash is persisted.
+   */
+  async resetUserPassword(userId: string): Promise<{ tempPassword: string }> {
+    const user = await this.prisma.user.findFirst({
+      where: { id: userId, deletedAt: null },
+      select: { id: true, businessId: true },
+    });
+    if (!user) throw new NotFoundError('User', userId);
+
+    const policy = await this.prisma.securityPolicy.findUnique({
+      where: { businessId: user.businessId },
+      select: { passwordMinLen: true },
+    });
+    const length = Math.max(10, policy?.passwordMinLen ?? 8);
+    const tempPassword = generateTempPassword(length);
+    const passwordHash = await bcrypt.hash(tempPassword, this.env.BCRYPT_COST);
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash, tokenVersion: { increment: 1 } },
+    });
+    await this.prisma.session.updateMany({
+      where: { userId: user.id, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+
+    return { tempPassword };
   }
 
   async getStats() {
