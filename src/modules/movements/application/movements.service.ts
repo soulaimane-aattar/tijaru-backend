@@ -1,9 +1,10 @@
 import { Injectable } from '@nestjs/common';
 
 import type { AuthUser } from '../../../common/auth/auth-user.type';
-import { DomainError, NotFoundError } from '../../../common/errors';
+import { DomainError, NotFoundError, ValidationError } from '../../../common/errors';
 import { type CapabilityId, hasPermission } from '../../../domain/permissions';
-import { MovementsRepository, type StockDelta } from '../domain/movements.repository';
+import { StockLedgerService } from '../../stock-ledger/application/stock-ledger.service';
+import { MovementsRepository } from '../domain/movements.repository';
 import type { CreateMovementInput, ListMovementsQuery } from '../dto/movement.dto';
 
 const REQUIRED_CAP: Record<CreateMovementInput['type'], CapabilityId> = {
@@ -14,7 +15,10 @@ const REQUIRED_CAP: Record<CreateMovementInput['type'], CapabilityId> = {
 
 @Injectable()
 export class MovementsService {
-  constructor(private readonly movements: MovementsRepository) {}
+  constructor(
+    private readonly movements: MovementsRepository,
+    private readonly ledger: StockLedgerService,
+  ) {}
 
   async list(query: ListMovementsQuery): Promise<{
     items: unknown[];
@@ -36,16 +40,17 @@ export class MovementsService {
   }
 
   /**
-   * Record a stock movement atomically.
+   * Record a stock movement.
    *
    * Rules (spec §10):
    *  - in       → +qty at warehouse
    *  - out      → -qty at warehouse, reject if would go negative
    *  - transfer → -qty at source + +qty at destination, distinct warehouses
    *
-   * Existence + available-stock rules are decided here; all stock deltas, the
-   * Movement row and the activity log are then persisted in one atomic write
-   * (the adapter uses atomic increments to avoid lost-update races).
+   * Existence checks happen here; the stock delta + Movement row are written
+   * atomically by `StockLedgerService.post` (conditional decrement guards
+   * against the negative-stock race — no separate pre-check needed here).
+   * The activity-log entry is written best-effort after the ledger commits.
    */
   async record(input: CreateMovementInput, actor: AuthUser): Promise<unknown> {
     if (!hasPermission(actor, REQUIRED_CAP[input.type])) {
@@ -58,55 +63,44 @@ export class MovementsService {
     if (!(await this.movements.warehouseExists(input.warehouseId))) {
       throw new NotFoundError('Warehouse', input.warehouseId);
     }
-    if (input.type === 'transfer' && input.toWarehouseId) {
-      if (!(await this.movements.warehouseExists(input.toWarehouseId))) {
-        throw new NotFoundError('Warehouse', input.toWarehouseId);
+    let toWarehouseId: string | undefined;
+    if (input.type === 'transfer') {
+      if (!input.toWarehouseId) throw new ValidationError('transfer_missing_destination');
+      toWarehouseId = input.toWarehouseId;
+      if (!(await this.movements.warehouseExists(toWarehouseId))) {
+        throw new NotFoundError('Warehouse', toWarehouseId);
       }
     }
 
-    // Out / Transfer: verify available stock at source.
-    if (input.type === 'out' || input.type === 'transfer') {
-      const available = await this.movements.getStockQty(input.productId, input.warehouseId);
-      if (available < input.qty) {
-        throw new DomainError(
-          'insufficient_stock',
-          `Insufficient stock at source (${available} < ${input.qty})`,
-          422,
-        );
-      }
-    }
+    // Insufficient-stock checks happen atomically inside StockLedgerService.post
+    // (conditional decrement), closing the TOCTOU window a pre-check would leave open.
+    const delta = input.type === 'in' ? input.qty : -input.qty;
+    const movements = await this.ledger.post({
+      businessId: actor.businessId,
+      userId: actor.id,
+      type: input.type,
+      reason: input.reason,
+      ...(input.ref !== undefined ? { ref: input.ref } : {}),
+      ...(input.date !== undefined ? { date: input.date } : {}),
+      lines: [
+        {
+          productId: input.productId,
+          warehouseId: input.warehouseId,
+          delta,
+          ...(input.batch !== undefined ? { batch: input.batch } : {}),
+          ...(input.expiry !== undefined ? { expiry: input.expiry } : {}),
+        },
+      ],
+      ...(toWarehouseId !== undefined ? { toWarehouseId } : {}),
+    });
 
-    const deltas: StockDelta[] = [
-      {
-        warehouseId: input.warehouseId,
-        delta: input.type === 'in' ? input.qty : -input.qty,
-      },
-    ];
-    if (input.type === 'transfer' && input.toWarehouseId) {
-      deltas.push({ warehouseId: input.toWarehouseId, delta: input.qty });
-    }
+    await this.movements.logActivity({
+      userId: actor.id,
+      action: input.type === 'transfer' ? 'transfer' : `stock.${input.type}`,
+      desc: `${input.type === 'in' ? 'Entrée' : input.type === 'out' ? 'Sortie' : 'Transfert'} ${input.qty} × ${product.name}`,
+      ...(actor.device !== undefined ? { device: actor.device } : {}),
+    });
 
-    return this.movements.executeStockMovement(
-      deltas,
-      {
-        type: input.type,
-        productId: input.productId,
-        qty: input.qty,
-        warehouseId: input.warehouseId,
-        toWarehouseId: input.toWarehouseId,
-        userId: actor.id,
-        date: input.date,
-        reason: input.reason,
-        ref: input.ref,
-        batch: input.batch,
-        expiry: input.expiry,
-      },
-      {
-        userId: actor.id,
-        action: input.type === 'transfer' ? 'transfer' : `stock.${input.type}`,
-        desc: `${input.type === 'in' ? 'Entrée' : input.type === 'out' ? 'Sortie' : 'Transfert'} ${input.qty} × ${product.name}`,
-        device: actor.device,
-      },
-    );
+    return movements[0];
   }
 }

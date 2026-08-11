@@ -6,10 +6,8 @@ import { scoped } from '../../../common/tenant/tenant.helpers';
 import {
   MovementsRepository,
   type ActivityLog,
-  type MovementRecordData,
   type MovementSearchCriteria,
   type ProductRef,
-  type StockDelta,
 } from '../domain/movements.repository';
 
 /** Strip keys whose value is `undefined` (exactOptionalPropertyTypes-safe Prisma payloads). */
@@ -71,39 +69,9 @@ export class PrismaMovementsRepository extends MovementsRepository {
     return warehouse !== null;
   }
 
-  async getStockQty(productId: string, warehouseId: string): Promise<number> {
-    const level = await this.prisma.stockLevel.findUnique({
-      where: { productId_warehouseId: { productId, warehouseId } },
-      select: { qty: true },
-    });
-    return level?.qty ?? 0;
-  }
-
-  executeStockMovement(
-    deltas: StockDelta[],
-    movement: MovementRecordData,
-    activity: ActivityLog,
-  ): Promise<unknown> {
-    return this.prisma.$transaction(async (tx) => {
-      for (const { warehouseId, delta } of deltas) {
-        await tx.stockLevel.upsert({
-          where: {
-            productId_warehouseId: { productId: movement.productId, warehouseId },
-          },
-          create: { productId: movement.productId, warehouseId, qty: delta },
-          update: { qty: { increment: delta } },
-        });
-      }
-
-      const created = await tx.movement.create({
-        data: scoped<Prisma.MovementUncheckedCreateInput>(compact({ ...movement })),
-      });
-
-      await tx.activity.create({
-        data: scoped<Prisma.ActivityUncheckedCreateInput>(compact({ ...activity })),
-      });
-
-      return created;
+  async logActivity(activity: ActivityLog): Promise<void> {
+    await this.prisma.activity.create({
+      data: scoped<Prisma.ActivityUncheckedCreateInput>(compact({ ...activity })),
     });
   }
 }
