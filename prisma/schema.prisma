@@ -71,6 +71,7 @@ model Business {
   suppliers          Supplier[]
   customers          Customer[]
   products           Product[]
+  stockLevels        StockLevel[]
   movements          Movement[]
   purchaseOrders     PurchaseOrder[]
   poSessions         POSession[]
@@ -379,12 +380,18 @@ model Product {
 model StockLevel {
   productId   String
   warehouseId String
-  qty         Int    @default(0)
+  businessId  String
+  qty         Int      @default(0)
+  reservedQty Int      @default(0)
+  avgCost     Decimal  @default(0) @db.Decimal(12, 4)
+  updatedAt   DateTime @updatedAt
 
   product   Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
   warehouse Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  business  Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@id([productId, warehouseId])
+  @@index([businessId, productId])
   @@index([warehouseId])
   @@map("stock_levels")
 }

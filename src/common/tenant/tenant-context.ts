@@ -12,6 +12,7 @@ export const TENANT_MODELS: ReadonlySet<string> = new Set([
   'Supplier',
   'Customer',
   'Product',
+  'StockLevel',
   'Movement',
   'PurchaseOrder',
   'POSession',
