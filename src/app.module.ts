@@ -30,6 +30,7 @@ import { PosModule } from './modules/pos/pos.module';
 import { ProductsModule } from './modules/products/products.module';
 import { PurchaseOrdersModule } from './modules/purchase-orders/po.module';
 import { ReportsModule } from './modules/reports/reports.module';
+import { StockLedgerModule } from './modules/stock-ledger/stock-ledger.module';
 import { SuppliersModule } from './modules/suppliers/suppliers.module';
 import { UsersModule } from './modules/users/users.module';
 import { WarehousesModule } from './modules/warehouses/warehouses.module';
@@ -57,6 +58,7 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module';
     ExpensesModule,
     HealthModule,
     PlatformAdminModule,
+    StockLedgerModule,
     LoggerModule.forRootAsync({
       inject: [ENV_TOKEN],
       useFactory: (env: Env) => ({
