@@ -18,6 +18,7 @@ export const DeliveryNoteLineInputSchema = z.object({
   label: z.string().min(1).max(200),
   ordered: z.number().positive(),
   sent: z.number().min(0).default(0),
+  unitPrice: z.number().nonnegative().optional(),
 });
 export type DeliveryNoteLineInput = z.infer<typeof DeliveryNoteLineInputSchema>;
 

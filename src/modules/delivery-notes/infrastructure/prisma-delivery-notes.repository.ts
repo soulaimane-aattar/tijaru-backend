@@ -50,6 +50,7 @@ export class PrismaDeliveryNotesRepository extends DeliveryNotesRepository {
             label: l.label,
             ordered: l.ordered,
             sent: l.sent,
+            unitPrice: l.unitPrice,
           })),
         },
       },
@@ -169,6 +170,7 @@ export class PrismaDeliveryNotesRepository extends DeliveryNotesRepository {
       label: string;
       ordered: Prisma.Decimal;
       sent: Prisma.Decimal;
+      unitPrice: Prisma.Decimal;
     }[];
   }): DeliveryDetail {
     return {
@@ -193,6 +195,7 @@ export class PrismaDeliveryNotesRepository extends DeliveryNotesRepository {
         label: l.label,
         ordered: dec(l.ordered),
         sent: dec(l.sent),
+        unitPrice: dec(l.unitPrice),
       })),
     };
   }

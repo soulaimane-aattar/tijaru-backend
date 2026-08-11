@@ -1,6 +1,10 @@
 import type { AuthUser } from '../../../common/auth/auth-user.type';
 import { DomainError, NotFoundError } from '../../../common/errors';
-import type { DeliveryDetail, DeliveryNotesRepository } from '../domain/delivery-notes.repository';
+import type {
+  DeliveryDetail,
+  DeliveryNotesRepository,
+  ProductPriceLookup,
+} from '../domain/delivery-notes.repository';
 import type { CreateDeliveryNoteInput } from '../dto/delivery-notes.dto';
 
 import { DeliveryNotesService, statusFromLines } from './delivery-notes.service';
@@ -34,7 +38,7 @@ const detail = (over: Partial<DeliveryDetail> = {}): DeliveryDetail => ({
   carrier: null,
   signed: false,
   notes: null,
-  lines: [{ id: 'l1', productId: PROD, label: 'Coca 33cl', ordered: 10, sent: 0 }],
+  lines: [{ id: 'l1', productId: PROD, label: 'Coca 33cl', ordered: 10, sent: 0, unitPrice: 0 }],
   ...over,
 });
 
@@ -48,6 +52,11 @@ const repo = (): jest.Mocked<DeliveryNotesRepository> =>
     updateLineSent: jest.fn().mockResolvedValue(undefined),
     markSigned: jest.fn().mockResolvedValue(undefined),
   }) as unknown as jest.Mocked<DeliveryNotesRepository>;
+
+const products = (): jest.Mocked<ProductPriceLookup> =>
+  ({
+    findById: jest.fn().mockResolvedValue({ id: PROD, price: 0 }),
+  }) as unknown as jest.Mocked<ProductPriceLookup>;
 
 const baseInput = (over: Partial<CreateDeliveryNoteInput> = {}): CreateDeliveryNoteInput =>
   ({
@@ -88,13 +97,13 @@ describe('statusFromLines', () => {
 describe('DeliveryNotesService.create', () => {
   it('assigns BL prefix for type=out', async () => {
     const r = repo();
-    await new DeliveryNotesService(r).create(baseInput(), actor);
+    await new DeliveryNotesService(r, products()).create(baseInput(), actor);
     expect(r.create.mock.calls[0]![0].number).toMatch(/^BL-\d{4}-0001$/);
   });
 
   it('assigns BC prefix for type=order', async () => {
     const r = repo();
-    await new DeliveryNotesService(r).create(
+    await new DeliveryNotesService(r, products()).create(
       baseInput({ type: 'order', supplierId: SUPPLIER, customerId: undefined }),
       actor,
     );
@@ -103,7 +112,7 @@ describe('DeliveryNotesService.create', () => {
 
   it('assigns BR prefix for type=in_', async () => {
     const r = repo();
-    await new DeliveryNotesService(r).create(
+    await new DeliveryNotesService(r, products()).create(
       baseInput({ type: 'in_', supplierId: SUPPLIER, customerId: undefined }),
       actor,
     );
@@ -113,14 +122,14 @@ describe('DeliveryNotesService.create', () => {
   it('increments from the highest existing number of the same type/year', async () => {
     const r = repo();
     r.findLastNumber.mockResolvedValue('BL-2026-0041');
-    await new DeliveryNotesService(r).create(baseInput(), actor);
+    await new DeliveryNotesService(r, products()).create(baseInput(), actor);
     expect(r.create.mock.calls[0]![0].number).toBe('BL-2026-0042');
   });
 
   it('rejects when a line has sent > ordered', async () => {
     const r = repo();
     await expect(
-      new DeliveryNotesService(r).create(
+      new DeliveryNotesService(r, products()).create(
         baseInput({ lines: [{ productId: PROD, label: 'x', ordered: 5, sent: 999 }] }),
         actor,
       ),
@@ -129,13 +138,13 @@ describe('DeliveryNotesService.create', () => {
 
   it('starts with derived status = fallback when nothing sent', async () => {
     const r = repo();
-    await new DeliveryNotesService(r).create(baseInput({ status: 'shipped' }), actor);
+    await new DeliveryNotesService(r, products()).create(baseInput({ status: 'shipped' }), actor);
     expect(r.create.mock.calls[0]![0].status).toBe('shipped');
   });
 
   it('derives status=partial when some sent > 0 but < ordered', async () => {
     const r = repo();
-    await new DeliveryNotesService(r).create(
+    await new DeliveryNotesService(r, products()).create(
       baseInput({ lines: [{ productId: PROD, label: 'x', ordered: 10, sent: 4 }] }),
       actor,
     );
@@ -144,7 +153,7 @@ describe('DeliveryNotesService.create', () => {
 
   it('derives status=delivered when every line fully filled', async () => {
     const r = repo();
-    await new DeliveryNotesService(r).create(
+    await new DeliveryNotesService(r, products()).create(
       baseInput({ lines: [{ productId: PROD, label: 'x', ordered: 10, sent: 10 }] }),
       actor,
     );
@@ -156,7 +165,7 @@ describe('DeliveryNotesService.get', () => {
   it('throws NotFoundError when the note is missing', async () => {
     const r = repo();
     r.findDetail.mockResolvedValue(null);
-    await expect(new DeliveryNotesService(r).get(BID, 'x')).rejects.toBeInstanceOf(NotFoundError);
+    await expect(new DeliveryNotesService(r, products()).get(BID, 'x')).rejects.toBeInstanceOf(NotFoundError);
   });
 });
 
@@ -165,7 +174,7 @@ describe('DeliveryNotesService.updateLineSent', () => {
     const r = repo();
     r.findDetail.mockResolvedValue(detail());
     await expect(
-      new DeliveryNotesService(r).updateLineSent(BID, 'dn1', 'l1', 999),
+      new DeliveryNotesService(r, products()).updateLineSent(BID, 'dn1', 'l1', 999),
     ).rejects.toMatchObject({ response: { code: 'invalid_line_sent' } });
   });
 
@@ -173,7 +182,7 @@ describe('DeliveryNotesService.updateLineSent', () => {
     const r = repo();
     r.findDetail.mockResolvedValue(detail({ status: 'closed' }));
     await expect(
-      new DeliveryNotesService(r).updateLineSent(BID, 'dn1', 'l1', 1),
+      new DeliveryNotesService(r, products()).updateLineSent(BID, 'dn1', 'l1', 1),
     ).rejects.toBeInstanceOf(DomainError);
   });
 
@@ -181,8 +190,8 @@ describe('DeliveryNotesService.updateLineSent', () => {
     const r = repo();
     r.findDetail
       .mockResolvedValueOnce(detail()) // initial check
-      .mockResolvedValueOnce(detail({ lines: [{ id: 'l1', productId: PROD, label: 'x', ordered: 10, sent: 10 }] })); // after refresh
-    await new DeliveryNotesService(r).updateLineSent(BID, 'dn1', 'l1', 10);
+      .mockResolvedValueOnce(detail({ lines: [{ id: 'l1', productId: PROD, label: 'x', ordered: 10, sent: 10, unitPrice: 0 }] })); // after refresh
+    await new DeliveryNotesService(r, products()).updateLineSent(BID, 'dn1', 'l1', 10);
     expect(r.updateLineSent).toHaveBeenCalledWith('l1', 10);
     expect(r.updateStatus).toHaveBeenCalledWith('dn1', 'delivered');
   });
@@ -191,8 +200,8 @@ describe('DeliveryNotesService.updateLineSent', () => {
     const r = repo();
     r.findDetail
       .mockResolvedValueOnce(detail())
-      .mockResolvedValueOnce(detail({ lines: [{ id: 'l1', productId: PROD, label: 'x', ordered: 10, sent: 3 }] }));
-    await new DeliveryNotesService(r).updateLineSent(BID, 'dn1', 'l1', 3);
+      .mockResolvedValueOnce(detail({ lines: [{ id: 'l1', productId: PROD, label: 'x', ordered: 10, sent: 3, unitPrice: 0 }] }));
+    await new DeliveryNotesService(r, products()).updateLineSent(BID, 'dn1', 'l1', 3);
     expect(r.updateStatus).toHaveBeenCalledWith('dn1', 'partial');
   });
 
@@ -200,7 +209,7 @@ describe('DeliveryNotesService.updateLineSent', () => {
     const r = repo();
     r.findDetail.mockResolvedValue(detail());
     await expect(
-      new DeliveryNotesService(r).updateLineSent(BID, 'dn1', 'nope', 1),
+      new DeliveryNotesService(r, products()).updateLineSent(BID, 'dn1', 'nope', 1),
     ).rejects.toBeInstanceOf(NotFoundError);
   });
 });
@@ -209,14 +218,14 @@ describe('DeliveryNotesService.sign', () => {
   it('marks the note signed when type=out', async () => {
     const r = repo();
     r.findDetail.mockResolvedValue(detail());
-    await new DeliveryNotesService(r).sign(BID, 'dn1');
+    await new DeliveryNotesService(r, products()).sign(BID, 'dn1');
     expect(r.markSigned).toHaveBeenCalled();
   });
 
   it('rejects sign() on non-out types', async () => {
     const r = repo();
     r.findDetail.mockResolvedValue(detail({ type: 'in_' }));
-    await expect(new DeliveryNotesService(r).sign(BID, 'dn1')).rejects.toMatchObject({
+    await expect(new DeliveryNotesService(r, products()).sign(BID, 'dn1')).rejects.toMatchObject({
       response: { code: 'only_out_signable' },
     });
   });
@@ -224,7 +233,75 @@ describe('DeliveryNotesService.sign', () => {
   it('is a no-op when already signed', async () => {
     const r = repo();
     r.findDetail.mockResolvedValue(detail({ signed: true }));
-    await new DeliveryNotesService(r).sign(BID, 'dn1');
+    await new DeliveryNotesService(r, products()).sign(BID, 'dn1');
     expect(r.markSigned).not.toHaveBeenCalled();
+  });
+});
+
+describe('unit price + totals', () => {
+  it('prefills unitPrice from product.price when line omits it', async () => {
+    const r = repo();
+    const p = products();
+    p.findById.mockResolvedValue({ id: PROD, price: '12.50' } as any);
+    await new DeliveryNotesService(r, p).create(
+      baseInput({ lines: [{ productId: PROD, label: 'X', ordered: 2, sent: 0 }] }),
+      actor,
+    );
+    expect(r.create.mock.calls[0]![0].lines).toEqual([
+      expect.objectContaining({ unitPrice: 12.5 }),
+    ]);
+  });
+
+  it('keeps explicit unitPrice', async () => {
+    const r = repo();
+    const p = products();
+    p.findById.mockResolvedValue({ id: PROD, price: '99' } as any);
+    await new DeliveryNotesService(r, p).create(
+      baseInput({ lines: [{ productId: PROD, label: 'X', ordered: 2, sent: 0, unitPrice: 5 } as any] }),
+      actor,
+    );
+    expect(r.create.mock.calls[0]![0].lines).toEqual([
+      expect.objectContaining({ unitPrice: 5 }),
+    ]);
+    expect(p.findById).not.toHaveBeenCalled();
+  });
+
+  it('computeTotals: BL uses sent × unitPrice', () => {
+    const note = {
+      type: 'out' as const,
+      lines: [
+        { sent: '3', ordered: '5', unitPrice: '10' },
+        { sent: '2', ordered: '2', unitPrice: '7.5' },
+      ],
+    };
+    expect(new DeliveryNotesService(repo(), products()).computeTotals(note as any).subtotal).toBe(45);
+  });
+
+  it('computeTotals: BC/BR uses ordered × unitPrice', () => {
+    const svc = new DeliveryNotesService(repo(), products());
+    const noteBC = { type: 'order' as const, lines: [{ sent: '0', ordered: '4', unitPrice: '25' }] };
+    const noteBR = { type: 'in_' as const, lines: [{ sent: '0', ordered: '3', unitPrice: '10' }] };
+    expect(svc.computeTotals(noteBC as any).subtotal).toBe(100);
+    expect(svc.computeTotals(noteBR as any).subtotal).toBe(30);
+  });
+
+  it('computeTotals: empty lines → 0', () => {
+    expect(
+      new DeliveryNotesService(repo(), products()).computeTotals({ type: 'out', lines: [] } as any)
+        .subtotal,
+    ).toBe(0);
+  });
+
+  it('get() attaches per-line subtotal and note totals', async () => {
+    const r = repo();
+    r.findDetail.mockResolvedValue(
+      detail({
+        type: 'out',
+        lines: [{ id: 'l1', productId: PROD, label: 'X', ordered: 10, sent: 4, unitPrice: 2.5 }],
+      }),
+    );
+    const result = await new DeliveryNotesService(r, products()).get(BID, 'dn1');
+    expect(result.lines[0]).toEqual(expect.objectContaining({ unitPrice: 2.5, subtotal: 10 }));
+    expect(result.totals).toEqual({ subtotal: 10 });
   });
 });

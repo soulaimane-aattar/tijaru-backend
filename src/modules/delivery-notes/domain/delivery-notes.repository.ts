@@ -5,6 +5,7 @@ export interface DeliveryLineData {
   label: string;
   ordered: number;
   sent: number;
+  unitPrice: number;
 }
 
 export interface DeliveryLineRow extends DeliveryLineData {
@@ -76,4 +77,17 @@ export abstract class DeliveryNotesRepository {
   abstract updateStatus(id: string, status: DeliveryNoteStatus): Promise<void>;
   abstract updateLineSent(lineId: string, sent: number): Promise<void>;
   abstract markSigned(id: string, when: Date): Promise<void>;
+}
+
+/**
+ * Port: read-only product price lookup used to prefill a line's `unitPrice`
+ * when the caller omits it. Scoped to delivery-notes (not the products
+ * module's own `ProductsRepository`, which isn't exported for cross-module
+ * injection and has no price-oriented accessor).
+ */
+export abstract class ProductPriceLookup {
+  abstract findById(
+    businessId: string,
+    productId: string,
+  ): Promise<{ id: string; price: number | string } | null>;
 }

@@ -4,8 +4,10 @@ import type { AuthUser } from '../../../common/auth/auth-user.type';
 import { DomainError, NotFoundError } from '../../../common/errors';
 import {
   DeliveryNotesRepository,
+  ProductPriceLookup,
   type DeliveryDetail,
   type DeliveryLineData,
+  type DeliveryLineRow,
 } from '../domain/delivery-notes.repository';
 import type {
   CreateDeliveryNoteInput,
@@ -13,6 +15,17 @@ import type {
   DeliveryNoteType,
   ListDeliveryNotesQuery,
 } from '../dto/delivery-notes.dto';
+
+/** Response line shape: adds the computed `subtotal` on top of the persisted row. */
+export interface DeliveryNoteLineDto extends DeliveryLineRow {
+  subtotal: number;
+}
+
+/** Response shape: `DeliveryDetail` with per-line subtotal and note-level totals. */
+export interface DeliveryNoteDto extends Omit<DeliveryDetail, 'lines'> {
+  lines: DeliveryNoteLineDto[];
+  totals: { subtotal: number };
+}
 
 const PREFIX: Record<DeliveryNoteType, string> = {
   order: 'BC',
@@ -40,7 +53,10 @@ export function statusFromLines(
 
 @Injectable()
 export class DeliveryNotesService {
-  constructor(private readonly repo: DeliveryNotesRepository) {}
+  constructor(
+    private readonly repo: DeliveryNotesRepository,
+    private readonly products: ProductPriceLookup,
+  ) {}
 
   async list(businessId: string, query: ListDeliveryNotesQuery) {
     return this.repo.list({
@@ -54,13 +70,13 @@ export class DeliveryNotesService {
     });
   }
 
-  async get(businessId: string, id: string): Promise<DeliveryDetail> {
+  async get(businessId: string, id: string): Promise<DeliveryNoteDto> {
     const found = await this.repo.findDetail(businessId, id);
     if (!found) throw new NotFoundError('DeliveryNote', id);
-    return found;
+    return this.toResponse(found);
   }
 
-  async create(input: CreateDeliveryNoteInput, actor: AuthUser): Promise<DeliveryDetail> {
+  async create(input: CreateDeliveryNoteInput, actor: AuthUser): Promise<DeliveryNoteDto> {
     for (const l of input.lines) {
       if (l.sent > l.ordered) {
         throw new DomainError(
@@ -73,13 +89,16 @@ export class DeliveryNotesService {
     const date = input.date ?? new Date();
     const status = statusFromLines(input.lines, input.status);
     const number = await this.nextNumber(actor.businessId, input.type, date.getFullYear());
-    const lines: DeliveryLineData[] = input.lines.map((l) => ({
-      productId: l.productId,
-      label: l.label,
-      ordered: l.ordered,
-      sent: l.sent,
-    }));
-    return this.repo.create({
+    const lines: DeliveryLineData[] = await Promise.all(
+      input.lines.map(async (l) => ({
+        productId: l.productId,
+        label: l.label,
+        ordered: l.ordered,
+        sent: l.sent,
+        unitPrice: await this.resolveUnitPrice(actor.businessId, l.productId, l.unitPrice),
+      })),
+    );
+    const created = await this.repo.create({
       businessId: actor.businessId,
       number,
       type: input.type,
@@ -93,6 +112,50 @@ export class DeliveryNotesService {
       notes: input.notes ?? null,
       lines,
     });
+    return this.toResponse(created);
+  }
+
+  /** Explicit unitPrice wins; otherwise prefill from the product's current price. */
+  private async resolveUnitPrice(
+    businessId: string,
+    productId: string,
+    explicit: number | undefined,
+  ): Promise<number> {
+    if (explicit !== undefined) return explicit;
+    const p = await this.products.findById(businessId, productId);
+    return Number(p?.price ?? 0);
+  }
+
+  /**
+   * Pure: sum of line quantity × unitPrice, rounded to 2dp.
+   * BL (`out`) bills what was actually sent; BC/BR bill the ordered quantity.
+   */
+  computeTotals(note: {
+    type: DeliveryNoteType;
+    lines: Array<{
+      sent: number | string;
+      ordered: number | string;
+      unitPrice: number | string;
+    }>;
+  }): { subtotal: number } {
+    const qty = (l: { sent: number | string; ordered: number | string }) =>
+      Number(note.type === 'out' ? l.sent : l.ordered);
+    const price = (l: { unitPrice: number | string }) => Number(l.unitPrice ?? 0);
+    const subtotal = note.lines.reduce((s, l) => s + qty(l) * price(l), 0);
+    return { subtotal: Math.round(subtotal * 100) / 100 };
+  }
+
+  private toResponse(note: DeliveryDetail): DeliveryNoteDto {
+    const totals = this.computeTotals(note);
+    const qty = (l: DeliveryLineRow) => (note.type === 'out' ? l.sent : l.ordered);
+    return {
+      ...note,
+      lines: note.lines.map((l) => ({
+        ...l,
+        subtotal: Math.round(qty(l) * l.unitPrice * 100) / 100,
+      })),
+      totals,
+    };
   }
 
   /** Per-tenant, per-year, per-type: BC-2026-0001, BL-2026-0001, BR-2026-0001, … */
@@ -108,7 +171,7 @@ export class DeliveryNotesService {
     id: string,
     lineId: string,
     sent: number,
-  ): Promise<DeliveryDetail> {
+  ): Promise<DeliveryNoteDto> {
     const inv = await this.repo.findDetail(businessId, id);
     if (!inv) throw new NotFoundError('DeliveryNote', id);
     if (inv.status === 'closed') {
@@ -124,7 +187,7 @@ export class DeliveryNotesService {
     const nextStatus = statusFromLines(updatedLines, inv.status);
     if (nextStatus !== inv.status) await this.repo.updateStatus(id, nextStatus);
     const fresh = await this.repo.findDetail(businessId, id);
-    return fresh!;
+    return this.toResponse(fresh!);
   }
 
   async sign(businessId: string, id: string): Promise<void> {
