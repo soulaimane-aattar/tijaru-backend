@@ -1,3 +1,5 @@
+import type { Prisma } from '@prisma/client';
+
 /**
  * Port: persistence contract for the stock-movements business logic.
  *
@@ -52,6 +54,6 @@ export abstract class MovementsRepository {
   /** True when a non-deleted warehouse with this id exists. */
   abstract warehouseExists(id: string): Promise<boolean>;
 
-  /** Record an audit-trail entry for a movement (best-effort, outside the stock write). */
-  abstract logActivity(activity: ActivityLog): Promise<void>;
+  /** Record an audit-trail entry for a movement. Pass `tx` to make it part of the caller's transaction. */
+  abstract logActivity(activity: ActivityLog, tx?: Prisma.TransactionClient): Promise<void>;
 }

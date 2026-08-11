@@ -69,8 +69,8 @@ export class PrismaMovementsRepository extends MovementsRepository {
     return warehouse !== null;
   }
 
-  async logActivity(activity: ActivityLog): Promise<void> {
-    await this.prisma.activity.create({
+  async logActivity(activity: ActivityLog, tx?: Prisma.TransactionClient): Promise<void> {
+    await (tx ?? this.prisma).activity.create({
       data: scoped<Prisma.ActivityUncheckedCreateInput>(compact({ ...activity })),
     });
   }
