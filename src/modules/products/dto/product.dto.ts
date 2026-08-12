@@ -45,7 +45,7 @@ export const CreateProductSchema = z.object({
 });
 export type CreateProductInput = z.infer<typeof CreateProductSchema>;
 
-export const UpdateProductSchema = CreateProductSchema.partial();
+export const UpdateProductSchema = CreateProductSchema.omit({ stock: true }).partial();
 export type UpdateProductInput = z.infer<typeof UpdateProductSchema>;
 
 export const ListProductsQuerySchema = z.object({

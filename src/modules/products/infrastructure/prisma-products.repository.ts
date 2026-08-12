@@ -5,11 +5,11 @@ import { PrismaService } from '../../../common/prisma.service';
 import { scoped } from '../../../common/tenant/tenant.helpers';
 import {
   ProductsRepository,
+  type ActivityLog,
   type CreateProductData,
   type ProductIdentity,
   type ProductSearchCriteria,
   type ProductStockView,
-  type StockLevelInput,
   type UpdateProductData,
 } from '../domain/products.repository';
 
@@ -99,37 +99,60 @@ export class PrismaProductsRepository extends ProductsRepository {
 
   create(data: CreateProductData): Promise<unknown> {
     const { stock, unit, ...rest } = data;
-    return this.prisma.product.create({
-      data: scoped<Prisma.ProductUncheckedCreateInput>({
-        ...compact(rest),
-        unit: unit as Unit,
-        stockLevels: {
-          create: stock.map((s) => ({ warehouseId: s.warehouseId, qty: s.qty })),
-        },
-      }),
-      include: { stockLevels: true },
-    });
-  }
-
-  update(id: string, data: UpdateProductData, stock?: StockLevelInput[]): Promise<unknown> {
-    const { unit, ...rest } = data;
+    // Nested `stockLevels.create` bypasses the tenant middleware (it only
+    // stamps `businessId` on the model at the top of `params`, i.e. Product
+    // here) — write each StockLevel as its own `create` inside a transaction
+    // so the middleware scopes it too.
     return this.prisma.$transaction(async (tx) => {
-      if (stock !== undefined) {
-        await tx.stockLevel.deleteMany({ where: { productId: id } });
+      const product = await tx.product.create({
+        data: scoped<Prisma.ProductUncheckedCreateInput>({
+          ...compact(rest),
+          unit: unit as Unit,
+        }),
+      });
+      if (stock.length > 0) {
         await tx.stockLevel.createMany({
-          data: stock.map((s) => ({ productId: id, warehouseId: s.warehouseId, qty: s.qty })),
+          data: stock.map((s) =>
+            scoped<Prisma.StockLevelUncheckedCreateInput>({
+              productId: product.id,
+              warehouseId: s.warehouseId,
+              qty: s.qty,
+            }),
+          ),
         });
       }
-      return tx.product.update({
-        where: { id },
-        data: { ...compact(rest), ...(unit !== undefined ? { unit: unit as Unit } : {}) },
+      return tx.product.findFirstOrThrow({
+        where: { id: product.id },
         include: { stockLevels: true },
       });
     });
   }
 
+  update(id: string, data: UpdateProductData): Promise<unknown> {
+    const { unit, ...rest } = data;
+    return this.prisma.product.update({
+      where: { id },
+      data: { ...compact(rest), ...(unit !== undefined ? { unit: unit as Unit } : {}) },
+      include: { stockLevels: true },
+    });
+  }
+
   async softDelete(id: string): Promise<void> {
     await this.prisma.product.update({ where: { id }, data: { deletedAt: new Date() } });
+  }
+
+  async warehouseExists(id: string): Promise<boolean> {
+    const warehouse = await this.prisma.warehouse.findFirst({
+      where: { id, deletedAt: null },
+      select: { id: true },
+    });
+    return warehouse !== null;
+  }
+
+  async logActivity(activity: ActivityLog, tx?: Prisma.TransactionClient): Promise<void> {
+    await (tx ?? this.prisma).activity.create({
+      data: scoped<Prisma.ActivityUncheckedCreateInput>(compact({ ...activity })),
+    });
   }
 
   async duplicateFrom(

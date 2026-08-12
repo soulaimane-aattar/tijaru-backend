@@ -5,6 +5,14 @@
  * implementation lives in `../infrastructure`. The abstract class doubles as
  * the Nest injection token (interfaces are erased at runtime).
  */
+import type { Prisma } from '@prisma/client';
+
+export interface ActivityLog {
+  userId: string;
+  action: string;
+  desc: string;
+  device?: string | undefined;
+}
 
 /** Minimal shape the stock business rules read. Adapters may return richer rows. */
 export interface ProductStockView {
@@ -81,13 +89,14 @@ export abstract class ProductsRepository {
 
   abstract create(data: CreateProductData): Promise<unknown>;
 
-  abstract update(
-    id: string,
-    data: UpdateProductData,
-    stock?: StockLevelInput[],
-  ): Promise<unknown>;
+  abstract update(id: string, data: UpdateProductData): Promise<unknown>;
 
   abstract softDelete(id: string): Promise<void>;
+
+  /** True when a non-deleted warehouse with this id exists (tenant-scoped). */
+  abstract warehouseExists(id: string): Promise<boolean>;
+
+  abstract logActivity(activity: ActivityLog, tx?: Prisma.TransactionClient): Promise<void>;
 
   /** Copy every field of `sourceId` into a new product, overriding identity fields. */
   abstract duplicateFrom(
