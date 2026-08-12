@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
+import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { LoggerModule } from 'nestjs-pino';
 
@@ -38,6 +39,7 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module';
 @Module({
   imports: [
     ConfigModule,
+    ScheduleModule.forRoot(),
     AuthModule,
     UsersModule,
     ProductsModule,
