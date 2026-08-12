@@ -5,12 +5,13 @@ import { PrismaService } from '../../../common/prisma.service';
 import { scoped } from '../../../common/tenant/tenant.helpers';
 import {
   PurchaseOrdersRepository,
+  type ActivityLog,
   type CreatePOData,
   type PatchPOData,
   type POListFilters,
+  type POLineTotals,
   type POStatus,
   type POView,
-  type ReceivePOData,
 } from '../domain/po.repository';
 
 /** Strip keys whose value is `undefined` (exactOptionalPropertyTypes-safe Prisma payloads). */
@@ -91,75 +92,54 @@ export class PrismaPurchaseOrdersRepository extends PurchaseOrdersRepository {
     await this.prisma.purchaseOrder.delete({ where: { id } });
   }
 
-  findWithLines(id: string): Promise<POView | null> {
-    return this.prisma.purchaseOrder.findUnique({
+  async findWithLines(id: string): Promise<POView | null> {
+    const po = await this.prisma.purchaseOrder.findUnique({
       where: { id },
       select: {
         id: true,
         number: true,
         status: true,
         warehouseId: true,
-        lines: { select: { id: true, productId: true, qty: true, received: true } },
+        lines: { select: { id: true, productId: true, qty: true, received: true, price: true } },
       },
+    });
+    if (!po) return null;
+    return {
+      ...po,
+      lines: po.lines.map((l) => ({ ...l, price: Number(l.price) })),
+    };
+  }
+
+  async incrementLineReceived(
+    lineId: string,
+    qty: number,
+    tx: Prisma.TransactionClient,
+  ): Promise<void> {
+    await tx.purchaseOrderLine.update({
+      where: { id: lineId },
+      data: { received: { increment: qty } },
     });
   }
 
-  receive(data: ReceivePOData): Promise<unknown> {
-    return this.prisma.$transaction(async (tx) => {
-      for (const r of data.receipts) {
-        await tx.stockLevel.upsert({
-          where: {
-            productId_warehouseId: { productId: r.productId, warehouseId: data.warehouseId },
-          },
-          create: { productId: r.productId, warehouseId: data.warehouseId, qty: r.qty },
-          update: { qty: { increment: r.qty } },
-        });
-        await tx.movement.create({
-          data: scoped<Prisma.MovementUncheckedCreateInput>({
-            type: 'in',
-            productId: r.productId,
-            qty: r.qty,
-            warehouseId: data.warehouseId,
-            userId: data.actorId,
-            reason: 'achat',
-            ref: data.movementRef,
-          }),
-        });
-        await tx.purchaseOrderLine.update({
-          where: { id: r.lineId },
-          data: { received: { increment: r.qty } },
-        });
-      }
+  async findLineTotals(poId: string, tx: Prisma.TransactionClient): Promise<POLineTotals[]> {
+    return tx.purchaseOrderLine.findMany({
+      where: { purchaseOrderId: poId },
+      select: { qty: true, received: true },
+    });
+  }
 
-      // Status recompute uses the fresh in-transaction totals — intertwined
-      // with the atomic write, so it stays here rather than in the service.
-      const fresh = await tx.purchaseOrder.findUniqueOrThrow({
-        where: { id: data.poId },
-        include: { lines: true },
-      });
-      const totalQty = fresh.lines.reduce((s, l) => s + l.qty, 0);
-      const totalRcvd = fresh.lines.reduce((s, l) => s + l.received, 0);
+  async updateStatus(poId: string, status: POStatus, tx: Prisma.TransactionClient): Promise<void> {
+    await tx.purchaseOrder.update({ where: { id: poId }, data: { status } });
+  }
 
-      await tx.purchaseOrder.update({
-        where: { id: data.poId },
-        data: { status: totalRcvd >= totalQty ? 'received' : 'partiallyReceived' },
-      });
-      await tx.activity.create({
-        data: scoped<Prisma.ActivityUncheckedCreateInput>({
-          userId: data.actorId,
-          action: 'po.received',
-          desc: data.activityDesc,
-          ...(data.actorDevice ? { device: data.actorDevice } : {}),
-        }),
-      });
-      return tx.purchaseOrder.findUniqueOrThrow({
-        where: { id: data.poId },
-        include: {
-          supplier: { select: { id: true, name: true } },
-          warehouse: { select: { id: true, name: true } },
-          lines: true,
-        },
-      });
+  async logActivity(activity: ActivityLog, tx: Prisma.TransactionClient): Promise<void> {
+    await tx.activity.create({
+      data: scoped<Prisma.ActivityUncheckedCreateInput>({
+        userId: activity.userId,
+        action: activity.action,
+        desc: activity.desc,
+        ...(activity.device ? { device: activity.device } : {}),
+      }),
     });
   }
 }

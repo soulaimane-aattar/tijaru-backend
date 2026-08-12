@@ -2,12 +2,19 @@ import { Injectable } from '@nestjs/common';
 
 import type { AuthUser } from '../../../common/auth/auth-user.type';
 import { DomainError, NotFoundError } from '../../../common/errors';
-import { PurchaseOrdersRepository, type ReceiptLine } from '../domain/po.repository';
+import { PrismaService } from '../../../common/prisma.service';
+import { StockLedgerService } from '../../stock-ledger/application/stock-ledger.service';
+import type { LedgerLine } from '../../stock-ledger/domain/stock-ledger.types';
+import { PurchaseOrdersRepository } from '../domain/po.repository';
 import type { CreatePOInput, ListPOQuery, PatchPOInput, ReceivePOInput } from '../dto/po.dto';
 
 @Injectable()
 export class POService {
-  constructor(private readonly purchaseOrders: PurchaseOrdersRepository) {}
+  constructor(
+    private readonly purchaseOrders: PurchaseOrdersRepository,
+    private readonly ledger: StockLedgerService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   list(q: ListPOQuery): Promise<unknown> {
     return this.purchaseOrders.findAll(q);
@@ -48,10 +55,14 @@ export class POService {
   /**
    * Receive PO lines. For each {lineId, qty} input:
    *  - Reject qty above (line.qty - line.received).
-   *  - Emit Movement{in, achat, ref:po.number}.
-   *  - Increment StockLevel at po.warehouseId.
+   *  - Post an `achat` ledger entry (+qty at po.warehouseId, unitCost = line
+   *    price) so the stock delta, Movement row and WAC `avgCost` update all
+   *    happen atomically via `StockLedgerService.post(input, tx)`.
    *  - Increment line.received.
-   * Then the PO status is recomputed (received / partiallyReceived). Atomic transaction.
+   * Then the PO status is recomputed (received / partiallyReceived) from
+   * fresh in-transaction totals, and the activity log entry is written in
+   * the same transaction. Supports partial receipts across multiple calls —
+   * each call only posts the ledger delta for that call's lines.
    */
   async receive(id: string, input: ReceivePOInput, actor: AuthUser): Promise<unknown> {
     const po = await this.purchaseOrders.findWithLines(id);
@@ -61,7 +72,7 @@ export class POService {
     }
 
     const lineById = new Map(po.lines.map((l) => [l.id, l]));
-    const receipts: ReceiptLine[] = [];
+    const ledgerLines: LedgerLine[] = [];
     for (const r of input.lines) {
       const line = lineById.get(r.lineId);
       if (!line) throw new NotFoundError('POLine', r.lineId);
@@ -72,17 +83,51 @@ export class POService {
           422,
         );
       }
-      receipts.push({ lineId: line.id, productId: line.productId, qty: r.qty });
+      ledgerLines.push({
+        productId: line.productId,
+        warehouseId: po.warehouseId,
+        delta: r.qty,
+        unitCost: line.price,
+      });
     }
 
-    return this.purchaseOrders.receive({
-      poId: id,
-      warehouseId: po.warehouseId,
-      movementRef: po.number,
-      receipts,
-      actorId: actor.id,
-      actorDevice: actor.device,
-      activityDesc: `Réception ${po.number} — ${input.lines.reduce((s, l) => s + l.qty, 0)} unité(s)`,
+    await this.prisma.$transaction(async (tx) => {
+      await this.ledger.post(
+        {
+          businessId: actor.businessId,
+          userId: actor.id,
+          type: 'in',
+          reason: 'achat',
+          ref: po.number,
+          lines: ledgerLines,
+        },
+        tx,
+      );
+
+      for (const r of input.lines) {
+        await this.purchaseOrders.incrementLineReceived(r.lineId, r.qty, tx);
+      }
+
+      const totals = await this.purchaseOrders.findLineTotals(id, tx);
+      const totalQty = totals.reduce((s, l) => s + l.qty, 0);
+      const totalRcvd = totals.reduce((s, l) => s + l.received, 0);
+      await this.purchaseOrders.updateStatus(
+        id,
+        totalRcvd >= totalQty ? 'received' : 'partiallyReceived',
+        tx,
+      );
+
+      await this.purchaseOrders.logActivity(
+        {
+          userId: actor.id,
+          action: 'po.received',
+          desc: `Réception ${po.number} — ${input.lines.reduce((s, l) => s + l.qty, 0)} unité(s)`,
+          ...(actor.device !== undefined ? { device: actor.device } : {}),
+        },
+        tx,
+      );
     });
+
+    return this.purchaseOrders.findDetail(id);
   }
 }

@@ -6,6 +6,8 @@
  * the Nest injection token (interfaces are erased at runtime).
  */
 
+import type { Prisma } from '@prisma/client';
+
 export type POStatus = 'draft' | 'sent' | 'partiallyReceived' | 'received' | 'cancelled';
 
 export interface POListFilters {
@@ -41,6 +43,8 @@ export interface POLineView {
   productId: string;
   qty: number;
   received: number;
+  /** Unit purchase price — becomes `unitCost` on the ledger line (drives WAC). */
+  price: number;
 }
 
 export interface POView {
@@ -51,21 +55,17 @@ export interface POView {
   lines: POLineView[];
 }
 
-export interface ReceiptLine {
-  lineId: string;
-  productId: string;
-  qty: number;
+export interface ActivityLog {
+  userId: string;
+  action: string;
+  desc: string;
+  device?: string | undefined;
 }
 
-export interface ReceivePOData {
-  poId: string;
-  warehouseId: string;
-  /** Movement ref shared by every receipt movement (the PO number). */
-  movementRef: string;
-  receipts: ReceiptLine[];
-  actorId: string;
-  actorDevice?: string | undefined;
-  activityDesc: string;
+/** Aggregate totals used to recompute PO status after a receipt. */
+export interface POLineTotals {
+  qty: number;
+  received: number;
 }
 
 export abstract class PurchaseOrdersRepository {
@@ -88,10 +88,26 @@ export abstract class PurchaseOrdersRepository {
 
   abstract findWithLines(id: string): Promise<POView | null>;
 
+  /** Increment a single line's received qty. Part of the caller's transaction. */
+  abstract incrementLineReceived(
+    lineId: string,
+    qty: number,
+    tx: Prisma.TransactionClient,
+  ): Promise<void>;
+
   /**
-   * Atomically apply validated receipts: increment stock, emit movements,
-   * increment received per line, recompute the PO status from the fresh
-   * in-transaction totals, and log the activity entry. Returns the refreshed PO.
+   * Fresh per-line (qty, received) totals read inside the caller's
+   * transaction, used to recompute PO status after a receipt.
    */
-  abstract receive(data: ReceivePOData): Promise<unknown>;
+  abstract findLineTotals(poId: string, tx: Prisma.TransactionClient): Promise<POLineTotals[]>;
+
+  /** Persist the recomputed PO status. Part of the caller's transaction. */
+  abstract updateStatus(
+    poId: string,
+    status: POStatus,
+    tx: Prisma.TransactionClient,
+  ): Promise<void>;
+
+  /** Record an audit-trail entry. Part of the caller's transaction. */
+  abstract logActivity(activity: ActivityLog, tx: Prisma.TransactionClient): Promise<void>;
 }
