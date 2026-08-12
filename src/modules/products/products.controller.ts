@@ -46,6 +46,12 @@ export class ProductsController {
     return this.products.list(query);
   }
 
+  @Get('by-barcode/:code')
+  @RequireCap('products.view')
+  findByBarcode(@Param('code') code: string, @CurrentUser() user: AuthUser): Promise<unknown> {
+    return this.products.findByBarcode(user, code);
+  }
+
   @Get(':id')
   @RequireCap('products.view')
   get(@Param('id') id: string): Promise<unknown> {

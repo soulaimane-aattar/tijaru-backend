@@ -111,6 +111,25 @@ describe('Products (e2e)', () => {
     });
   });
 
+  describe('GET /products/by-barcode/:code', () => {
+    it('returns the product matching the barcode', async () => {
+      const p = await prisma.product.findFirstOrThrow();
+      const res = await api(app)
+        .get(`/api/v1/products/by-barcode/${p.barcode}`)
+        .set(bearer(tokens.owner))
+        .expect(200);
+      expect(res.body.id).toBe(p.id);
+    });
+
+    it('returns 404 when no product matches the barcode', async () => {
+      const res = await api(app)
+        .get('/api/v1/products/by-barcode/0000000000000')
+        .set(bearer(tokens.owner))
+        .expect(404);
+      expect(res.body.code).toBe('not_found');
+    });
+  });
+
   describe('POST /products', () => {
     const makeBody = (suffix: string) => ({
       name: `Test ${suffix}`,

@@ -88,6 +88,12 @@ export class ProductsService {
     return product;
   }
 
+  async findByBarcode(_actor: AuthUser, code: string): Promise<unknown> {
+    const product = await this.products.findByBarcode(code);
+    if (!product) throw new NotFoundError('product_not_found');
+    return product;
+  }
+
   async create(input: CreateProductInput): Promise<unknown> {
     if (await this.products.hasBarcodeOrSkuConflict(input.barcode, input.sku)) {
       throw new ConflictError('Barcode or SKU already in use');

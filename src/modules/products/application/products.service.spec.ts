@@ -23,6 +23,7 @@ const mockRepo = (): jest.Mocked<ProductsRepository> =>
   ({
     findAllMatching: jest.fn(),
     findDetail: jest.fn(),
+    findByBarcode: jest.fn(),
     findIdentity: jest.fn().mockResolvedValue({ id: PID, name: 'Widget', sku: 'SKU1', barcode: '1234567890123' }),
     hasBarcodeOrSkuConflict: jest.fn().mockResolvedValue(false),
     create: jest.fn(),
@@ -59,6 +60,29 @@ describe('ProductsService.update — no longer accepts stock', () => {
     expect(repo.update).toHaveBeenCalledTimes(1);
     // Repo contract no longer takes a third (stock) argument.
     expect(repo.update.mock.calls[0]?.length).toBe(2);
+  });
+});
+
+describe('ProductsService.findByBarcode', () => {
+  it('returns the product when barcode matches (tenant-scoped)', async () => {
+    const repo = mockRepo();
+    const ledger = mockLedger();
+    const prisma = mockPrisma();
+    const svc = new ProductsService(repo, ledger, prisma);
+
+    repo.findByBarcode.mockResolvedValue({ id: 'p1', barcode: '4006381333931' } as never);
+    await expect(svc.findByBarcode(actor, '4006381333931')).resolves.toMatchObject({ id: 'p1' });
+    expect(repo.findByBarcode).toHaveBeenCalledWith('4006381333931');
+  });
+
+  it('throws NotFoundError when barcode not found', async () => {
+    const repo = mockRepo();
+    const ledger = mockLedger();
+    const prisma = mockPrisma();
+    const svc = new ProductsService(repo, ledger, prisma);
+
+    repo.findByBarcode.mockResolvedValue(null);
+    await expect(svc.findByBarcode(actor, '0000000000000')).rejects.toBeInstanceOf(NotFoundError);
   });
 });
 

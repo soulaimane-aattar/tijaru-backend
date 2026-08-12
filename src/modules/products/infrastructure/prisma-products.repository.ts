@@ -73,6 +73,17 @@ export class PrismaProductsRepository extends ProductsRepository {
     });
   }
 
+  findByBarcode(code: string): Promise<unknown | null> {
+    return this.prisma.product.findFirst({
+      where: { barcode: code, deletedAt: null },
+      include: {
+        stockLevels: { include: { warehouse: { select: { id: true, name: true, city: true } } } },
+        category: true,
+        supplier: true,
+      },
+    });
+  }
+
   findIdentity(id: string): Promise<ProductIdentity | null> {
     return this.prisma.product.findFirst({
       where: { id, deletedAt: null },

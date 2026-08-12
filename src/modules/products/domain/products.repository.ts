@@ -77,6 +77,9 @@ export abstract class ProductsRepository {
   /** Full detail payload (relations included) or null. */
   abstract findDetail(id: string): Promise<unknown | null>;
 
+  /** Full detail payload (relations included) by barcode, tenant-scoped, or null. */
+  abstract findByBarcode(code: string): Promise<unknown | null>;
+
   /** Identity fields of a non-deleted product, or null. */
   abstract findIdentity(id: string): Promise<ProductIdentity | null>;
 
