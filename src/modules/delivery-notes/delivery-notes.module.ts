@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 
+import { StockLedgerModule } from '../stock-ledger/stock-ledger.module';
+
 import { DeliveryNotePdfService } from './application/delivery-note-pdf.service';
 import { DeliveryNotesService } from './application/delivery-notes.service';
 import { DeliveryNotesController } from './delivery-notes.controller';
@@ -13,6 +15,7 @@ import { PrismaDeliveryPdfInfoLookup } from './infrastructure/prisma-delivery-pd
 import { PrismaProductPriceLookup } from './infrastructure/prisma-product-price-lookup';
 
 @Module({
+  imports: [StockLedgerModule],
   controllers: [DeliveryNotesController],
   providers: [
     DeliveryNotesService,

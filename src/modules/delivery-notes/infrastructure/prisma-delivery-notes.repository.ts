@@ -141,11 +141,22 @@ export class PrismaDeliveryNotesRepository extends DeliveryNotesRepository {
     await this.prisma.deliveryNoteLine.update({ where: { id: lineId }, data: { sent } });
   }
 
-  async markSigned(id: string, when: Date): Promise<void> {
-    await this.prisma.deliveryNote.update({
+  async markSigned(id: string, when: Date, tx: Prisma.TransactionClient): Promise<void> {
+    await tx.deliveryNote.update({
       where: { id },
       data: { signed: true, signedAt: when },
     });
+  }
+
+  async findDefaultWarehouseId(
+    businessId: string,
+    tx: Prisma.TransactionClient,
+  ): Promise<string | null> {
+    const wh = await tx.warehouse.findFirst({
+      where: { businessId, isDefault: true },
+      select: { id: true },
+    });
+    return wh?.id ?? null;
   }
 
   private toDetail(row: {

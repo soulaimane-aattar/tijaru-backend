@@ -1,5 +1,7 @@
 import type { AuthUser } from '../../../common/auth/auth-user.type';
 import { DomainError, NotFoundError } from '../../../common/errors';
+import type { PrismaService } from '../../../common/prisma.service';
+import type { StockLedgerService } from '../../stock-ledger/application/stock-ledger.service';
 import type {
   DeliveryDetail,
   DeliveryNotesRepository,
@@ -51,12 +53,31 @@ const repo = (): jest.Mocked<DeliveryNotesRepository> =>
     updateStatus: jest.fn().mockResolvedValue(undefined),
     updateLineSent: jest.fn().mockResolvedValue(undefined),
     markSigned: jest.fn().mockResolvedValue(undefined),
+    findDefaultWarehouseId: jest.fn().mockResolvedValue('wh1'),
   }) as unknown as jest.Mocked<DeliveryNotesRepository>;
 
 const products = (): jest.Mocked<ProductPriceLookup> =>
   ({
     findById: jest.fn().mockResolvedValue({ id: PROD, price: 0 }),
   }) as unknown as jest.Mocked<ProductPriceLookup>;
+
+const ledger = (): jest.Mocked<StockLedgerService> =>
+  ({
+    post: jest.fn().mockResolvedValue([]),
+  }) as unknown as jest.Mocked<StockLedgerService>;
+
+/** `$transaction` runs the callback with a stand-in tx client; repo/ledger mocks ignore its identity. */
+const prisma = (): jest.Mocked<PrismaService> =>
+  ({
+    $transaction: jest.fn().mockImplementation((fn: (tx: unknown) => unknown) => fn({})),
+  }) as unknown as jest.Mocked<PrismaService>;
+
+const makeSvc = (
+  r: jest.Mocked<DeliveryNotesRepository>,
+  p: jest.Mocked<ProductPriceLookup>,
+  l: jest.Mocked<StockLedgerService> = ledger(),
+  tx: jest.Mocked<PrismaService> = prisma(),
+) => new DeliveryNotesService(r, p, l, tx);
 
 const baseInput = (over: Partial<CreateDeliveryNoteInput> = {}): CreateDeliveryNoteInput =>
   ({
@@ -97,13 +118,13 @@ describe('statusFromLines', () => {
 describe('DeliveryNotesService.create', () => {
   it('assigns BL prefix for type=out', async () => {
     const r = repo();
-    await new DeliveryNotesService(r, products()).create(baseInput(), actor);
+    await makeSvc(r, products()).create(baseInput(), actor);
     expect(r.create.mock.calls[0]![0].number).toMatch(/^BL-\d{4}-0001$/);
   });
 
   it('assigns BC prefix for type=order', async () => {
     const r = repo();
-    await new DeliveryNotesService(r, products()).create(
+    await makeSvc(r, products()).create(
       baseInput({ type: 'order', supplierId: SUPPLIER, customerId: undefined }),
       actor,
     );
@@ -112,7 +133,7 @@ describe('DeliveryNotesService.create', () => {
 
   it('assigns BR prefix for type=in_', async () => {
     const r = repo();
-    await new DeliveryNotesService(r, products()).create(
+    await makeSvc(r, products()).create(
       baseInput({ type: 'in_', supplierId: SUPPLIER, customerId: undefined }),
       actor,
     );
@@ -122,14 +143,14 @@ describe('DeliveryNotesService.create', () => {
   it('increments from the highest existing number of the same type/year', async () => {
     const r = repo();
     r.findLastNumber.mockResolvedValue('BL-2026-0041');
-    await new DeliveryNotesService(r, products()).create(baseInput(), actor);
+    await makeSvc(r, products()).create(baseInput(), actor);
     expect(r.create.mock.calls[0]![0].number).toBe('BL-2026-0042');
   });
 
   it('rejects when a line has sent > ordered', async () => {
     const r = repo();
     await expect(
-      new DeliveryNotesService(r, products()).create(
+      makeSvc(r, products()).create(
         baseInput({ lines: [{ productId: PROD, label: 'x', ordered: 5, sent: 999 }] }),
         actor,
       ),
@@ -138,13 +159,13 @@ describe('DeliveryNotesService.create', () => {
 
   it('starts with derived status = fallback when nothing sent', async () => {
     const r = repo();
-    await new DeliveryNotesService(r, products()).create(baseInput({ status: 'shipped' }), actor);
+    await makeSvc(r, products()).create(baseInput({ status: 'shipped' }), actor);
     expect(r.create.mock.calls[0]![0].status).toBe('shipped');
   });
 
   it('derives status=partial when some sent > 0 but < ordered', async () => {
     const r = repo();
-    await new DeliveryNotesService(r, products()).create(
+    await makeSvc(r, products()).create(
       baseInput({ lines: [{ productId: PROD, label: 'x', ordered: 10, sent: 4 }] }),
       actor,
     );
@@ -153,7 +174,7 @@ describe('DeliveryNotesService.create', () => {
 
   it('derives status=delivered when every line fully filled', async () => {
     const r = repo();
-    await new DeliveryNotesService(r, products()).create(
+    await makeSvc(r, products()).create(
       baseInput({ lines: [{ productId: PROD, label: 'x', ordered: 10, sent: 10 }] }),
       actor,
     );
@@ -165,7 +186,7 @@ describe('DeliveryNotesService.get', () => {
   it('throws NotFoundError when the note is missing', async () => {
     const r = repo();
     r.findDetail.mockResolvedValue(null);
-    await expect(new DeliveryNotesService(r, products()).get(BID, 'x')).rejects.toBeInstanceOf(NotFoundError);
+    await expect(makeSvc(r, products()).get(BID, 'x')).rejects.toBeInstanceOf(NotFoundError);
   });
 });
 
@@ -174,7 +195,7 @@ describe('DeliveryNotesService.updateLineSent', () => {
     const r = repo();
     r.findDetail.mockResolvedValue(detail());
     await expect(
-      new DeliveryNotesService(r, products()).updateLineSent(BID, 'dn1', 'l1', 999),
+      makeSvc(r, products()).updateLineSent(BID, 'dn1', 'l1', 999),
     ).rejects.toMatchObject({ response: { code: 'invalid_line_sent' } });
   });
 
@@ -182,7 +203,7 @@ describe('DeliveryNotesService.updateLineSent', () => {
     const r = repo();
     r.findDetail.mockResolvedValue(detail({ status: 'closed' }));
     await expect(
-      new DeliveryNotesService(r, products()).updateLineSent(BID, 'dn1', 'l1', 1),
+      makeSvc(r, products()).updateLineSent(BID, 'dn1', 'l1', 1),
     ).rejects.toBeInstanceOf(DomainError);
   });
 
@@ -191,7 +212,7 @@ describe('DeliveryNotesService.updateLineSent', () => {
     r.findDetail
       .mockResolvedValueOnce(detail()) // initial check
       .mockResolvedValueOnce(detail({ lines: [{ id: 'l1', productId: PROD, label: 'x', ordered: 10, sent: 10, unitPrice: 0 }] })); // after refresh
-    await new DeliveryNotesService(r, products()).updateLineSent(BID, 'dn1', 'l1', 10);
+    await makeSvc(r, products()).updateLineSent(BID, 'dn1', 'l1', 10);
     expect(r.updateLineSent).toHaveBeenCalledWith('l1', 10);
     expect(r.updateStatus).toHaveBeenCalledWith('dn1', 'delivered');
   });
@@ -201,7 +222,7 @@ describe('DeliveryNotesService.updateLineSent', () => {
     r.findDetail
       .mockResolvedValueOnce(detail())
       .mockResolvedValueOnce(detail({ lines: [{ id: 'l1', productId: PROD, label: 'x', ordered: 10, sent: 3, unitPrice: 0 }] }));
-    await new DeliveryNotesService(r, products()).updateLineSent(BID, 'dn1', 'l1', 3);
+    await makeSvc(r, products()).updateLineSent(BID, 'dn1', 'l1', 3);
     expect(r.updateStatus).toHaveBeenCalledWith('dn1', 'partial');
   });
 
@@ -209,7 +230,7 @@ describe('DeliveryNotesService.updateLineSent', () => {
     const r = repo();
     r.findDetail.mockResolvedValue(detail());
     await expect(
-      new DeliveryNotesService(r, products()).updateLineSent(BID, 'dn1', 'nope', 1),
+      makeSvc(r, products()).updateLineSent(BID, 'dn1', 'nope', 1),
     ).rejects.toBeInstanceOf(NotFoundError);
   });
 });
@@ -218,23 +239,83 @@ describe('DeliveryNotesService.sign', () => {
   it('marks the note signed when type=out', async () => {
     const r = repo();
     r.findDetail.mockResolvedValue(detail());
-    await new DeliveryNotesService(r, products()).sign(BID, 'dn1');
+    await makeSvc(r, products()).sign(BID, 'dn1', actor);
     expect(r.markSigned).toHaveBeenCalled();
   });
 
-  it('rejects sign() on non-out types', async () => {
+  it('sign(out) posts negative ledger lines from DN lines (only lines with sent > 0)', async () => {
     const r = repo();
-    r.findDetail.mockResolvedValue(detail({ type: 'in_' }));
-    await expect(new DeliveryNotesService(r, products()).sign(BID, 'dn1')).rejects.toMatchObject({
-      response: { code: 'only_out_signable' },
-    });
+    r.findDetail.mockResolvedValue(
+      detail({
+        type: 'out',
+        lines: [
+          { id: 'l1', productId: PROD, label: 'Coca 33cl', ordered: 10, sent: 4, unitPrice: 0 },
+          { id: 'l2', productId: 'p2', label: 'Fanta 33cl', ordered: 5, sent: 0, unitPrice: 0 },
+        ],
+      }),
+    );
+    const l = ledger();
+    await makeSvc(r, products(), l).sign(BID, 'dn1', actor);
+    expect(l.post).toHaveBeenCalledWith(
+      expect.objectContaining({
+        businessId: BID,
+        userId: actor.id,
+        type: 'out',
+        reason: 'vente',
+        ref: 'BL-2026-0001',
+        lines: [{ productId: PROD, warehouseId: 'wh1', delta: -4 }],
+      }),
+      expect.anything(),
+    );
+    expect(r.markSigned).toHaveBeenCalled();
   });
 
-  it('is a no-op when already signed', async () => {
+  it('sign(in_) posts positive ledger lines', async () => {
+    const r = repo();
+    r.findDetail.mockResolvedValue(
+      detail({
+        type: 'in_',
+        customerId: null,
+        supplierId: SUPPLIER,
+        lines: [{ id: 'l1', productId: PROD, label: 'Coca 33cl', ordered: 10, sent: 6, unitPrice: 0 }],
+      }),
+    );
+    const l = ledger();
+    await makeSvc(r, products(), l).sign(BID, 'dn1', actor);
+    expect(l.post).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'in',
+        reason: 'achat',
+        lines: [{ productId: PROD, warehouseId: 'wh1', delta: 6 }],
+      }),
+      expect.anything(),
+    );
+    expect(r.markSigned).toHaveBeenCalled();
+  });
+
+  it('sign(order) does not touch stock', async () => {
+    const r = repo();
+    r.findDetail.mockResolvedValue(
+      detail({
+        type: 'order',
+        customerId: null,
+        supplierId: SUPPLIER,
+        lines: [{ id: 'l1', productId: PROD, label: 'Coca 33cl', ordered: 10, sent: 6, unitPrice: 0 }],
+      }),
+    );
+    const l = ledger();
+    await makeSvc(r, products(), l).sign(BID, 'dn1', actor);
+    expect(l.post).not.toHaveBeenCalled();
+    expect(r.markSigned).toHaveBeenCalled();
+  });
+
+  it('re-signing an already-signed DN is a no-op (idempotent)', async () => {
     const r = repo();
     r.findDetail.mockResolvedValue(detail({ signed: true }));
-    await new DeliveryNotesService(r, products()).sign(BID, 'dn1');
+    const l = ledger();
+    await makeSvc(r, products(), l).sign(BID, 'dn1', actor);
     expect(r.markSigned).not.toHaveBeenCalled();
+    expect(l.post).not.toHaveBeenCalled();
   });
 });
 
@@ -243,7 +324,7 @@ describe('unit price + totals', () => {
     const r = repo();
     const p = products();
     p.findById.mockResolvedValue({ id: PROD, price: '12.50' } as any);
-    await new DeliveryNotesService(r, p).create(
+    await makeSvc(r, p).create(
       baseInput({ lines: [{ productId: PROD, label: 'X', ordered: 2, sent: 0 }] }),
       actor,
     );
@@ -256,7 +337,7 @@ describe('unit price + totals', () => {
     const r = repo();
     const p = products();
     p.findById.mockResolvedValue({ id: PROD, price: '99' } as any);
-    await new DeliveryNotesService(r, p).create(
+    await makeSvc(r, p).create(
       baseInput({ lines: [{ productId: PROD, label: 'X', ordered: 2, sent: 0, unitPrice: 5 } as any] }),
       actor,
     );
@@ -274,11 +355,11 @@ describe('unit price + totals', () => {
         { sent: '2', ordered: '2', unitPrice: '7.5' },
       ],
     };
-    expect(new DeliveryNotesService(repo(), products()).computeTotals(note as any).subtotal).toBe(45);
+    expect(makeSvc(repo(), products()).computeTotals(note as any).subtotal).toBe(45);
   });
 
   it('computeTotals: BC/BR uses ordered × unitPrice', () => {
-    const svc = new DeliveryNotesService(repo(), products());
+    const svc = makeSvc(repo(), products());
     const noteBC = { type: 'order' as const, lines: [{ sent: '0', ordered: '4', unitPrice: '25' }] };
     const noteBR = { type: 'in_' as const, lines: [{ sent: '0', ordered: '3', unitPrice: '10' }] };
     expect(svc.computeTotals(noteBC as any).subtotal).toBe(100);
@@ -287,7 +368,7 @@ describe('unit price + totals', () => {
 
   it('computeTotals: empty lines → 0', () => {
     expect(
-      new DeliveryNotesService(repo(), products()).computeTotals({ type: 'out', lines: [] } as any)
+      makeSvc(repo(), products()).computeTotals({ type: 'out', lines: [] } as any)
         .subtotal,
     ).toBe(0);
   });
@@ -300,7 +381,7 @@ describe('unit price + totals', () => {
         lines: [{ id: 'l1', productId: PROD, label: 'X', ordered: 10, sent: 4, unitPrice: 2.5 }],
       }),
     );
-    const result = await new DeliveryNotesService(r, products()).get(BID, 'dn1');
+    const result = await makeSvc(r, products()).get(BID, 'dn1');
     expect(result.lines[0]).toEqual(expect.objectContaining({ unitPrice: 2.5, subtotal: 10 }));
     expect(result.totals).toEqual({ subtotal: 10 });
   });

@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
 
 import type { AuthUser } from '../../../common/auth/auth-user.type';
-import { DomainError, NotFoundError } from '../../../common/errors';
+import { DomainError, NotFoundError, ValidationError } from '../../../common/errors';
+import { PrismaService } from '../../../common/prisma.service';
+import { StockLedgerService } from '../../stock-ledger/application/stock-ledger.service';
+import type { LedgerLine } from '../../stock-ledger/domain/stock-ledger.types';
 import {
   DeliveryNotesRepository,
   ProductPriceLookup,
@@ -56,6 +59,8 @@ export class DeliveryNotesService {
   constructor(
     private readonly repo: DeliveryNotesRepository,
     private readonly products: ProductPriceLookup,
+    private readonly ledger: StockLedgerService,
+    private readonly prisma: PrismaService,
   ) {}
 
   async list(businessId: string, query: ListDeliveryNotesQuery) {
@@ -190,14 +195,51 @@ export class DeliveryNotesService {
     return this.toResponse(fresh!);
   }
 
-  async sign(businessId: string, id: string): Promise<void> {
+  /**
+   * Sign a delivery note. Idempotent: an already-signed note is a no-op
+   * (never re-posts to the ledger).
+   *
+   * Stock effect depends on type:
+   *  - `out` (BL, livraison) decrements stock — reason `vente`.
+   *  - `in_` (BR, réception) increments stock — reason `achat`.
+   *  - `order` (BC, bon de commande) has no stock effect.
+   *
+   * DeliveryNote carries no warehouseId of its own, so out/in_ signing uses
+   * the business's default warehouse (mirrors POS session warehouse pick).
+   * Only lines with `sent > 0` post to the ledger.
+   */
+  async sign(businessId: string, id: string, actor: AuthUser): Promise<void> {
     const inv = await this.repo.findDetail(businessId, id);
     if (!inv) throw new NotFoundError('DeliveryNote', id);
-    if (inv.type !== 'out') {
-      throw new DomainError('only_out_signable', 'Only delivery notes (out) can be signed', 422);
-    }
     if (inv.signed) return;
-    await this.repo.markSigned(id, new Date());
+
+    await this.prisma.$transaction(async (tx) => {
+      if (inv.type === 'out' || inv.type === 'in_') {
+        const linesToPost = inv.lines.filter((l) => l.sent > 0);
+        if (linesToPost.length > 0) {
+          const warehouseId = await this.repo.findDefaultWarehouseId(businessId, tx);
+          if (!warehouseId) throw new ValidationError('no_default_warehouse');
+          const factor = inv.type === 'out' ? -1 : 1;
+          const lines: LedgerLine[] = linesToPost.map((l) => ({
+            productId: l.productId,
+            warehouseId,
+            delta: factor * l.sent,
+          }));
+          await this.ledger.post(
+            {
+              businessId,
+              userId: actor.id,
+              type: factor === -1 ? 'out' : 'in',
+              reason: factor === -1 ? 'vente' : 'achat',
+              ref: inv.number,
+              lines,
+            },
+            tx,
+          );
+        }
+      }
+      await this.repo.markSigned(id, new Date(), tx);
+    });
   }
 
   async setStatus(businessId: string, id: string, status: DeliveryNoteStatus): Promise<void> {

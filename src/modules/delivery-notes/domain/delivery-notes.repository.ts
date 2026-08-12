@@ -1,3 +1,5 @@
+import type { Prisma } from '@prisma/client';
+
 import type { DeliveryNoteStatus, DeliveryNoteType } from '../dto/delivery-notes.dto';
 
 export interface DeliveryLineData {
@@ -76,7 +78,18 @@ export abstract class DeliveryNotesRepository {
   abstract list(params: ListParams): Promise<ListResult>;
   abstract updateStatus(id: string, status: DeliveryNoteStatus): Promise<void>;
   abstract updateLineSent(lineId: string, sent: number): Promise<void>;
-  abstract markSigned(id: string, when: Date): Promise<void>;
+
+  /** Part of the caller's transaction — used when sign() also posts a ledger entry. */
+  abstract markSigned(id: string, when: Date, tx: Prisma.TransactionClient): Promise<void>;
+
+  /**
+   * The business's default warehouse (used at sign-time since DeliveryNote
+   * itself carries no warehouseId). Part of the caller's transaction.
+   */
+  abstract findDefaultWarehouseId(
+    businessId: string,
+    tx: Prisma.TransactionClient,
+  ): Promise<string | null>;
 }
 
 /**

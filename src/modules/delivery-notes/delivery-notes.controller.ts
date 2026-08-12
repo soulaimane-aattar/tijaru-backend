@@ -84,8 +84,8 @@ export class DeliveryNotesController {
   @Post(':id/sign')
   @RequireCap('po.manage')
   @HttpCode(204)
-  async sign(@Param('id') id: string): Promise<void> {
-    await this.svc.sign(this.bid(), id);
+  async sign(@Param('id') id: string, @CurrentUser() user: AuthUser): Promise<void> {
+    await this.svc.sign(this.bid(), id, user);
   }
 
   @Patch(':id/status')
