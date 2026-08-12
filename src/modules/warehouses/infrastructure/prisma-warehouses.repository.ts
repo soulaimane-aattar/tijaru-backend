@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma.service';
+import { TenantContext } from '../../../common/tenant/tenant-context';
 import { scoped } from '../../../common/tenant/tenant.helpers';
 import {
   WarehousesRepository,
@@ -17,7 +18,10 @@ const compact = <T extends object>(obj: T): { [K in keyof T]: Exclude<T[K], unde
 
 @Injectable()
 export class PrismaWarehousesRepository extends WarehousesRepository {
-  constructor(private readonly prisma: PrismaService) {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly tenant: TenantContext,
+  ) {
     super();
   }
 
@@ -41,6 +45,10 @@ export class PrismaWarehousesRepository extends WarehousesRepository {
     });
   }
 
+  countNonZeroStock(id: string): Promise<number> {
+    return this.prisma.stockLevel.count({ where: { warehouseId: id, qty: { gt: 0 } } });
+  }
+
   async exists(id: string): Promise<boolean> {
     const wh = await this.prisma.warehouse.findFirst({
       where: { id, deletedAt: null },
@@ -52,8 +60,9 @@ export class PrismaWarehousesRepository extends WarehousesRepository {
   create(data: CreateWarehouseData): Promise<unknown> {
     return this.prisma.$transaction(async (tx) => {
       if (data.isDefault) {
+        const businessId = this.tenant.getBusinessId();
         await tx.warehouse.updateMany({
-          where: { isDefault: true },
+          where: { isDefault: true, ...(businessId !== undefined ? { businessId } : {}) },
           data: { isDefault: false },
         });
       }
@@ -66,8 +75,9 @@ export class PrismaWarehousesRepository extends WarehousesRepository {
   update(id: string, data: UpdateWarehouseData): Promise<unknown> {
     return this.prisma.$transaction(async (tx) => {
       if (data.isDefault === true) {
+        const businessId = this.tenant.getBusinessId();
         await tx.warehouse.updateMany({
-          where: { isDefault: true, NOT: { id } },
+          where: { isDefault: true, NOT: { id }, ...(businessId !== undefined ? { businessId } : {}) },
           data: { isDefault: false },
         });
       }

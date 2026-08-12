@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
-import { NotFoundError } from '../../../common/errors';
+import { ConflictError, NotFoundError } from '../../../common/errors';
 import { WarehousesRepository } from '../domain/warehouses.repository';
 import type { CreateWarehouseInput, UpdateWarehouseInput } from '../dto/warehouse.dto';
 
@@ -29,6 +29,8 @@ export class WarehousesService {
 
   async remove(id: string): Promise<void> {
     if (!(await this.warehouses.exists(id))) throw new NotFoundError('Warehouse', id);
+    const nonZeroStock = await this.warehouses.countNonZeroStock(id);
+    if (nonZeroStock > 0) throw new ConflictError('warehouse_not_empty');
     await this.warehouses.softDelete(id);
   }
 }

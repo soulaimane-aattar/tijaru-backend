@@ -30,6 +30,9 @@ export abstract class WarehousesRepository {
   /** True when a non-deleted warehouse with this id exists. */
   abstract exists(id: string): Promise<boolean>;
 
+  /** Count stock levels with qty > 0 for this warehouse (tenant-scoped). */
+  abstract countNonZeroStock(id: string): Promise<number>;
+
   /** Create atomically; when `isDefault` is true, any previous default is cleared first. */
   abstract create(data: CreateWarehouseData): Promise<unknown>;
 
