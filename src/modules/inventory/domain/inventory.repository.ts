@@ -6,6 +6,8 @@
  * the Nest injection token (interfaces are erased at runtime).
  */
 
+import type { Prisma } from '@prisma/client';
+
 export interface StockSnapshotLine {
   productId: string;
   qty: number;
@@ -32,29 +34,11 @@ export interface InventoryCountView {
   lines: CountLineView[];
 }
 
-export interface StockAdjustment {
-  productId: string;
-  /** Final counted quantity the stock level is overwritten to. */
-  counted: number;
-  /** `counted - expected`; the sign selects the movement direction. */
-  diff: number;
-}
-
-export interface LineCorrection {
-  lineId: string;
-  counted: number;
-}
-
-export interface ApplyCountData {
-  countId: string;
-  warehouseId: string;
-  /** Movement ref shared by every adjustment movement. */
-  movementRef: string;
-  adjustments: StockAdjustment[];
-  corrections: LineCorrection[];
-  actorId: string;
-  actorDevice?: string | undefined;
-  activityDesc: string;
+export interface ActivityLog {
+  userId: string;
+  action: string;
+  desc: string;
+  device?: string | undefined;
 }
 
 export abstract class InventoryRepository {
@@ -79,9 +63,26 @@ export abstract class InventoryRepository {
   abstract findWithLines(id: string): Promise<InventoryCountView | null>;
 
   /**
-   * Atomically emit an adjustment movement and overwrite the stock level for
-   * each adjustment, persist line corrections, stamp `appliedAt` and log the
-   * activity entry. Returns the refreshed count with lines.
+   * Live stock quantities for the given products at the warehouse, read
+   * inside the caller's transaction so the apply delta reflects concurrent
+   * sales/movements rather than the count's original snapshot.
    */
-  abstract applyCount(data: ApplyCountData): Promise<unknown>;
+  abstract findLiveStockLevels(
+    warehouseId: string,
+    productIds: string[],
+    tx: Prisma.TransactionClient,
+  ): Promise<StockSnapshotLine[]>;
+
+  /** Persist a user-corrected counted value for a single count line. */
+  abstract updateLineCounted(
+    lineId: string,
+    counted: number,
+    tx: Prisma.TransactionClient,
+  ): Promise<void>;
+
+  /** Stamp the count as applied (sets `appliedAt`). */
+  abstract markApplied(countId: string, tx: Prisma.TransactionClient): Promise<void>;
+
+  /** Record an audit-trail entry. Pass `tx` to make it part of the caller's transaction. */
+  abstract logActivity(activity: ActivityLog, tx?: Prisma.TransactionClient): Promise<void>;
 }

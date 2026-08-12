@@ -5,11 +5,19 @@ import { PrismaService } from '../../../common/prisma.service';
 import { scoped } from '../../../common/tenant/tenant.helpers';
 import {
   InventoryRepository,
-  type ApplyCountData,
+  type ActivityLog,
   type CountLineInput,
   type InventoryCountView,
   type StockSnapshotLine,
 } from '../domain/inventory.repository';
+
+/** Strip keys whose value is `undefined` (exactOptionalPropertyTypes-safe Prisma payloads). */
+const compact = <T extends Record<string, unknown>>(
+  obj: T,
+): { [K in keyof T]: Exclude<T[K], undefined> } =>
+  Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined)) as {
+    [K in keyof T]: Exclude<T[K], undefined>;
+  };
 
 @Injectable()
 export class PrismaInventoryRepository extends InventoryRepository {
@@ -81,57 +89,32 @@ export class PrismaInventoryRepository extends InventoryRepository {
     });
   }
 
-  applyCount(data: ApplyCountData): Promise<unknown> {
-    return this.prisma.$transaction(async (tx) => {
-      for (const adj of data.adjustments) {
-        await tx.movement.create({
-          data: scoped<Prisma.MovementUncheckedCreateInput>({
-            type: adj.diff > 0 ? 'in' : 'out',
-            productId: adj.productId,
-            qty: Math.abs(adj.diff),
-            warehouseId: data.warehouseId,
-            userId: data.actorId,
-            reason: 'ajustement',
-            ref: data.movementRef,
-          }),
-        });
-        await tx.stockLevel.upsert({
-          where: {
-            productId_warehouseId: {
-              productId: adj.productId,
-              warehouseId: data.warehouseId,
-            },
-          },
-          create: { productId: adj.productId, warehouseId: data.warehouseId, qty: adj.counted },
-          update: { qty: adj.counted },
-        });
-      }
-      for (const correction of data.corrections) {
-        await tx.inventoryCountLine.update({
-          where: { id: correction.lineId },
-          data: { counted: correction.counted },
-        });
-      }
+  findLiveStockLevels(
+    warehouseId: string,
+    productIds: string[],
+    tx: Prisma.TransactionClient,
+  ): Promise<StockSnapshotLine[]> {
+    return tx.stockLevel.findMany({
+      where: { warehouseId, productId: { in: productIds } },
+      select: { productId: true, qty: true },
+    });
+  }
 
-      await tx.inventoryCount.update({
-        where: { id: data.countId },
-        data: { appliedAt: new Date() },
-      });
-      await tx.activity.create({
-        data: scoped<Prisma.ActivityUncheckedCreateInput>({
-          userId: data.actorId,
-          action: 'inventory.applied',
-          desc: data.activityDesc,
-          ...(data.actorDevice ? { device: data.actorDevice } : {}),
-        }),
-      });
+  async updateLineCounted(
+    lineId: string,
+    counted: number,
+    tx: Prisma.TransactionClient,
+  ): Promise<void> {
+    await tx.inventoryCountLine.update({ where: { id: lineId }, data: { counted } });
+  }
 
-      return tx.inventoryCount.findUniqueOrThrow({
-        where: { id: data.countId },
-        include: {
-          lines: { include: { product: { select: { id: true, name: true, sku: true } } } },
-        },
-      });
+  async markApplied(countId: string, tx: Prisma.TransactionClient): Promise<void> {
+    await tx.inventoryCount.update({ where: { id: countId }, data: { appliedAt: new Date() } });
+  }
+
+  async logActivity(activity: ActivityLog, tx?: Prisma.TransactionClient): Promise<void> {
+    await (tx ?? this.prisma).activity.create({
+      data: scoped<Prisma.ActivityUncheckedCreateInput>(compact({ ...activity })),
     });
   }
 }
