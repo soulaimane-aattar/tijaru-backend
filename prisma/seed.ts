@@ -47,6 +47,7 @@ export async function runSeed(opts: { silent?: boolean } = {}): Promise<void> {
     prisma.inventoryCount.deleteMany(),
     prisma.purchaseOrderLine.deleteMany(),
     prisma.purchaseOrder.deleteMany(),
+    prisma.expense.deleteMany(),
     prisma.movement.deleteMany(),
     prisma.stockLevel.deleteMany(),
     prisma.product.deleteMany(),
@@ -349,9 +350,9 @@ export async function runSeed(opts: { silent?: boolean } = {}): Promise<void> {
         tone: p.tone,
         stockLevels: {
           create: [
-            { warehouseId: wCasa.id, qty: p.stock.casa },
-            { warehouseId: wMarrakech.id, qty: p.stock.marrakech },
-            { warehouseId: wRabat.id, qty: p.stock.rabat },
+            { businessId: business.id, warehouseId: wCasa.id, qty: p.stock.casa },
+            { businessId: business.id, warehouseId: wMarrakech.id, qty: p.stock.marrakech },
+            { businessId: business.id, warehouseId: wRabat.id, qty: p.stock.rabat },
           ],
         },
       },
