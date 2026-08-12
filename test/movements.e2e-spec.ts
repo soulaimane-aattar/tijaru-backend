@@ -91,7 +91,7 @@ describe('Movements (e2e)', () => {
       expect(await stockAt(productId, casaId)).toBe(before - 5);
     });
 
-    it('rejects when stock insufficient (422) and does NOT mutate', async () => {
+    it('rejects when stock insufficient (409) and does NOT mutate', async () => {
       const before = await stockAt(productId, casaId);
       const res = await api(app)
         .post('/api/v1/movements')
@@ -103,8 +103,9 @@ describe('Movements (e2e)', () => {
           qty: before + 9999,
           reason: 'vente',
         })
-        .expect(422);
-      expect(res.body.code).toBe('insufficient_stock');
+        .expect(409);
+      expect(res.body.code).toBe('conflict');
+      expect(res.body.title).toBe('insufficient_stock');
       expect(await stockAt(productId, casaId)).toBe(before);
     });
   });

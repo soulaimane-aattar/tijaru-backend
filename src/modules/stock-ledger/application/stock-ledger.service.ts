@@ -10,15 +10,17 @@ export class StockLedgerService {
   constructor(private readonly prisma: PrismaService) {}
 
   async post(input: LedgerPost, tx?: Prisma.TransactionClient): Promise<Movement[]> {
+    if (input.type === 'transfer' && !input.toWarehouseId) {
+      throw new ValidationError('transfer_missing_destination');
+    }
     const run = async (client: Prisma.TransactionClient) => {
       const movements: Movement[] = [];
       for (const line of input.lines) {
         await this.applyDelta(client, input.businessId, line);
         if (input.type === 'transfer') {
-          if (!input.toWarehouseId) throw new ValidationError('transfer_missing_destination');
           await this.applyDelta(client, input.businessId, {
             ...line,
-            warehouseId: input.toWarehouseId,
+            warehouseId: input.toWarehouseId as string,
             delta: -line.delta, // sign flip so positive = increment dest
           });
         }

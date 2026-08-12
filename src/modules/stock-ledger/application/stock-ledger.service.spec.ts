@@ -1,4 +1,4 @@
-import { ConflictError } from '../../../common/errors';
+import { ConflictError, ValidationError } from '../../../common/errors';
 import type { LedgerPost } from '../domain/stock-ledger.types';
 
 import { StockLedgerService } from './stock-ledger.service';
@@ -191,6 +191,25 @@ describe('StockLedgerService.post', () => {
     expect(prisma.stockLevel.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({ data: { qty: { decrement: 2 } } }),
     );
+  });
+
+  it('rejects transfer without toWarehouseId', async () => {
+    const { svc } = setup();
+
+    const post = () =>
+      svc.post(
+        basePost({
+          type: 'transfer',
+          reason: 'transfert',
+          lines: [{ productId: PID, warehouseId: WH, delta: -5 }],
+          // no toWarehouseId
+        }),
+      );
+
+    await expect(post()).rejects.toBeInstanceOf(ValidationError);
+    await expect(post()).rejects.toMatchObject({
+      response: expect.objectContaining({ title: 'transfer_missing_destination' }),
+    });
   });
 
   it('runs inside an outer tx when tx passed', async () => {
