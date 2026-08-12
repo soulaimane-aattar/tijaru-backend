@@ -1,7 +1,13 @@
 import { Injectable } from '@nestjs/common';
+import type { NotificationType } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma.service';
-import { NotificationsRepository } from '../domain/notifications.repository';
+import {
+  type CreateNotificationInput,
+  type ExpiringCandidate,
+  type LowStockCandidate,
+  NotificationsRepository,
+} from '../domain/notifications.repository';
 
 @Injectable()
 export class PrismaNotificationsRepository extends NotificationsRepository {
@@ -27,5 +33,41 @@ export class PrismaNotificationsRepository extends NotificationsRepository {
       data: { read: true },
     });
     return r.count;
+  }
+
+  findLowStockCandidates(): Promise<LowStockCandidate[]> {
+    return this.prisma.$queryRaw<LowStockCandidate[]>`
+      SELECT p.business_id AS "businessId", p.id AS "productId", p.name AS "productName",
+             COALESCE(SUM(sl.qty), 0)::int AS "totalQty", p.min_stock AS "minStock"
+      FROM products p
+      LEFT JOIN stock_levels sl ON sl.product_id = p.id
+      WHERE p.deleted_at IS NULL AND p.min_stock > 0
+      GROUP BY p.business_id, p.id, p.name, p.min_stock
+      HAVING COALESCE(SUM(sl.qty), 0) < p.min_stock
+    `;
+  }
+
+  findExpiringCandidates(daysWindow: number): Promise<ExpiringCandidate[]> {
+    const cutoff = new Date(Date.now() + daysWindow * 86400000);
+    return this.prisma.product.findMany({
+      where: {
+        deletedAt: null,
+        trackExpiry: true,
+        expiry: { gt: new Date(), lte: cutoff },
+      },
+      select: { businessId: true, id: true, name: true, expiry: true },
+    }) as unknown as Promise<ExpiringCandidate[]>;
+  }
+
+  async existsUnread(businessId: string, type: NotificationType, body: string): Promise<boolean> {
+    const found = await this.prisma.notification.findFirst({
+      where: { businessId, type, body, read: false },
+      select: { id: true },
+    });
+    return found !== null;
+  }
+
+  create(input: CreateNotificationInput): Promise<unknown> {
+    return this.prisma.notification.create({ data: input });
   }
 }

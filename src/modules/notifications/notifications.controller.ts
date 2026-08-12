@@ -3,13 +3,17 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
 import { RequireCap } from '../../common/decorators/require-cap.decorator';
 
+import { NotificationsScannerService, type ScanResult } from './application/notifications-scanner.service';
 import { NotificationsService } from './application/notifications.service';
 
 @ApiTags('notifications')
 @ApiBearerAuth()
 @Controller({ path: 'notifications', version: '1' })
 export class NotificationsController {
-  constructor(private readonly svc: NotificationsService) {}
+  constructor(
+    private readonly svc: NotificationsService,
+    private readonly scanner: NotificationsScannerService,
+  ) {}
 
   @Get()
   @RequireCap('dashboard.view')
@@ -34,5 +38,11 @@ export class NotificationsController {
   @RequireCap('dashboard.view')
   readAll(): Promise<unknown> {
     return this.svc.markAllRead();
+  }
+
+  @Post('scan')
+  @RequireCap('settings.manage')
+  scan(): Promise<ScanResult> {
+    return this.scanner.scanNow();
   }
 }
