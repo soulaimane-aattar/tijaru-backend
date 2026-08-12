@@ -38,12 +38,12 @@ export class PrismaNotificationsRepository extends NotificationsRepository {
   findLowStockCandidates(): Promise<LowStockCandidate[]> {
     return this.prisma.$queryRaw<LowStockCandidate[]>`
       SELECT p.business_id AS "businessId", p.id AS "productId", p.name AS "productName",
-             COALESCE(SUM(sl.qty), 0)::int AS "totalQty", p.min_stock AS "minStock"
+             COALESCE(SUM(sl.qty), 0)::int AS "totalQty", p."minStock" AS "minStock"
       FROM products p
-      LEFT JOIN stock_levels sl ON sl.product_id = p.id
-      WHERE p.deleted_at IS NULL AND p.min_stock > 0
-      GROUP BY p.business_id, p.id, p.name, p.min_stock
-      HAVING COALESCE(SUM(sl.qty), 0) < p.min_stock
+      LEFT JOIN stock_levels sl ON sl."productId" = p.id
+      WHERE p."deletedAt" IS NULL AND p."minStock" > 0
+      GROUP BY p.business_id, p.id, p.name, p."minStock"
+      HAVING COALESCE(SUM(sl.qty), 0) < p."minStock"
     `;
   }
 
