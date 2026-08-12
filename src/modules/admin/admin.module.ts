@@ -4,6 +4,7 @@ import { AdminController } from './admin.controller';
 import { AdminPolicyService } from './application/admin-policy.service';
 import { AdminRolesService } from './application/admin-roles.service';
 import { AdminSessionsService } from './application/admin-sessions.service';
+import { BusinessSettingsService } from './application/business-settings.service';
 import { AdminPolicyRepository } from './domain/admin-policy.repository';
 import { AdminRolesRepository } from './domain/admin-roles.repository';
 import { AdminSessionsRepository } from './domain/admin-sessions.repository';
@@ -17,6 +18,7 @@ import { PrismaAdminSessionsRepository } from './infrastructure/prisma-admin-ses
     AdminRolesService,
     AdminSessionsService,
     AdminPolicyService,
+    BusinessSettingsService,
     { provide: AdminPolicyRepository, useClass: PrismaAdminPolicyRepository },
     { provide: AdminRolesRepository, useClass: PrismaAdminRolesRepository },
     { provide: AdminSessionsRepository, useClass: PrismaAdminSessionsRepository },

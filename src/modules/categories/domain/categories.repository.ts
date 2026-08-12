@@ -10,6 +10,7 @@ export interface CreateCategoryData {
   name: string;
   icon: string;
   tone: string;
+  active?: boolean;
 }
 
 export type UpdateCategoryData = {

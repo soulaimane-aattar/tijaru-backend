@@ -1,12 +1,18 @@
 import { Injectable } from '@nestjs/common';
 
-import { ConflictError, NotFoundError } from '../../../common/errors';
+import { ConflictError, ForbiddenError, NotFoundError } from '../../../common/errors';
+import { PrismaService } from '../../../common/prisma.service';
+import { TenantContext } from '../../../common/tenant/tenant-context';
 import { WarehousesRepository } from '../domain/warehouses.repository';
 import type { CreateWarehouseInput, UpdateWarehouseInput } from '../dto/warehouse.dto';
 
 @Injectable()
 export class WarehousesService {
-  constructor(private readonly warehouses: WarehousesRepository) {}
+  constructor(
+    private readonly warehouses: WarehousesRepository,
+    private readonly prisma: PrismaService,
+    private readonly tenant: TenantContext,
+  ) {}
 
   list(): Promise<unknown> {
     return this.warehouses.findAll();
@@ -18,7 +24,20 @@ export class WarehousesService {
     return wh;
   }
 
-  create(input: CreateWarehouseInput): Promise<unknown> {
+  async create(input: CreateWarehouseInput): Promise<unknown> {
+    const businessId = this.tenant.getBusinessId();
+    if (businessId) {
+      const biz = await this.prisma.business.findUnique({
+        where: { id: businessId },
+        select: { multiWarehouse: true },
+      });
+      if (biz && !biz.multiWarehouse) {
+        const count = await this.warehouses.countActive();
+        if (count >= 1) {
+          throw new ForbiddenError('multi_warehouse_disabled');
+        }
+      }
+    }
     return this.warehouses.create(input);
   }
 

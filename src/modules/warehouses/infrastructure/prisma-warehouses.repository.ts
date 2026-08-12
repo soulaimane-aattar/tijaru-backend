@@ -45,6 +45,10 @@ export class PrismaWarehousesRepository extends WarehousesRepository {
     });
   }
 
+  countActive(): Promise<number> {
+    return this.prisma.warehouse.count({ where: { deletedAt: null } });
+  }
+
   countNonZeroStock(id: string): Promise<number> {
     return this.prisma.stockLevel.count({ where: { warehouseId: id, qty: { gt: 0 } } });
   }

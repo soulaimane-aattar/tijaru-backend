@@ -6,6 +6,7 @@ export const CreateCategorySchema = z.object({
   name: z.string().min(1).max(80),
   icon: z.string().min(1).max(40),
   tone: HexColor,
+  active: z.boolean().default(true),
 });
 export type CreateCategoryInput = z.infer<typeof CreateCategorySchema>;
 
