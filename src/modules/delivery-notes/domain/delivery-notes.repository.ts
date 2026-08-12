@@ -91,3 +91,27 @@ export abstract class ProductPriceLookup {
     productId: string,
   ): Promise<{ id: string; price: number | string } | null>;
 }
+
+export interface PdfBusinessInfo {
+  name: string;
+  address: string | null;
+  ice: string | null;
+  phone: string | null;
+}
+
+export interface PdfPartyInfo {
+  name: string;
+  phone: string | null;
+  address: string | null;
+}
+
+/**
+ * Port: business letterhead + counterparty contact details needed by the bon
+ * PDF (name/address/ICE/phone). Deliberately not part of `DeliveryDetail` —
+ * that DTO backs the JSON API and only carries the party *name*.
+ */
+export abstract class DeliveryPdfInfoLookup {
+  abstract getBusiness(businessId: string): Promise<PdfBusinessInfo | null>;
+  abstract getCustomer(businessId: string, customerId: string): Promise<PdfPartyInfo | null>;
+  abstract getSupplier(businessId: string, supplierId: string): Promise<PdfPartyInfo | null>;
+}

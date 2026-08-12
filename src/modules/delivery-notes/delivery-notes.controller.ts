@@ -3,13 +3,16 @@ import {
   Controller,
   Get,
   HttpCode,
+  Inject,
   Param,
   Patch,
   Post,
   Query,
+  Res,
   UsePipes,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import type { Response } from 'express';
 
 import type { AuthUser } from '../../common/auth/auth-user.type';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -18,7 +21,9 @@ import { RequiresModule } from '../../common/decorators/require-module.decorator
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { TenantContext } from '../../common/tenant/tenant-context';
 
+import { DeliveryNotePdfService, type PdfNote } from './application/delivery-note-pdf.service';
 import { DeliveryNotesService } from './application/delivery-notes.service';
+import { DeliveryPdfInfoLookup } from './domain/delivery-notes.repository';
 import {
   type CreateDeliveryNoteInput,
   CreateDeliveryNoteSchema,
@@ -38,6 +43,8 @@ export class DeliveryNotesController {
   constructor(
     private readonly svc: DeliveryNotesService,
     private readonly tenant: TenantContext,
+    private readonly pdf: DeliveryNotePdfService,
+    @Inject(DeliveryPdfInfoLookup) private readonly pdfInfo: DeliveryPdfInfoLookup,
   ) {}
 
   private bid(): string {
@@ -89,5 +96,47 @@ export class DeliveryNotesController {
     @Body(new ZodValidationPipe(DeliveryNoteStatusSchema)) status: DeliveryNoteStatus,
   ): Promise<void> {
     await this.svc.setStatus(this.bid(), id, status);
+  }
+
+  @Get(':id/pdf')
+  @RequireCap('po.manage')
+  async pdfFile(
+    @Param('id') id: string,
+    @Res({ passthrough: false }) res: Response,
+  ): Promise<void> {
+    const businessId = this.bid();
+    const note = await this.svc.get(businessId, id);
+    const pdfNote = await this.toPdfNote(businessId, note);
+    const buf = await this.pdf.render(pdfNote);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${note.number}.pdf"`);
+    res.setHeader('Content-Length', String(buf.length));
+    res.end(buf);
+  }
+
+  /** Merge the JSON-API note DTO with the business/party contact details the PDF letterhead needs. */
+  private async toPdfNote(
+    businessId: string,
+    note: Awaited<ReturnType<DeliveryNotesService['get']>>,
+  ): Promise<PdfNote> {
+    const [business, customer, supplier] = await Promise.all([
+      this.pdfInfo.getBusiness(businessId),
+      note.customerId ? this.pdfInfo.getCustomer(businessId, note.customerId) : null,
+      note.supplierId ? this.pdfInfo.getSupplier(businessId, note.supplierId) : null,
+    ]);
+    return {
+      number: note.number,
+      type: note.type,
+      date: note.date,
+      status: note.status,
+      signed: note.signed,
+      notes: note.notes,
+      business: business ?? { name: note.number, address: null, ice: null, phone: null },
+      customer,
+      supplier,
+      issuedBy: { fullName: note.issuedByName },
+      lines: note.lines,
+      totals: note.totals,
+    };
   }
 }
