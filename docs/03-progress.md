@@ -21,6 +21,42 @@
 
 ## Log
 
+### 2026-08-13 — Mobile: proper Android + iOS app icons from Tijaru mark
+- **Step:** Old `mobile/assets/icon.png`/`adaptive-icon.png`/`favicon.png` were one identical 1024px file: full logo **with "Tijaru" wordmark** on white — unreadable at icon size, and Android adaptive foreground had no safe-zone padding. Regenerated everything from the vector master `backend/mark.svg` (2×2 rounded-square grid, teal `#0F766E` + orange `#F97316`) with a PIL script (4× supersampled, exact SVG geometry): `assets/icon.png` 1024 opaque mark-on-white (66% span), `assets/adaptive-icon.png` 1024 transparent foreground (43% span — fits the 66dp safe circle), `assets/favicon.png` 196. App is **bare** (ios/+android/ committed), so native assets were regenerated directly instead of relying on prebuild: iOS `ios/Mizano/Images.xcassets/AppIcon.appiconset/App-Icon-1024x1024@1x.png` (single-size catalog, no alpha), Android `mipmap-{m,h,x,xx,xxx}hdpi/ic_launcher{,_round,_foreground}.png` (48dp legacy square/round + 108dp adaptive foreground per density). `res/values/colors.xml` `iconBackground` fixed `#0F766E` → `#FFFFFF` to match `app.json` `android.adaptiveIcon.backgroundColor`.
+- **Result:** ✅ 19 PNGs written; visual preview strip verified (mark centered, orange top-right, safe-zone respected); `sips -g hasAlpha` on iOS icon → `no`; AppIcon Contents.json single-1024 entry matches filename. Generator kept at scratchpad `gen_icons.py` (session-local; regenerate anytime from `backend/mark.svg`).
+- **Decisions:** icon = mark only (no wordmark); adaptive background white with colored mark (matches web favicon), not teal-with-white-mark.
+- **Next:** rebuild native apps to see it (`npx expo run:android` / `run:ios` or EAS build). `assets/splash.png` (400px, still old wordmark logo) not regenerated — separate pass if wanted.
+
+### 2026-08-13 — Mobile: visible add-category CTAs on /admin/categories
+- **Step:** Create button existed only as a small ➕ in the header — users couldn't find it (reported). Added full-width "+ Nouvelle catégorie" Btn: primary in the empty state, outline under the list when categories exist. Same `openCreate` modal.
+- **Result:** ✅ mobile `npx tsc --noEmit` clean.
+- **Decisions:** none.
+- **Next:** none.
+
+### 2026-08-13 — Mobile: category quick-create on product form (empty-chips fix)
+- **Step:** `mobile/app/products/new.tsx` rendered zero chips under "Catégorie" when the business had no active categories — field looked unfillable (user screenshot). Added: dashed "+ Nouvelle" chip toggling an inline name input (`useCreateCategory` → `POST /categories`, defaults icon 📦 / tone `#0F766E` / active); on success the new category is auto-selected. Empty state now shows a hint pointing at "+ Nouvelle" instead of blank space.
+- **Result:** ✅ mobile `npx tsc --noEmit` clean.
+- **Decisions:** none. `POST /categories` requires `settings.manage` — non-admin users get an Alert on 403; acceptable, category management is an admin task.
+- **Next:** none.
+
+### 2026-08-13 — Mobile: multi-dépôt switch in admin center
+- **Step:** `mobile/app/admin/index.tsx` gains a Multi-dépôt switch card (above Recommandations), same logic as `app/settings/index.tsx`: blocks disable while >1 active warehouse (Alert with count), `useMultiWarehouse`/`useSetMultiWarehouse` against `/admin/multi-warehouse`. Admin center now controls both: multi-dépôt (new) + Taux TVA (pre-existing `/admin/vat` screen). Mobile forms already consume enabled rates — `app/products/new.tsx` and `app/purchase-orders/new.tsx` filter options via `useVatRates()` with all-rates fallback; nothing to change there.
+- **Result:** ✅ mobile `npx tsc --noEmit` clean.
+- **Decisions:** none. Known quirk: mobile forms read `/admin/vat-rates` (cap `settings.manage`) — non-admin users 403 and silently fall back to all rates; proper fix is reading `enabledVatRates` from `/auth/me` (now available) like web does.
+- **Next:** switch mobile forms + vat screen read-path to `/auth/me.enabledVatRates` for non-admin correctness.
+
+### 2026-08-13 — Forms consume `enabledVatRates` (backend `/auth/me` + web pickers)
+- **Step:** Backend: `/auth/me` now returns top-level `enabledVatRates` — `BusinessSubscriptionView` + `findBusinessById` select gained the column; `AuthService.me()` falls back to `[0,7,10,14,20]` for super admin / missing business. Web: auth store holds `enabledVatRates` (same fallback). `ProductFormPage` VAT segmented picker now renders enabled rates only (dropped hardcoded `VAT_RATES`); default VAT = 20 if enabled else highest enabled; edit mode keeps a since-disabled rate selectable (union with current value) so saving doesn't silently change the product. `InvoiceFormPage` per-line TVA free-number input replaced by a `<select>` of enabled rates (same union rule); `emptyLine`/product-select fallback use the computed default instead of hardcoded 20.
+- **Result:** ✅ Backend `npx jest` → 390/390 (3 auth me() specs extended), `tsc --noEmit` clean. Web `tsc --noEmit` clean, `vitest run` → 19 files, 143/143 (new case: TVA select offers only `[0,10]` and defaults to 10 when store restricted).
+- **Decisions:** rates ship on `/auth/me` rather than opening `GET /admin/vat-rates` to all users — that endpoint requires `settings.manage`, which cashiers/billing users lack; `me` already carries modules/subscription and every form loads it.
+- **Next:** POS uses `p.vat` straight from product data — no picker, nothing to gate. Mobile product form still hardcodes rates if one exists (check on next mobile pass).
+
+### 2026-08-13 — Web: TVA enable/disable + rate selection on Settings (admin)
+- **Step:** `/settings` gains a TVA row next to the existing multi-warehouse toggle. Master switch: OFF patches `enabledVatRates: [0]` (backend requires ≥1 rate — "hors champ TVA" state), ON restores all `allowed` rates. When ON, per-rate pills (0/7/10/14/20) toggle individual rates; removal of the last remaining rate is blocked client-side. New hooks `useVatRates`/`useSetVatRates` in `web/src/api/admin-queries.ts` against the pre-existing `GET/PATCH /admin/vat-rates` (no backend change). Both switches got `aria-label`s (page now has two switches).
+- **Result:** ✅ `npx tsc --noEmit` clean; `vitest run` → 19 files, 142/142 (5 new SettingsPage TVA cases: ON state + pills, OFF state + helper, off→[0]/on→all patch values, pill toggle patch value, empty-list guard).
+- **Decisions:** TVA "disabled" is represented as `enabledVatRates=[0]`, not a new boolean column — reuses the existing field/endpoint, and 0% stays valid for non-taxed products.
+- **Next:** make product/invoice forms consume `enabledVatRates` instead of the hardcoded `0|7|10|14|20` union so disabled rates disappear from pickers.
+
 ### 2026-08-13 — Web: removed `/platform-admin` URL prefix — role-based page rendering
 - **Step:** PA pages moved to top-level paths inside `AdminShell`: dashboard now at `/` (super admin sees `PADashboardPage`, regular user `DashboardPage` — new `ByRole` dispatcher in `App.tsx` renders per role on the same path, no redirect), `/users` likewise dispatches `PAUsersPage` vs `UsersPage`. PA-only paths `/businesses`, `/businesses/:id`, `/approvals`, `/subscriptions` keep `<RoleGuard requires="platform-admin">` (403 in-place on URL-forcing). Deleted `RoleHome` redirect component. Legacy `platform-admin/*` URLs → `<Navigate to="/" replace>`. Updated: `PA_GROUP` sidebar links (`AdminShell.tsx`), internal links/navigates in `PADashboardPage`/`PABusinessListPage`/`PAUsersPage`/`PASubscriptionsPage`, `ForbiddenPage` homeHref (now always `/`, dropped `useAuth` dep), `LoginPage` comment, `PAUsersPage.test.tsx` expected href.
 - **Result:** ✅ `npx tsc --noEmit` clean; `vitest run` → 19 files, 137/137.

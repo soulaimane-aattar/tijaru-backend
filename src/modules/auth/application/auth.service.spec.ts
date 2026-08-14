@@ -285,6 +285,7 @@ describe('AuthService', () => {
       repo.findBusinessById.mockResolvedValue({
         plan: 'pro',
         subscriptionEnd: new Date('2026-12-31'),
+        enabledVatRates: [0, 20],
       });
       repo.findBusinessModules.mockResolvedValue([
         { moduleId: 'pos', active: true },
@@ -295,6 +296,7 @@ describe('AuthService', () => {
       expect(result).toMatchObject({
         modules: ['pos'],
         subscription: { plan: 'pro', end: new Date('2026-12-31') },
+        enabledVatRates: [0, 20],
       });
     });
 
@@ -305,7 +307,11 @@ describe('AuthService', () => {
       repo.findBusinessModules.mockResolvedValue([]);
       const svc = new AuthService(repo, mockJwt(), mockPerms(), mockEnv);
       const result = await svc.me('u1', 'owner', {}, 'b1');
-      expect(result).toMatchObject({ modules: [], subscription: null });
+      expect(result).toMatchObject({
+        modules: [],
+        subscription: null,
+        enabledVatRates: [0, 7, 10, 14, 20],
+      });
     });
 
     it('returns empty modules and null subscription for super admin (no businessId)', async () => {

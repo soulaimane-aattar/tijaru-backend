@@ -219,7 +219,13 @@ export class AuthService {
     }
 
     if (!businessId) {
-      return { ...profile, capabilities: [...effective], modules: [], subscription: null };
+      return {
+        ...profile,
+        capabilities: [...effective],
+        modules: [],
+        subscription: null,
+        enabledVatRates: [0, 7, 10, 14, 20],
+      };
     }
 
     const [business, modules] = await Promise.all([
@@ -232,6 +238,7 @@ export class AuthService {
       capabilities: [...effective],
       modules: modules.filter((m) => m.active).map((m) => m.moduleId),
       subscription: business ? { plan: business.plan, end: business.subscriptionEnd } : null,
+      enabledVatRates: business?.enabledVatRates ?? [0, 7, 10, 14, 20],
     };
   }
 

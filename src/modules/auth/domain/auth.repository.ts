@@ -67,6 +67,7 @@ export interface CreateBusinessWithOwnerResult {
 export interface BusinessSubscriptionView {
   plan: string;
   subscriptionEnd: Date | null;
+  enabledVatRates: number[];
 }
 
 /** Business module activation flag. */
