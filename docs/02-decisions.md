@@ -2,6 +2,11 @@
 
 > One entry per significant decision. Newest on top. Format: date · decision · why · rejected alternatives.
 
+## D-019 — 2026-08-14 · Monthly expense export = single PDF (summary + receipt pages); webp receipts converted to png via `sharp`
+- **Decision:** `GET /v1/expenses/report?month=YYYY-MM` returns one pdfkit A4 PDF: expense table + per-category subtotals + grand total, then one page per receipt image. New dep `sharp` converts webp → png at export time (`ExpensesService.loadReceipt`) because pdfkit embeds only JPEG/PNG; missing/unreadable files degrade to a placeholder instead of failing the export. `seed.ts` now seeds the 7 default `business_modules` rows — ModuleGuard requires a row, so a freshly seeded DB 403'd every module-gated route.
+- **Why:** single file is easiest to share/print for an SMB's accountant; pdfkit pattern already existed (delivery-notes); sharp is the standard native image lib and only runs on export, not upload.
+- **Rejected:** ZIP of PDF + originals (multi-file handling for marginal quality gain); Excel/CSV + images (new lib, no image embedding, accounting-import need not expressed); storing receipts pre-converted to png at upload (would touch the existing scan path and inflate storage for a rare export case).
+
 ## D-018 — 2026-08-12 · Weighted-average cost (`StockLevel.avgCost`) updated only on positive deltas that carry a `unitCost`
 - **Decision:** `StockLedgerService.applyDelta` recomputes `avgCost = (existingQty * existingAvg + delta * unitCost) / (existingQty + delta)` only when `delta > 0` AND the caller passed `unitCost` (i.e. PO receive). Negative deltas (sales, outbound transfers, adjustments) never touch `avgCost`. Ledger callers that don't know a unit cost (inventory count, out-movement, DN sign) omit `unitCost` and leave the field unchanged.
 - **Why:** Cost of goods only enters the ledger on procurement — that's the classical WAC input. Recomputing on outflows either (a) discards information (using sale price would corrupt cost basis) or (b) needs a separate FIFO/LIFO layer, which Phase S1 doesn't yet have. Negative-delta WAC untouched matches how ERPs treat weighted average: outflows consume inventory but don't re-price it.

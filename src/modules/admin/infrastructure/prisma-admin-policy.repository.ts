@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma.service';
+import { scoped } from '../../../common/tenant/tenant.helpers';
 import {
   AdminPolicyRepository,
   type SecurityPolicyPatch,
@@ -27,6 +29,12 @@ export class PrismaAdminPolicyRepository extends AdminPolicyRepository {
   async findPolicyId(): Promise<string | null> {
     const policy = await this.prisma.securityPolicy.findFirst({ select: { id: true } });
     return policy?.id ?? null;
+  }
+
+  async createDefault(): Promise<void> {
+    await this.prisma.securityPolicy.create({
+      data: scoped<Prisma.SecurityPolicyUncheckedCreateInput>({}),
+    });
   }
 
   updatePolicy(id: string, patch: SecurityPolicyPatch): Promise<unknown> {

@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
+import sharp from 'sharp';
 
 import { NotFoundError, ValidationError } from '../../../common/errors';
+import { BusinessInfoLookup } from '../domain/business-info.lookup';
 import { ExpensesRepository, type ExpenseSummary } from '../domain/expenses.repository';
 import { OcrProvider, type OcrSuggestion } from '../domain/ocr.provider';
 import type {
@@ -10,10 +12,25 @@ import type {
 } from '../dto/expense.dto';
 import { LocalStorageService } from '../infrastructure/local-storage.service';
 
+import type { PdfExpenseReport, PdfReceipt } from './expense-report-pdf.service';
+
 export type ScanResult = {
   receiptPath: string;
   ocrStatus: 'done' | 'failed';
   suggestion: OcrSuggestion | null;
+};
+
+const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+/** Fields of an Expense row the monthly report consumes. */
+type ReportRow = {
+  date: Date;
+  category: string;
+  merchantName: string | null;
+  paymentMethod: string;
+  amount: unknown;
+  taxAmount: unknown;
+  receiptPath: string | null;
 };
 
 @Injectable()
@@ -22,6 +39,7 @@ export class ExpensesService {
     private readonly expenses: ExpensesRepository,
     private readonly storage: LocalStorageService,
     private readonly ocr: OcrProvider,
+    private readonly businessInfo: BusinessInfoLookup,
   ) {}
 
   list(query: ListExpensesQuery): Promise<unknown[]> {
@@ -71,6 +89,58 @@ export class ExpensesService {
     const receiptPath = await this.storage.save(businessId, buffer, ext);
     const result = await this.ocr.extract(buffer, `receipt.${ext}`);
     return { receiptPath, ocrStatus: result.status, suggestion: result.suggestion };
+  }
+
+  /**
+   * Everything the monthly report PDF needs, fully resolved: the month's
+   * expenses (oldest first), per-category totals, business letterhead, and
+   * receipt bytes. Receipts degrade to `null` rather than failing the report —
+   * a deleted file must not block the export. webp is converted to png because
+   * pdfkit embeds only JPEG and PNG.
+   */
+  async monthlyReportData(month: string, businessId: string): Promise<PdfExpenseReport> {
+    if (!MONTH_RE.test(month)) throw new ValidationError('month must be YYYY-MM');
+    const [year, mon] = month.split('-').map(Number) as [number, number];
+    const from = new Date(Date.UTC(year, mon - 1, 1));
+    const to = new Date(Date.UTC(year, mon, 0, 23, 59, 59, 999));
+
+    const [rows, totals, business] = await Promise.all([
+      this.expenses.findAll({ from, to }) as Promise<ReportRow[]>,
+      this.expenses.summary({ from, to }),
+      this.businessInfo.get(businessId),
+    ]);
+
+    const lines = await Promise.all(
+      rows.reverse().map(async (row) => ({
+        date: row.date,
+        category: row.category,
+        merchantName: row.merchantName,
+        paymentMethod: row.paymentMethod,
+        amount: Number(row.amount),
+        taxAmount: row.taxAmount == null ? null : Number(row.taxAmount),
+        receipt: await this.loadReceipt(row.receiptPath),
+      })),
+    );
+
+    return {
+      month,
+      business: business ?? { name: '', address: null, ice: null, phone: null },
+      lines,
+      totals,
+    };
+  }
+
+  private async loadReceipt(receiptPath: string | null): Promise<PdfReceipt | null> {
+    if (!receiptPath) return null;
+    try {
+      const buffer = await this.storage.read(receiptPath);
+      if (receiptPath.endsWith('.webp')) {
+        return { buffer: await sharp(buffer).png().toBuffer(), ext: 'png' };
+      }
+      return { buffer, ext: receiptPath.endsWith('.png') ? 'png' : 'jpg' };
+    } catch {
+      return null;
+    }
   }
 
   /** Receipt bytes for an expense the caller's tenant owns. */

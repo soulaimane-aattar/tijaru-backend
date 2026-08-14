@@ -60,6 +60,7 @@ export async function runSeed(opts: { silent?: boolean } = {}): Promise<void> {
     prisma.user.deleteMany(),
     prisma.warehouse.deleteMany(),
     prisma.securityPolicy.deleteMany(),
+    prisma.businessModule.deleteMany(),
     prisma.business.deleteMany(),
   ]);
 
@@ -76,6 +77,13 @@ export async function runSeed(opts: { silent?: boolean } = {}): Promise<void> {
       city: 'Casablanca',
       phone: '+212522123456',
     },
+  });
+
+  // Module gates (ModuleGuard 403s any @RequiresModule route without a row).
+  await prisma.businessModule.createMany({
+    data: ['pos', 'expenses', 'purchase-orders', 'inventory', 'reports', 'invoices', 'delivery-notes'].map(
+      (moduleId) => ({ businessId: business.id, moduleId, active: true }),
+    ),
   });
 
   await prisma.securityPolicy.create({

@@ -27,5 +27,8 @@ export abstract class AdminPolicyRepository {
   /** Id of the configured policy, or null. */
   abstract findPolicyId(): Promise<string | null>;
 
+  /** Create the tenant's policy row with schema defaults (no-op payload). */
+  abstract createDefault(): Promise<void>;
+
   abstract updatePolicy(id: string, patch: SecurityPolicyPatch): Promise<unknown>;
 }

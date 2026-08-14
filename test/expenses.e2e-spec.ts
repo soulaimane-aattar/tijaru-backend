@@ -73,6 +73,10 @@ describe('Expenses (e2e)', () => {
     const other = await prisma.business.create({
       data: { name: 'Autre Commerce', ice: '999999999999999' },
     });
+    // Without a module row, ModuleGuard would 403 before tenant isolation is exercised.
+    await prisma.businessModule.create({
+      data: { businessId: other.id, moduleId: 'expenses', active: true },
+    });
     await prisma.user.create({
       data: {
         businessId: other.id,
@@ -219,6 +223,65 @@ describe('Expenses (e2e)', () => {
         .get(`/api/v1/expenses/${expenseWithReceiptId}`)
         .set(bearer(otherTenantToken))
         .expect(404);
+    });
+  });
+
+  describe('GET /expenses/report', () => {
+    /** pdfkit writes glyph runs as hex `<...>` TJ arrays; decode them for text assertions. */
+    const pdfText = (buf: Buffer): string => {
+      const s = buf.toString('latin1');
+      return [...s.matchAll(/<([0-9a-fA-F]+)>/g)]
+        .map((m) => Buffer.from(m[1] ?? '', 'hex').toString('latin1'))
+        .join('');
+    };
+
+    it('exports the month as a PDF with totals and the receipt image', async () => {
+      const res = await api(app)
+        .get('/api/v1/expenses/report?month=2026-08')
+        .set(bearer(ownerToken))
+        .buffer(true)
+        .parse((r, cb) => {
+          const chunks: Buffer[] = [];
+          r.on('data', (c: Buffer) => chunks.push(c));
+          r.on('end', () => cb(null, Buffer.concat(chunks)));
+        })
+        .expect(200);
+
+      expect(res.headers['content-type']).toContain('application/pdf');
+      expect(res.headers['content-disposition']).toContain('depenses-2026-08.pdf');
+      const body = res.body as Buffer;
+      expect(body.subarray(0, 5).toString()).toBe('%PDF-');
+      expect(pdfText(body)).toContain('MARJANE HOLDING');
+      expect(pdfText(body)).toContain('284.50');
+    });
+
+    it('excludes other tenants’ expenses from the report', async () => {
+      const res = await api(app)
+        .get('/api/v1/expenses/report?month=2026-08')
+        .set(bearer(otherTenantToken))
+        .buffer(true)
+        .parse((r, cb) => {
+          const chunks: Buffer[] = [];
+          r.on('data', (c: Buffer) => chunks.push(c));
+          r.on('end', () => cb(null, Buffer.concat(chunks)));
+        })
+        .expect(200);
+
+      expect(pdfText(res.body as Buffer)).not.toContain('MARJANE HOLDING');
+    });
+
+    it('rejects a malformed month', async () => {
+      await api(app)
+        .get('/api/v1/expenses/report?month=2026-13')
+        .set(bearer(ownerToken))
+        .expect(400);
+    });
+
+    it('denies a cashier (no expenses.view)', async () => {
+      await api(app)
+        .get('/api/v1/expenses/report?month=2026-08')
+        .set(bearer(cashierToken))
+        .expect(403);
     });
   });
 

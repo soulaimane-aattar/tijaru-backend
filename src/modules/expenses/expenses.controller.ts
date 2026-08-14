@@ -24,6 +24,7 @@ import { ValidationError } from '../../common/errors';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { TenantContext } from '../../common/tenant/tenant-context';
 
+import { ExpenseReportPdfService } from './application/expense-report-pdf.service';
 import { ExpensesService } from './application/expenses.service';
 import {
   type CreateExpenseInput,
@@ -49,6 +50,7 @@ const MIME_BY_EXT: Record<string, string> = {
 export class ExpensesController {
   constructor(
     private readonly svc: ExpensesService,
+    private readonly pdf: ExpenseReportPdfService,
     private readonly tenant: TenantContext,
   ) {}
 
@@ -67,6 +69,20 @@ export class ExpensesController {
     @Query(new ZodValidationPipe(ListExpensesSchema)) query: ListExpensesQuery,
   ): Promise<unknown> {
     return this.svc.summary(query);
+  }
+
+  // Declared before ':id' so "report" is not swallowed by the param route.
+  @Get('report')
+  @RequireCap('expenses.view')
+  async report(@Query('month') month: string | undefined, @Res() res: Response): Promise<void> {
+    const businessId = this.tenant.getBusinessId();
+    if (!businessId) throw new ValidationError('missing tenant context');
+    const data = await this.svc.monthlyReportData(month ?? '', businessId);
+    const buf = await this.pdf.render(data);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="depenses-${data.month}.pdf"`);
+    res.setHeader('Content-Length', String(buf.length));
+    res.end(buf);
   }
 
   /**

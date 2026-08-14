@@ -8,6 +8,7 @@ export const TENANT_MODELS: ReadonlySet<string> = new Set([
   'User',
   'CustomRole',
   'RoleCustomization',
+  'SecurityPolicy',
   'Category',
   'Supplier',
   'Customer',

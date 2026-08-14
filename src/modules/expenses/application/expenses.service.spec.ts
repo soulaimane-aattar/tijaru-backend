@@ -1,4 +1,7 @@
+import sharp from 'sharp';
+
 import { NotFoundError, ValidationError } from '../../../common/errors';
+import type { BusinessInfoLookup } from '../domain/business-info.lookup';
 import type { ExpensesRepository } from '../domain/expenses.repository';
 import type { OcrProvider } from '../domain/ocr.provider';
 import type { LocalStorageService } from '../infrastructure/local-storage.service';
@@ -29,11 +32,16 @@ const storageStub = (ext: 'jpg' | null = 'jpg') =>
 const ocrStub = (result: unknown = { status: 'failed', suggestion: null, blocks: [] }) =>
   ({ extract: jest.fn().mockResolvedValue(result) }) as unknown as jest.Mocked<OcrProvider>;
 
+const lookupStub = (
+  info: unknown = { name: 'Aissa SARL', address: null, ice: null, phone: null },
+) => ({ get: jest.fn().mockResolvedValue(info) }) as unknown as jest.Mocked<BusinessInfoLookup>;
+
 const service = (
   r = repo(),
   s: jest.Mocked<LocalStorageService> = storageStub(),
   o: jest.Mocked<OcrProvider> = ocrStub(),
-) => new ExpensesService(r, s, o);
+  b: jest.Mocked<BusinessInfoLookup> = lookupStub(),
+) => new ExpensesService(r, s, o, b);
 
 describe('ExpensesService', () => {
   it('throws NotFound when getting a missing expense', async () => {
@@ -131,6 +139,89 @@ describe('ExpensesService.scan', () => {
     expect(result.suggestion).toBeNull();
     // The photo is still attached, so the user can record the expense by hand.
     expect(result.receiptPath).toBe('biz1/abc.jpg');
+  });
+});
+
+describe('ExpensesService.monthlyReportData', () => {
+  const row = (over: Record<string, unknown> = {}) => ({
+    date: new Date('2026-08-05'),
+    category: 'transport',
+    merchantName: 'Total',
+    paymentMethod: 'cash',
+    amount: '450.50',
+    taxAmount: null,
+    receiptPath: null,
+    ...over,
+  });
+
+  it('rejects a malformed month', async () => {
+    await expect(service().monthlyReportData('2026-13', 'biz1')).rejects.toBeInstanceOf(
+      ValidationError,
+    );
+    await expect(service().monthlyReportData('nope', 'biz1')).rejects.toBeInstanceOf(
+      ValidationError,
+    );
+  });
+
+  it('queries the full month and assembles lines, totals and business info', async () => {
+    const r = repo();
+    r.findAll.mockResolvedValue([row()]);
+    r.summary.mockResolvedValue({
+      total: 450.5,
+      byCategory: [{ category: 'transport', total: 450.5 }],
+    });
+
+    const report = await service(r).monthlyReportData('2026-08', 'biz1');
+
+    const query = r.findAll.mock.calls[0]?.[0] as { from: Date; to: Date };
+    expect(query.from.toISOString()).toBe('2026-08-01T00:00:00.000Z');
+    expect(query.to.toISOString()).toBe('2026-08-31T23:59:59.999Z');
+    expect(report.month).toBe('2026-08');
+    expect(report.business.name).toBe('Aissa SARL');
+    expect(report.lines).toEqual([
+      expect.objectContaining({ merchantName: 'Total', amount: 450.5, receipt: null }),
+    ]);
+    expect(report.totals.total).toBe(450.5);
+  });
+
+  it('attaches receipt bytes for expenses that have one', async () => {
+    const r = repo();
+    r.findAll.mockResolvedValue([row({ receiptPath: 'biz1/abc.jpg' })]);
+    r.summary.mockResolvedValue({ total: 450.5, byCategory: [] });
+
+    const report = await service(r).monthlyReportData('2026-08', 'biz1');
+
+    expect(report.lines[0]?.receipt).toEqual({ buffer: JPEG, ext: 'jpg' });
+  });
+
+  it('degrades to no receipt when the file is missing on disk', async () => {
+    const r = repo();
+    r.findAll.mockResolvedValue([row({ receiptPath: 'biz1/gone.jpg' })]);
+    r.summary.mockResolvedValue({ total: 450.5, byCategory: [] });
+    const storage = storageStub();
+    storage.read.mockRejectedValue(new Error('ENOENT'));
+
+    const report = await service(r, storage).monthlyReportData('2026-08', 'biz1');
+
+    expect(report.lines[0]?.receipt).toBeNull();
+  });
+
+  it('converts webp receipts to png so pdfkit can embed them', async () => {
+    const webp = await sharp({
+      create: { width: 4, height: 4, channels: 3, background: '#333' },
+    })
+      .webp()
+      .toBuffer();
+    const r = repo();
+    r.findAll.mockResolvedValue([row({ receiptPath: 'biz1/abc.webp' })]);
+    r.summary.mockResolvedValue({ total: 450.5, byCategory: [] });
+    const storage = storageStub();
+    storage.read.mockResolvedValue(webp);
+
+    const report = await service(r, storage).monthlyReportData('2026-08', 'biz1');
+
+    expect(report.lines[0]?.receipt?.ext).toBe('png');
+    expect(report.lines[0]?.receipt?.buffer.subarray(1, 4).toString()).toBe('PNG');
   });
 });
 
