@@ -257,6 +257,82 @@ export class PlatformAdminService {
   }
 
   /**
+   * Platform-level business settings: multi-stock and TVA.
+   * Disabling multi-stock requires at most one active warehouse; the remaining
+   * (or newly created) warehouse becomes the default and takes the business name.
+   * TVA off ⇒ enabledVatRates [0]; TVA on ⇒ full Moroccan rate set.
+   */
+  async updateSettings(
+    id: string,
+    input: { multiWarehouse?: boolean | undefined; tvaEnabled?: boolean | undefined },
+  ): Promise<{ multiWarehouse: boolean; enabledVatRates: number[] }> {
+    const biz = await this.prisma.business.findUnique({ where: { id } });
+    if (!biz) throw new NotFoundError('Business', id);
+
+    const details: string[] = [];
+
+    if (input.multiWarehouse !== undefined && input.multiWarehouse !== biz.multiWarehouse) {
+      if (!input.multiWarehouse) {
+        const warehouses = await this.prisma.warehouse.findMany({
+          where: { businessId: id, deletedAt: null },
+          orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+        });
+        if (warehouses.length > 1) {
+          throw new ConflictError(
+            `Cannot disable multi-stock: ${warehouses.length} active warehouses exist. Remove extras first.`,
+          );
+        }
+        const main = warehouses[0];
+        if (main) {
+          await this.prisma.warehouse.update({
+            where: { id: main.id },
+            data: { name: biz.name, isDefault: true, active: true },
+          });
+        } else {
+          await this.prisma.warehouse.create({
+            data: {
+              businessId: id,
+              name: biz.name,
+              city: biz.city ?? '',
+              isDefault: true,
+              active: true,
+            },
+          });
+        }
+      }
+      await this.prisma.business.update({
+        where: { id },
+        data: { multiWarehouse: input.multiWarehouse },
+      });
+      details.push(`multi-stock: ${input.multiWarehouse ? 'on' : 'off'}`);
+    }
+
+    if (input.tvaEnabled !== undefined) {
+      const rates = input.tvaEnabled ? [0, 7, 10, 14, 20] : [0];
+      await this.prisma.business.update({
+        where: { id },
+        data: { enabledVatRates: rates },
+      });
+      details.push(`tva: ${input.tvaEnabled ? 'on' : 'off'}`);
+    }
+
+    if (details.length) {
+      await this.audit({
+        action: 'update-settings',
+        targetId: id,
+        targetName: biz.name,
+        detail: details.join(', '),
+      });
+    }
+
+    const updated = await this.prisma.business.findUniqueOrThrow({
+      where: { id },
+      select: { multiWarehouse: true, enabledVatRates: true },
+    });
+    return updated;
+  }
+
+  /**
    * Admin-initiated password reset: generates a one-time temp password, revokes the user's
    * active sessions, and bumps tokenVersion so the old refresh token is rejected. The plaintext
    * is returned exactly once — only its bcrypt hash is persisted.

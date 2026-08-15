@@ -1,6 +1,5 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, UsePipes } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { z } from 'zod';
 
 import { RequireCap } from '../../common/decorators/require-cap.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
@@ -18,14 +17,6 @@ import {
   PatchSecurityPolicySchema,
 } from './dto/admin.dto';
 
-const PatchVatRatesSchema = z.object({
-  enabledVatRates: z.array(z.number().int()).min(1),
-});
-type PatchVatRatesInput = z.infer<typeof PatchVatRatesSchema>;
-
-const PatchMultiWarehouseSchema = z.object({ multiWarehouse: z.boolean() });
-type PatchMultiWarehouseInput = z.infer<typeof PatchMultiWarehouseSchema>;
-
 @ApiTags('admin')
 @ApiBearerAuth()
 @Controller({ path: 'admin', version: '1' })
@@ -37,7 +28,7 @@ export class AdminController {
     private readonly settings: BusinessSettingsService,
   ) {}
 
-  // ─── VAT rates ────────────────────────────────────────────────────────────
+  // ─── VAT rates / multi-stock (read-only; toggled by platform admin) ──────
 
   @Get('vat-rates')
   @RequireCap('settings.manage')
@@ -45,26 +36,10 @@ export class AdminController {
     return this.settings.getVatRates();
   }
 
-  @Patch('vat-rates')
-  @RequireCap('settings.manage')
-  @UsePipes(new ZodValidationPipe(PatchVatRatesSchema))
-  patchVatRates(@Body() body: PatchVatRatesInput): Promise<unknown> {
-    return this.settings.setVatRates(body.enabledVatRates);
-  }
-
-  // ─── Multi-warehouse toggle ───────────────────────────────────────────────
-
   @Get('multi-warehouse')
   @RequireCap('settings.manage')
   getMultiWarehouse(): Promise<unknown> {
     return this.settings.getMultiWarehouse();
-  }
-
-  @Patch('multi-warehouse')
-  @RequireCap('settings.manage')
-  @UsePipes(new ZodValidationPipe(PatchMultiWarehouseSchema))
-  patchMultiWarehouse(@Body() body: PatchMultiWarehouseInput): Promise<unknown> {
-    return this.settings.setMultiWarehouse(body.multiWarehouse);
   }
 
   // ─── Roles ───────────────────────────────────────────────────────────────

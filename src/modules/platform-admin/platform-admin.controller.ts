@@ -18,6 +18,10 @@ import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { ExtendSubscriptionSchema, type ExtendSubscriptionInput } from './dto/extend-subscription.dto';
 import { PlatformAdminLoginSchema, type PlatformAdminLoginInput } from './dto/platform-admin-login.dto';
 import { UpdateBusinessSchema, type UpdateBusinessInput } from './dto/update-business.dto';
+import {
+  UpdateBusinessSettingsSchema,
+  type UpdateBusinessSettingsInput,
+} from './dto/update-business-settings.dto';
 import { UpdateModulesSchema, type UpdateModulesInput } from './dto/update-modules.dto';
 import { PlatformAdminGuard } from './platform-admin.guard';
 import { PlatformAdminService } from './platform-admin.service';
@@ -176,5 +180,17 @@ export class PlatformAdminController {
   ): Promise<{ ok: true }> {
     await this.svc.updateModules(id, body.modules);
     return { ok: true };
+  }
+
+  @Public()
+  @UseGuards(PlatformAdminGuard)
+  @Patch('admin/platform/businesses/:id/settings')
+  @UsePipes(new ZodValidationPipe(UpdateBusinessSettingsSchema))
+  @ApiOperation({ summary: 'Toggle multi-stock / TVA for a business (platform admin only).' })
+  async updateSettings(
+    @Param('id') id: string,
+    @Body() body: UpdateBusinessSettingsInput,
+  ): Promise<unknown> {
+    return this.svc.updateSettings(id, body);
   }
 }

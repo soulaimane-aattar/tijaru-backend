@@ -21,6 +21,13 @@
 
 ## Log
 
+### 2026-08-15 — Multi-stock + TVA moved to platform (super admin) control, effective web + mobile
+- **Step:** Backend: new `PATCH /v1/admin/platform/businesses/:id/settings` (`PlatformAdminService.updateSettings`) — multi-stock off renames/creates the single default warehouse with the business name (409 if >1 active), TVA toggle writes `enabledVatRates` `[0]`/`[0,7,10,14,20]`, platform audit entry `update-settings`; tenant PATCH `vat-rates`/`multi-warehouse` deleted (GETs kept); `/auth/me` += `multiWarehouse`. Web: PA business detail gains Settings card (Multi-stock + TVA toggles) and full 7-module list (added missing `invoices`, `delivery-notes`); tenant SettingsPage toggles replaced by read-only "Géré par la plateforme" rows; AdminShell hides `/warehouses`, `/stock` and the warehouse switcher when `multiWarehouse=false`. Mobile: auth store += `modules`/`enabledVatRates`/`multiWarehouse` (+`hasModule`), warehouses tab hidden via `href:null` when multi-stock off, settings + admin screens read-only for multi-dépôt, `/admin/vat` screen removed, product-form VAT default derives from enabled rates (0 when TVA off).
+- **Result:** ✅ backend `tsc` clean + jest 405/405 (5 new `updateSettings` tests); web `tsc` clean + vitest 141/141 (SettingsPage suite rewritten read-only); mobile `tsc` clean + jest 18/18.
+- **Decisions:** D-020.
+- **Next:** deploy + verify on device that a TVA-off business shows 0% defaults in POS/invoices; consider backend-side validation of `vat` against `enabledVatRates` on product/invoice writes (still advisory-only).
+
+
 ### 2026-08-15 — Mobile crash fix: date formatters vs null API dates
 - **Step:** On-device render error "Cannot read property 'getTime' of undefined" — `relTime()` called with a null API date field (stack pointed at CartSheet via stale Metro symbolication; POS has no relTime — real risk sites: `sessions.lastSeenAt`, movement dates, notification createdAt). `relTime`/`fmtDate`/`fmtDateTime` in `mobile/src/i18n/format.ts` now accept `null | undefined` and render "—" for missing/invalid dates. New `__tests__/format.test.ts` (null/undefined/invalid/valid cases).
 - **Result:** ✅ mobile `npx tsc --noEmit` clean; `npx jest` 18/18 (3 suites, 11 new format tests). Commit `071e5d1`.

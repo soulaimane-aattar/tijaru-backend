@@ -37,44 +37,4 @@ export class BusinessSettingsService {
     return { multiWarehouse: b.multiWarehouse };
   }
 
-  async setMultiWarehouse(enabled: boolean): Promise<{ multiWarehouse: boolean }> {
-    const businessId = this.businessId();
-    if (!enabled) {
-      const count = await this.prisma.warehouse.count({
-        where: { businessId, deletedAt: null },
-      });
-      if (count > 1) {
-        throw new DomainError(
-          'validation_error',
-          `Cannot disable multi-warehouse: ${count} active warehouses exist. Remove extras first.`,
-          400,
-        );
-      }
-    }
-    await this.prisma.business.update({
-      where: { id: businessId },
-      data: { multiWarehouse: enabled },
-    });
-    return { multiWarehouse: enabled };
-  }
-
-  async setVatRates(rates: number[]): Promise<{ enabledVatRates: number[]; allowed: readonly number[] }> {
-    const invalid = rates.filter((r) => !ALLOWED_VAT.includes(r as (typeof ALLOWED_VAT)[number]));
-    if (invalid.length) {
-      throw new DomainError(
-        'validation_error',
-        `Invalid VAT rates: ${invalid.join(', ')}. Allowed: ${ALLOWED_VAT.join(', ')}`,
-        400,
-      );
-    }
-    if (rates.length === 0) {
-      throw new DomainError('validation_error', 'At least one VAT rate required', 400);
-    }
-    const unique = Array.from(new Set(rates)).sort((a, b) => a - b);
-    await this.prisma.business.update({
-      where: { id: this.businessId() },
-      data: { enabledVatRates: unique },
-    });
-    return { enabledVatRates: unique, allowed: ALLOWED_VAT };
-  }
 }

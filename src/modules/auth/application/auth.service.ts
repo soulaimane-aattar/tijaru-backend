@@ -225,6 +225,7 @@ export class AuthService {
         modules: [],
         subscription: null,
         enabledVatRates: [0, 7, 10, 14, 20],
+        multiWarehouse: true,
       };
     }
 
@@ -239,6 +240,7 @@ export class AuthService {
       modules: modules.filter((m) => m.active).map((m) => m.moduleId),
       subscription: business ? { plan: business.plan, end: business.subscriptionEnd } : null,
       enabledVatRates: business?.enabledVatRates ?? [0, 7, 10, 14, 20],
+      multiWarehouse: business?.multiWarehouse ?? true,
     };
   }
 

@@ -1,13 +1,20 @@
 import * as bcrypt from 'bcrypt';
 
-import { NotFoundError, UnauthorizedError } from '../../common/errors';
+import { ConflictError, NotFoundError, UnauthorizedError } from '../../common/errors';
 
 import { PlatformAdminService } from './platform-admin.service';
 
 type MockPrisma = {
   platformAdmin: { findUnique: jest.Mock };
-  business: { findMany: jest.Mock; update: jest.Mock; findUnique: jest.Mock; count: jest.Mock };
+  business: {
+    findMany: jest.Mock;
+    update: jest.Mock;
+    findUnique: jest.Mock;
+    findUniqueOrThrow: jest.Mock;
+    count: jest.Mock;
+  };
   businessModule: { upsert: jest.Mock };
+  warehouse: { findMany: jest.Mock; update: jest.Mock; create: jest.Mock };
   user: { findMany: jest.Mock; count: jest.Mock; findFirst: jest.Mock; update: jest.Mock };
   securityPolicy: { findUnique: jest.Mock };
   session: { updateMany: jest.Mock };
@@ -23,10 +30,16 @@ const mockPrisma = (): MockPrisma => ({
     findMany: jest.fn(),
     update: jest.fn(),
     findUnique: jest.fn(),
+    findUniqueOrThrow: jest.fn(),
     count: jest.fn(),
   },
   businessModule: {
     upsert: jest.fn(),
+  },
+  warehouse: {
+    findMany: jest.fn(),
+    update: jest.fn(),
+    create: jest.fn(),
   },
   user: {
     findMany: jest.fn(),
@@ -275,6 +288,92 @@ describe('PlatformAdminService', () => {
       prisma.business.findUnique.mockResolvedValue(null);
       const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv);
       await expect(svc.updateModules('missing', { pos: true })).rejects.toBeInstanceOf(
+        NotFoundError,
+      );
+    });
+  });
+
+  describe('updateSettings', () => {
+    const biz = { id: 'b1', name: 'Boulangerie Atlas', city: 'Rabat', multiWarehouse: true };
+
+    it('disabling multi-stock renames the single warehouse to the business name', async () => {
+      const prisma = mockPrisma();
+      prisma.business.findUnique.mockResolvedValue(biz);
+      prisma.warehouse.findMany.mockResolvedValue([{ id: 'w1', name: 'Dépôt 1' }]);
+      prisma.business.findUniqueOrThrow.mockResolvedValue({
+        multiWarehouse: false,
+        enabledVatRates: [0, 7, 10, 14, 20],
+      });
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv);
+      const out = await svc.updateSettings('b1', { multiWarehouse: false });
+      expect(prisma.warehouse.update).toHaveBeenCalledWith({
+        where: { id: 'w1' },
+        data: { name: 'Boulangerie Atlas', isDefault: true, active: true },
+      });
+      expect(prisma.business.update).toHaveBeenCalledWith({
+        where: { id: 'b1' },
+        data: { multiWarehouse: false },
+      });
+      expect(out.multiWarehouse).toBe(false);
+    });
+
+    it('disabling multi-stock creates a default warehouse named after the business when none exists', async () => {
+      const prisma = mockPrisma();
+      prisma.business.findUnique.mockResolvedValue(biz);
+      prisma.warehouse.findMany.mockResolvedValue([]);
+      prisma.business.findUniqueOrThrow.mockResolvedValue({
+        multiWarehouse: false,
+        enabledVatRates: [0],
+      });
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv);
+      await svc.updateSettings('b1', { multiWarehouse: false });
+      expect(prisma.warehouse.create).toHaveBeenCalledWith({
+        data: {
+          businessId: 'b1',
+          name: 'Boulangerie Atlas',
+          city: 'Rabat',
+          isDefault: true,
+          active: true,
+        },
+      });
+    });
+
+    it('refuses to disable multi-stock with more than one active warehouse', async () => {
+      const prisma = mockPrisma();
+      prisma.business.findUnique.mockResolvedValue(biz);
+      prisma.warehouse.findMany.mockResolvedValue([{ id: 'w1' }, { id: 'w2' }]);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv);
+      await expect(svc.updateSettings('b1', { multiWarehouse: false })).rejects.toBeInstanceOf(
+        ConflictError,
+      );
+      expect(prisma.business.update).not.toHaveBeenCalled();
+    });
+
+    it('tvaEnabled false sets enabledVatRates to [0]; true restores the full set', async () => {
+      const prisma = mockPrisma();
+      prisma.business.findUnique.mockResolvedValue(biz);
+      prisma.business.findUniqueOrThrow.mockResolvedValue({
+        multiWarehouse: true,
+        enabledVatRates: [0],
+      });
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv);
+      await svc.updateSettings('b1', { tvaEnabled: false });
+      expect(prisma.business.update).toHaveBeenCalledWith({
+        where: { id: 'b1' },
+        data: { enabledVatRates: [0] },
+      });
+      await svc.updateSettings('b1', { tvaEnabled: true });
+      expect(prisma.business.update).toHaveBeenCalledWith({
+        where: { id: 'b1' },
+        data: { enabledVatRates: [0, 7, 10, 14, 20] },
+      });
+    });
+
+    it('throws NotFoundError when business does not exist', async () => {
+      const prisma = mockPrisma();
+      prisma.business.findUnique.mockResolvedValue(null);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv);
+      await expect(svc.updateSettings('missing', { tvaEnabled: false })).rejects.toBeInstanceOf(
         NotFoundError,
       );
     });
