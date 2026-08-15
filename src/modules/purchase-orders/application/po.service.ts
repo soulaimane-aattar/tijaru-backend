@@ -40,6 +40,10 @@ export class POService {
     if (status === 'received' || status === 'partiallyReceived') {
       throw new DomainError('immutable', 'Cannot edit a received PO', 422);
     }
+    // Content edits (lines, parties) are draft-only; status/notes stay editable until reception.
+    if ((input.lines || input.supplierId || input.warehouseId) && status !== 'draft') {
+      throw new DomainError('not_draft', 'Only draft POs can be edited', 422);
+    }
     return this.purchaseOrders.update(id, input);
   }
 

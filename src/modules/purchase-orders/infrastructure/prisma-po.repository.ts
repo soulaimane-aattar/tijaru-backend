@@ -85,7 +85,22 @@ export class PrismaPurchaseOrdersRepository extends PurchaseOrdersRepository {
   }
 
   update(id: string, data: PatchPOData): Promise<unknown> {
-    return this.prisma.purchaseOrder.update({ where: { id }, data: compact(data) });
+    const { lines, ...scalar } = data;
+    return this.prisma.purchaseOrder.update({
+      where: { id },
+      data: {
+        ...compact(scalar),
+        ...(lines
+          ? {
+              lines: {
+                deleteMany: {},
+                create: lines.map((l) => ({ ...l, received: 0 })),
+              },
+            }
+          : {}),
+      },
+      include: { lines: true },
+    });
   }
 
   async delete(id: string): Promise<void> {

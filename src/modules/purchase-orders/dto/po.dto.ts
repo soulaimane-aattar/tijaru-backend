@@ -21,6 +21,10 @@ export type CreatePOInput = z.infer<typeof CreatePOSchema>;
 export const PatchPOSchema = z.object({
   status: z.enum(['draft', 'sent', 'cancelled']).optional(),
   notes: z.string().max(2000).optional(),
+  // Draft-only edits (service enforces the status rule):
+  supplierId: z.string().cuid().optional(),
+  warehouseId: z.string().cuid().optional(),
+  lines: z.array(POLineSchema).min(1).optional(),
 });
 export type PatchPOInput = z.infer<typeof PatchPOSchema>;
 

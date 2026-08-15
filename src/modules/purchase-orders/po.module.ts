@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { DeliveryNotesModule } from '../delivery-notes/delivery-notes.module';
 import { StockLedgerModule } from '../stock-ledger/stock-ledger.module';
 
 import { POService } from './application/po.service';
@@ -8,7 +9,7 @@ import { PrismaPurchaseOrdersRepository } from './infrastructure/prisma-po.repos
 import { POController } from './po.controller';
 
 @Module({
-  imports: [StockLedgerModule],
+  imports: [StockLedgerModule, DeliveryNotesModule],
   controllers: [POController],
   providers: [
     POService,

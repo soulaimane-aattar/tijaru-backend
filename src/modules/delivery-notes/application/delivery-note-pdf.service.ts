@@ -27,11 +27,26 @@ const TYPE_LABEL: Record<PdfNote['type'], string> = {
   in_: 'Bon de réception',
 };
 
+// Classic carnet layout metrics (A4, 40pt margins → 515pt of usable width).
+const TABLE = {
+  x: 40,
+  w: 515,
+  // column separator offsets from the table's left edge
+  qtyW: 80,
+  puX: 355,
+  totalX: 425,
+  headerH: 24,
+  rowH: 22,
+  minRows: 10,
+};
+
 /**
- * Renders a delivery note (bon) as a single-page A4 PDF: business letterhead,
- * bon number/status, destinataire block, line-item table, and total.
- * Pure I/O-free rendering — takes a fully-resolved `PdfNote` (the caller is
- * responsible for merging the note DTO with business/party lookups).
+ * Renders a delivery note (bon) as a single-page A4 PDF styled after the
+ * classic Moroccan carnet: "Mr. …… Doit" letterhead line, a bordered
+ * Quantité / Désignation / PU / Total table with dotted writing lines, and a
+ * "Date … Total [box]" footer. Pure I/O-free rendering — takes a
+ * fully-resolved `PdfNote` (the caller merges the note DTO with
+ * business/party lookups).
  */
 @Injectable()
 export class DeliveryNotePdfService {
@@ -44,8 +59,7 @@ export class DeliveryNotePdfService {
       doc.on('error', reject);
 
       this.renderHeader(doc, note);
-      this.renderTitle(doc, note);
-      this.renderDestinataire(doc, note);
+      this.renderDoitLine(doc, note);
       this.renderTable(doc, note);
       this.renderFooter(doc, note);
 
@@ -67,64 +81,125 @@ export class DeliveryNotePdfService {
     doc.moveDown(0.5).fillColor('black');
   }
 
-  private renderTitle(doc: PDFKit.PDFDocument, note: PdfNote): void {
-    doc.fontSize(14).text(`${TYPE_LABEL[note.type]}  ${note.number}`);
-    doc
-      .fontSize(9)
-      .fillColor('#555')
-      .text(
-        `Date: ${note.date.toISOString().slice(0, 10)}   Statut: ${note.status}${
-          note.signed ? '   Signé' : ''
-        }`,
-      );
-    doc.moveDown(0.5).fillColor('black');
-  }
+  /** "…… le 14/08/2026" top-right, then "Mr. <party> ………… Doit" over a dotted rule. */
+  private renderDoitLine(doc: PDFKit.PDFDocument, note: PdfNote): void {
+    const { x, w } = TABLE;
+    doc.moveDown(0.6);
 
-  private renderDestinataire(doc: PDFKit.PDFDocument, note: PdfNote): void {
-    const to = note.type === 'out' ? note.customer : note.supplier;
-    doc.fontSize(10).text('Destinataire:', { underline: true });
-    if (to) {
-      doc.text(to.name);
-      if (to.address) doc.text(to.address);
-      if (to.phone) doc.text(`Tél: ${to.phone}`);
-    } else {
-      doc.text('—');
-    }
+    doc
+      .font('Helvetica-Oblique')
+      .fontSize(10)
+      .fillColor('#000')
+      .text(
+        `${TYPE_LABEL[note.type]}  ${note.number}${note.signed ? '   ·   Signé' : ''}`,
+        x,
+        doc.y,
+        { width: w, align: 'left', continued: false },
+      );
+    doc.text(`le ${note.date.toLocaleDateString('fr-FR')}`, x, doc.y - 12, {
+      width: w,
+      align: 'right',
+    });
     doc.moveDown(0.8);
+
+    const to = note.type === 'out' ? note.customer : note.supplier;
+    const y = doc.y;
+    doc.font('Helvetica-BoldOblique').fontSize(12);
+    doc.text('Mr.', x, y);
+    doc.font('Helvetica-Oblique').fontSize(11);
+    doc.text(to?.name ?? '', x + 26, y + 1, { width: w - 26 - 40 });
+    doc.font('Helvetica-BoldOblique').fontSize(12);
+    doc.text('Doit', x + w - 30, y);
+    // dotted baseline under the party name
+    doc
+      .save()
+      .dash(1.5, { space: 2 })
+      .moveTo(x + 24, y + 14)
+      .lineTo(x + w - 34, y + 14)
+      .stroke('#000')
+      .restore()
+      .undash();
+    doc.font('Helvetica').y = y + 24;
   }
 
   private renderTable(doc: PDFKit.PDFDocument, note: PdfNote): void {
-    const cols = { label: 40, qty: 320, pu: 400, sub: 480 };
-    const y0 = doc.y;
-    doc.fontSize(10).fillColor('#000');
-    doc.text('Produit', cols.label, y0);
-    doc.text('Qté', cols.qty, y0, { width: 60, align: 'right' });
-    doc.text('PU', cols.pu, y0, { width: 60, align: 'right' });
-    doc.text('Sous-total', cols.sub, y0, { width: 75, align: 'right' });
-    doc.moveTo(40, doc.y + 2).lineTo(555, doc.y + 2).stroke();
-    doc.moveDown(0.4);
+    const { x, w, qtyW, puX, totalX, headerH, rowH, minRows } = TABLE;
+    const top = doc.y;
+    const rows = Math.max(note.lines.length, minRows);
+    const bodyH = rows * rowH + 8;
 
-    for (const l of note.lines) {
+    // header row box + column titles
+    doc.lineWidth(1.2).rect(x, top, w, headerH).stroke('#000');
+    doc.font('Helvetica-BoldOblique').fontSize(11).fillColor('#000');
+    const ty = top + 6;
+    doc.text('Quantité', x, ty, { width: qtyW, align: 'center' });
+    doc.text('Désignation', x + qtyW, ty, { width: puX - qtyW, align: 'center' });
+    doc.text('PU.', x + puX, ty, { width: totalX - puX, align: 'center' });
+    doc.text('Total', x + totalX, ty, { width: w - totalX, align: 'center' });
+
+    // body box + vertical separators
+    const bTop = top + headerH + 2;
+    doc.lineWidth(1.2).rect(x, bTop, w, bodyH).stroke('#000');
+    for (const cx of [x + qtyW, x + puX, x + totalX]) {
+      doc.moveTo(cx, top).lineTo(cx, top + headerH).stroke('#000');
+      doc.moveTo(cx, bTop).lineTo(cx, bTop + bodyH).stroke('#000');
+    }
+
+    // rows: dotted writing lines, values sitting on top of them
+    doc.font('Helvetica').fontSize(10);
+    for (let i = 0; i < rows; i++) {
+      const lineY = bTop + (i + 1) * rowH;
+      doc
+        .save()
+        .lineWidth(0.7)
+        .dash(1, { space: 1.6 });
+      for (const [sx, ex] of [
+        [x + 4, x + qtyW - 4],
+        [x + qtyW + 4, x + puX - 4],
+        [x + puX + 4, x + totalX - 4],
+        [x + totalX + 4, x + w - 4],
+      ]) {
+        doc.moveTo(sx!, lineY).lineTo(ex!, lineY).stroke('#000');
+      }
+      doc.restore().undash();
+
+      const l = note.lines[i];
+      if (!l) continue;
       const qty = Number(note.type === 'out' ? l.sent : l.ordered);
       const pu = Number(l.unitPrice);
       const sub = Math.round(qty * pu * 100) / 100;
-      const y = doc.y;
-      doc.text(l.label, cols.label, y, { width: 270 });
-      doc.text(qty.toFixed(3), cols.qty, y, { width: 60, align: 'right' });
-      doc.text(pu.toFixed(2), cols.pu, y, { width: 60, align: 'right' });
-      doc.text(sub.toFixed(2), cols.sub, y, { width: 75, align: 'right' });
-      doc.moveDown(0.3);
+      const vy = lineY - 12;
+      doc.text(String(qty), x + 4, vy, { width: qtyW - 8, align: 'center' });
+      doc.text(l.label, x + qtyW + 8, vy, { width: puX - qtyW - 16 });
+      doc.text(pu.toFixed(2), x + puX + 4, vy, { width: totalX - puX - 8, align: 'right' });
+      doc.text(sub.toFixed(2), x + totalX + 4, vy, { width: w - totalX - 8, align: 'right' });
     }
 
-    doc.moveTo(40, doc.y + 4).lineTo(555, doc.y + 4).stroke();
-    doc.moveDown(0.4);
-    doc.fontSize(11).text('Total', cols.pu, doc.y, { width: 60, align: 'right', continued: true });
-    doc.text(note.totals.subtotal.toFixed(2), { width: 75, align: 'right' });
+    doc.y = bTop + bodyH + 12;
   }
 
+  /** "Date: <date>    Total [boxed amount]" footer line, carnet style. */
   private renderFooter(doc: PDFKit.PDFDocument, note: PdfNote): void {
-    doc.moveDown(1.5).fontSize(8).fillColor('#666');
-    doc.text(`Émis par ${note.issuedBy.fullName}`);
-    if (note.notes) doc.moveDown(0.3).text(note.notes);
+    const { x, w, totalX } = TABLE;
+    const y = doc.y;
+
+    doc.font('Helvetica-BoldOblique').fontSize(11);
+    doc.text(`Date: ${note.date.toLocaleDateString('fr-FR')}`, x + 130, y);
+    doc.text('Total', x + totalX - 45, y);
+
+    // boxed grand total aligned under the Total column
+    doc.lineWidth(1.2).rect(x + totalX, y - 5, w - totalX, 22).stroke('#000');
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(11)
+      .text(note.totals.subtotal.toFixed(2), x + totalX + 4, y, {
+        width: w - totalX - 8,
+        align: 'right',
+      });
+
+    doc.font('Helvetica').fontSize(8).fillColor('#666');
+    doc.text(`Émis par ${note.issuedBy.fullName}`, x, y + 34);
+    if (note.notes) doc.text(note.notes, x, doc.y + 4);
+    doc.fillColor('black');
   }
 }

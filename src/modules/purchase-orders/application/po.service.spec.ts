@@ -64,6 +64,35 @@ const mockPrisma = (): jest.Mocked<PrismaService> =>
 
 const receiveInput = (lines: ReceivePOInput['lines']): ReceivePOInput => ({ lines });
 
+describe('POService.patch', () => {
+  it('replaces lines on a draft PO', async () => {
+    const repo = mockRepo();
+    repo.findStatus.mockResolvedValue('draft');
+    const svc = new POService(repo, mockLedger(), mockPrisma());
+    const lines = [{ productId: PID, qty: 3, price: 10, vat: 20 as const }];
+    await svc.patch(PO_ID, { lines });
+    expect(repo.update).toHaveBeenCalledWith(PO_ID, { lines });
+  });
+
+  it('rejects line edits on a sent PO (not_draft)', async () => {
+    const repo = mockRepo();
+    repo.findStatus.mockResolvedValue('sent');
+    const svc = new POService(repo, mockLedger(), mockPrisma());
+    await expect(
+      svc.patch(PO_ID, { lines: [{ productId: PID, qty: 1, price: 1, vat: 0 as const }] }),
+    ).rejects.toBeInstanceOf(DomainError);
+    expect(repo.update).not.toHaveBeenCalled();
+  });
+
+  it('still allows status/notes on a sent PO', async () => {
+    const repo = mockRepo();
+    repo.findStatus.mockResolvedValue('sent');
+    const svc = new POService(repo, mockLedger(), mockPrisma());
+    await svc.patch(PO_ID, { status: 'cancelled', notes: 'n' });
+    expect(repo.update).toHaveBeenCalledWith(PO_ID, { status: 'cancelled', notes: 'n' });
+  });
+});
+
 describe('POService.receive', () => {
   it('receive posts ledger lines with unitCost from PO line', async () => {
     const repo = mockRepo();

@@ -35,6 +35,10 @@ export interface CreatePOData {
 export type PatchPOData = {
   status?: 'draft' | 'sent' | 'cancelled' | undefined;
   notes?: string | undefined;
+  supplierId?: string | undefined;
+  warehouseId?: string | undefined;
+  /** Full replacement of the line set (draft POs only — enforced by the service). */
+  lines?: CreatePOLineData[] | undefined;
 };
 
 /** Minimal shape the receive business rules read. */

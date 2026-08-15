@@ -24,6 +24,6 @@ import { PrismaProductPriceLookup } from './infrastructure/prisma-product-price-
     { provide: ProductPriceLookup, useClass: PrismaProductPriceLookup },
     { provide: DeliveryPdfInfoLookup, useClass: PrismaDeliveryPdfInfoLookup },
   ],
-  exports: [DeliveryNotesService],
+  exports: [DeliveryNotesService, DeliveryNotePdfService, DeliveryPdfInfoLookup],
 })
 export class DeliveryNotesModule {}
