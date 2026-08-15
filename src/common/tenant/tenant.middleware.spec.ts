@@ -40,15 +40,30 @@ describe('tenant middleware', () => {
     expect((out?.args.data as Record<string, unknown>).businessId).toBe('biz_1');
   });
 
-  it('rewrites findUnique to findFirst with businessId', async () => {
+  it('passes findUnique through unchanged (post-filters by businessId on result)', async () => {
     const out = await ctx.run('biz_1', () =>
       call(mw, { model: 'Product', action: 'findUnique', args: { where: { id: 'p1' } } }),
     );
-    expect(out?.action).toBe('findFirst');
-    expect((out?.args as Record<string, unknown>).where).toEqual({
-      id: 'p1',
-      businessId: 'biz_1',
-    });
+    expect(out?.action).toBe('findUnique');
+    expect((out?.args as Record<string, unknown>).where).toEqual({ id: 'p1' });
+  });
+
+  it('drops findUnique result whose businessId does not match tenant', async () => {
+    const params = { model: 'Product', action: 'findUnique', args: { where: { id: 'p1' } } };
+    const next = () => Promise.resolve({ id: 'p1', businessId: 'other_biz', name: 'x' });
+    const res = await ctx.run('biz_1', () =>
+      mw(params as never, next as never),
+    );
+    expect(res).toBeNull();
+  });
+
+  it('returns findUnique result when businessId matches tenant', async () => {
+    const record = { id: 'p1', businessId: 'biz_1', name: 'x' };
+    const params = { model: 'Product', action: 'findUnique', args: { where: { id: 'p1' } } };
+    const res = await ctx.run('biz_1', () =>
+      mw(params as never, (() => Promise.resolve(record)) as never),
+    );
+    expect(res).toEqual(record);
   });
 
   it('does NOT touch non-tenant models', async () => {

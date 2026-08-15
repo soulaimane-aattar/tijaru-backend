@@ -4,6 +4,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '../../common/auth/auth-user.type';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequireCap } from '../../common/decorators/require-cap.decorator';
+import { RequiresModule } from '../../common/decorators/require-module.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 
 import { MovementsService } from './application/movements.service';
@@ -16,6 +17,7 @@ import {
 
 @ApiTags('movements')
 @ApiBearerAuth()
+@RequiresModule('stock')
 @Controller({ path: 'movements', version: '1' })
 export class MovementsController {
   constructor(private readonly movements: MovementsService) {}

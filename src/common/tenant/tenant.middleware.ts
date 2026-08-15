@@ -24,12 +24,25 @@ export function makeTenantMiddleware(ctx: TenantContext): Prisma.Middleware {
       return next(params);
     }
 
-    // findUnique can only filter on unique fields → rewrite to findFirst.
-    if (params.action === 'findUnique' || params.action === 'findUniqueOrThrow') {
-      params.action = params.action === 'findUnique' ? 'findFirst' : 'findFirstOrThrow';
-    }
-
     params.args = params.args ?? {};
+
+    // findUnique / findUniqueOrThrow: WhereUniqueInput can't accept our extra
+    // businessId filter (compound-key aliases like `productId_warehouseId`
+    // become invalid after any rewrite). Pass through and post-filter the
+    // result on businessId so cross-tenant lookups still return nothing.
+    if (params.action === 'findUnique' || params.action === 'findUniqueOrThrow') {
+      const orig = params.action;
+      const result = await next(params);
+      if (result && typeof result === 'object' && 'businessId' in result) {
+        if ((result as { businessId: string }).businessId !== businessId) {
+          if (orig === 'findUniqueOrThrow') {
+            throw new Error(`No ${params.model} found`);
+          }
+          return null;
+        }
+      }
+      return result;
+    }
 
     if (params.action === 'create') {
       params.args.data = { ...params.args.data, businessId };
