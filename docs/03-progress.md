@@ -21,6 +21,12 @@
 
 ## Log
 
+### 2026-08-15 — Mobile crash fix: date formatters vs null API dates
+- **Step:** On-device render error "Cannot read property 'getTime' of undefined" — `relTime()` called with a null API date field (stack pointed at CartSheet via stale Metro symbolication; POS has no relTime — real risk sites: `sessions.lastSeenAt`, movement dates, notification createdAt). `relTime`/`fmtDate`/`fmtDateTime` in `mobile/src/i18n/format.ts` now accept `null | undefined` and render "—" for missing/invalid dates. New `__tests__/format.test.ts` (null/undefined/invalid/valid cases).
+- **Result:** ✅ mobile `npx tsc --noEmit` clean; `npx jest` 18/18 (3 suites, 11 new format tests). Commit `071e5d1`.
+- **Decisions:** none.
+- **Next:** none.
+
 ### 2026-08-15 — Web: public landing page on `/` (prototype accueil.html)
 - **Step:** `AccueilPage` rewritten to match `Tijaru-Platform-Prototype/accueil.html` — sticky nav (Fonctionnalités / Console plateforme / Tarifs + Se connecter / Essayer gratuitement), hero + kicker + browser-mock preview (sidebar + 6 stat cards), 8-module features grid, 3 étapes "Mise en route", dark "Console plateforme" pitch (4 bullets + stats card), pricing Essentiel 120 / Standard 240 (reco) / Pro 400 MAD/mois, final CTA, footer. Routing: `ProtectedRoute` → `ProtectedShell` on `/` — visitors on exactly `/` get the landing, other protected paths redirect to `/login`, authenticated users get `AdminShell` (ByRole dispatch unchanged); `/accueil` kept as alias. All CTAs → `/login` (no self-serve signup page on web yet — backend `/auth/register` exists).
 - **Result:** ✅ web `npx tsc --noEmit` clean; vitest 146/146 (AccueilPage suite rewritten to new copy: hero H1, CTAs→/login, 8 features, 3 steps, 3 plans + "Le plus choisi", console pitch).
