@@ -108,11 +108,44 @@ export class PlatformAdminService {
     return { items, total, page, pageSize };
   }
 
+  /** Append-only console journal. Failures must never break the action itself. */
+  private async audit(entry: {
+    action: string;
+    tone?: 'ok' | 'warn' | 'err';
+    targetType?: 'business' | 'user';
+    targetId?: string;
+    targetName: string;
+    detail?: string;
+  }): Promise<void> {
+    try {
+      await this.prisma.platformAuditLog.create({
+        data: {
+          action: entry.action,
+          tone: entry.tone ?? 'ok',
+          targetType: entry.targetType ?? 'business',
+          targetId: entry.targetId ?? null,
+          targetName: entry.targetName,
+          detail: entry.detail ?? '',
+        },
+      });
+    } catch {
+      // swallow — journal is best-effort
+    }
+  }
+
+  async listAudit(limit = 20): Promise<unknown[]> {
+    return this.prisma.platformAuditLog.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
+  }
+
   async approveBusiness(id: string): Promise<void> {
     const biz = await this.prisma.business.findUnique({ where: { id } });
     if (!biz) throw new NotFoundError('Business', id);
     if (biz.status !== 'pending') throw new ConflictError('Business is not pending');
     await this.prisma.business.update({ where: { id }, data: { status: 'active' } });
+    await this.audit({ action: 'approve', targetId: id, targetName: biz.name });
   }
 
   async rejectBusiness(id: string): Promise<void> {
@@ -120,6 +153,7 @@ export class PlatformAdminService {
     if (!biz) throw new NotFoundError('Business', id);
     if (biz.status !== 'pending') throw new ConflictError('Business is not pending');
     await this.prisma.business.update({ where: { id }, data: { status: 'rejected' } });
+    await this.audit({ action: 'reject', tone: 'warn', targetId: id, targetName: biz.name });
   }
 
   async getBusinessDetail(id: string) {
@@ -151,7 +185,14 @@ export class PlatformAdminService {
     const cleaned = Object.fromEntries(
       Object.entries(data).filter(([, value]) => value !== undefined),
     );
-    return this.prisma.business.update({ where: { id }, data: cleaned });
+    const updated = await this.prisma.business.update({ where: { id }, data: cleaned });
+    const changes = Object.entries(cleaned)
+      .map(([k, v]) => `${k} ${String(biz[k as keyof typeof biz])} → ${String(v)}`)
+      .join(', ');
+    if (changes) {
+      await this.audit({ action: 'update-limits', targetId: id, targetName: biz.name, detail: changes });
+    }
+    return updated;
   }
 
   async extendSubscription(id: string, duration: '1mo' | '3mo' | '6mo' | '1yr') {
@@ -168,10 +209,13 @@ export class PlatformAdminService {
     const start = new Date();
     const end = new Date(start.getTime() + days * 86_400_000);
 
-    return this.prisma.business.update({
+    const updated = await this.prisma.business.update({
       where: { id },
       data: { plan: 'active', subscriptionStart: start, subscriptionEnd: end },
     });
+    const months: Record<typeof duration, string> = { '1mo': '+1 mois', '3mo': '+3 mois', '6mo': '+6 mois', '1yr': '+12 mois' };
+    await this.audit({ action: 'extend', targetId: id, targetName: biz.name, detail: months[duration] });
+    return updated;
   }
 
   async suspendBusiness(id: string): Promise<void> {
@@ -181,6 +225,7 @@ export class PlatformAdminService {
       where: { id },
       data: { status: 'suspended', plan: 'suspended' },
     });
+    await this.audit({ action: 'suspend', tone: 'err', targetId: id, targetName: biz.name });
   }
 
   async activateBusiness(id: string): Promise<void> {
@@ -190,6 +235,7 @@ export class PlatformAdminService {
       where: { id },
       data: { status: 'active', plan: 'active' },
     });
+    await this.audit({ action: 'activate', targetId: id, targetName: biz.name });
   }
 
   async updateModules(id: string, modules: Record<string, boolean>): Promise<void> {
@@ -204,6 +250,10 @@ export class PlatformAdminService {
       }),
     );
     await this.prisma.$transaction(upserts);
+    const detail = Object.entries(modules)
+      .map(([m, active]) => `${m}: ${active ? 'on' : 'off'}`)
+      .join(', ');
+    await this.audit({ action: 'update-modules', targetId: id, targetName: biz.name, detail });
   }
 
   /**
@@ -214,7 +264,7 @@ export class PlatformAdminService {
   async resetUserPassword(userId: string): Promise<{ tempPassword: string }> {
     const user = await this.prisma.user.findFirst({
       where: { id: userId, deletedAt: null },
-      select: { id: true, businessId: true },
+      select: { id: true, businessId: true, name: true, business: { select: { name: true } } },
     });
     if (!user) throw new NotFoundError('User', userId);
 
@@ -235,17 +285,28 @@ export class PlatformAdminService {
       data: { revokedAt: new Date() },
     });
 
+    await this.audit({
+      action: 'reset-password',
+      tone: 'warn',
+      targetType: 'user',
+      targetId: user.id,
+      targetName: user.name,
+      detail: user.business?.name ?? '',
+    });
     return { tempPassword };
   }
 
   async getStats() {
-    const [total, active, expired, pending, suspended] = await Promise.all([
+    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const [total, active, expired, pending, suspended, users, newUsers7d] = await Promise.all([
       this.prisma.business.count(),
       this.prisma.business.count({ where: { plan: 'active' } }),
       this.prisma.business.count({ where: { plan: 'expired' } }),
       this.prisma.business.count({ where: { status: 'pending' } }),
       this.prisma.business.count({ where: { plan: 'suspended' } }),
+      this.prisma.user.count({ where: { deletedAt: null } }),
+      this.prisma.user.count({ where: { deletedAt: null, createdAt: { gte: weekAgo } } }),
     ]);
-    return { total, active, expired, pending, suspended };
+    return { total, active, expired, pending, suspended, users, newUsers7d };
   }
 }

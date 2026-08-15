@@ -97,6 +97,14 @@ export class PlatformAdminController {
 
   @Public()
   @UseGuards(PlatformAdminGuard)
+  @Get('admin/platform/audit')
+  @ApiOperation({ summary: 'Recent super-admin console actions (platform admin only).' })
+  async audit(): Promise<unknown[]> {
+    return this.svc.listAudit(20);
+  }
+
+  @Public()
+  @UseGuards(PlatformAdminGuard)
   @Get('admin/platform/businesses/:id')
   @ApiOperation({ summary: 'Business detail with owner and modules (platform admin only).' })
   async getBusinessDetail(@Param('id') id: string): Promise<unknown> {

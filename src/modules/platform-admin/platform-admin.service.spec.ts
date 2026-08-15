@@ -11,6 +11,7 @@ type MockPrisma = {
   user: { findMany: jest.Mock; count: jest.Mock; findFirst: jest.Mock; update: jest.Mock };
   securityPolicy: { findUnique: jest.Mock };
   session: { updateMany: jest.Mock };
+  platformAuditLog: { create: jest.Mock; findMany: jest.Mock };
   $transaction: jest.Mock;
 };
 
@@ -38,6 +39,10 @@ const mockPrisma = (): MockPrisma => ({
   },
   session: {
     updateMany: jest.fn(),
+  },
+  platformAuditLog: {
+    create: jest.fn(),
+    findMany: jest.fn(),
   },
   $transaction: jest.fn(async (ops: unknown[]) => Promise.all(ops)),
 });
@@ -179,6 +184,53 @@ describe('PlatformAdminService', () => {
       prisma.business.findUnique.mockResolvedValue(null);
       const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv);
       await expect(svc.suspendBusiness('missing')).rejects.toBeInstanceOf(NotFoundError);
+    });
+  });
+
+  describe('audit journal', () => {
+    it('writes an err-toned entry when suspending', async () => {
+      const prisma = mockPrisma();
+      prisma.business.findUnique.mockResolvedValue({ id: 'b1', name: 'Pharmacie Yasmine' });
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv);
+      await svc.suspendBusiness('b1');
+      expect(prisma.platformAuditLog.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          action: 'suspend',
+          tone: 'err',
+          targetId: 'b1',
+          targetName: 'Pharmacie Yasmine',
+        }),
+      });
+    });
+
+    it('records extension duration in the detail', async () => {
+      const prisma = mockPrisma();
+      prisma.business.findUnique.mockResolvedValue({ id: 'b1', name: 'Café Riad Nomad' });
+      prisma.business.update.mockResolvedValue({ id: 'b1' });
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv);
+      await svc.extendSubscription('b1', '1yr');
+      expect(prisma.platformAuditLog.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ action: 'extend', detail: '+12 mois' }),
+      });
+    });
+
+    it('never fails the action when journaling throws', async () => {
+      const prisma = mockPrisma();
+      prisma.business.findUnique.mockResolvedValue({ id: 'b1', name: 'X' });
+      prisma.platformAuditLog.create.mockRejectedValue(new Error('db down'));
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv);
+      await expect(svc.suspendBusiness('b1')).resolves.toBeUndefined();
+    });
+
+    it('listAudit returns newest entries first with a limit', async () => {
+      const prisma = mockPrisma();
+      prisma.platformAuditLog.findMany.mockResolvedValue([{ id: 'a1' }]);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv);
+      await expect(svc.listAudit(20)).resolves.toEqual([{ id: 'a1' }]);
+      expect(prisma.platformAuditLog.findMany).toHaveBeenCalledWith({
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+      });
     });
   });
 

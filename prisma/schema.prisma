@@ -38,6 +38,21 @@ model PlatformAdmin {
   @@map("platform_admins")
 }
 
+/// Journal of super-admin console actions (extend, suspend, approve…). Append-only.
+model PlatformAuditLog {
+  id         String   @id @default(cuid())
+  action     String
+  tone       String   @default("ok")
+  targetType String   @default("business") @map("target_type")
+  targetId   String?  @map("target_id")
+  targetName String   @map("target_name")
+  detail     String   @default("")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@map("platform_audit_logs")
+}
+
 model Business {
   id                String           @id @default(cuid())
   name              String
