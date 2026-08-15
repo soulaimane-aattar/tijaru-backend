@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import PDFDocument from 'pdfkit';
 
+import { fontFor, registerArabicFonts } from '../../../common/pdf/arabic-fonts';
+
 export type PdfNote = {
   number: string;
   type: 'order' | 'out' | 'in_';
@@ -53,6 +55,7 @@ export class DeliveryNotePdfService {
   render(note: PdfNote): Promise<Buffer> {
     return new Promise((resolve, reject) => {
       const doc = new PDFDocument({ size: 'A4', margin: 40, compress: false });
+      registerArabicFonts(doc);
       const chunks: Buffer[] = [];
       doc.on('data', (c) => chunks.push(c));
       doc.on('end', () => resolve(Buffer.concat(chunks)));
@@ -68,16 +71,18 @@ export class DeliveryNotePdfService {
   }
 
   private renderHeader(doc: PDFKit.PDFDocument, note: PdfNote): void {
-    doc.fontSize(16).text(note.business.name, { continued: false });
+    doc.font(fontFor(note.business.name, 'Helvetica')).fontSize(16).text(note.business.name, { continued: false });
     doc.fontSize(9).fillColor('#555');
-    if (note.business.address) doc.text(note.business.address);
+    if (note.business.address) {
+      doc.font(fontFor(note.business.address, 'Helvetica')).text(note.business.address);
+    }
     const meta = [
       note.business.ice && `ICE: ${note.business.ice}`,
       note.business.phone && `Tél: ${note.business.phone}`,
     ]
       .filter(Boolean)
       .join('  ·  ');
-    if (meta) doc.text(meta);
+    if (meta) doc.font('Helvetica').text(meta);
     doc.moveDown(0.5).fillColor('black');
   }
 
@@ -106,8 +111,9 @@ export class DeliveryNotePdfService {
     const y = doc.y;
     doc.font('Helvetica-BoldOblique').fontSize(12);
     doc.text('Mr.', x, y);
-    doc.font('Helvetica-Oblique').fontSize(11);
-    doc.text(to?.name ?? '', x + 26, y + 1, { width: w - 26 - 40 });
+    const partyName = to?.name ?? '';
+    doc.font(fontFor(partyName, 'Helvetica-Oblique')).fontSize(11);
+    doc.text(partyName, x + 26, y + 1, { width: w - 26 - 40 });
     doc.font('Helvetica-BoldOblique').fontSize(12);
     doc.text('Doit', x + w - 30, y);
     // dotted baseline under the party name
@@ -170,7 +176,10 @@ export class DeliveryNotePdfService {
       const sub = Math.round(qty * pu * 100) / 100;
       const vy = lineY - 12;
       doc.text(String(qty), x + 4, vy, { width: qtyW - 8, align: 'center' });
-      doc.text(l.label, x + qtyW + 8, vy, { width: puX - qtyW - 16 });
+      doc.font(fontFor(l.label, 'Helvetica')).text(l.label, x + qtyW + 8, vy, {
+        width: puX - qtyW - 16,
+      });
+      doc.font('Helvetica');
       doc.text(pu.toFixed(2), x + puX + 4, vy, { width: totalX - puX - 8, align: 'right' });
       doc.text(sub.toFixed(2), x + totalX + 4, vy, { width: w - totalX - 8, align: 'right' });
     }
@@ -197,9 +206,10 @@ export class DeliveryNotePdfService {
         align: 'right',
       });
 
-    doc.font('Helvetica').fontSize(8).fillColor('#666');
-    doc.text(`Émis par ${note.issuedBy.fullName}`, x, y + 34);
-    if (note.notes) doc.text(note.notes, x, doc.y + 4);
-    doc.fillColor('black');
+    doc.fontSize(8).fillColor('#666');
+    const issued = `Émis par ${note.issuedBy.fullName}`;
+    doc.font(fontFor(issued, 'Helvetica')).text(issued, x, y + 34);
+    if (note.notes) doc.font(fontFor(note.notes, 'Helvetica')).text(note.notes, x, doc.y + 4);
+    doc.font('Helvetica').fillColor('black');
   }
 }

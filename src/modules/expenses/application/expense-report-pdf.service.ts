@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import PDFDocument from 'pdfkit';
 
+import { fontFor, registerArabicFonts } from '../../../common/pdf/arabic-fonts';
+
 export type PdfReceipt = { buffer: Buffer; ext: 'jpg' | 'png' };
 
 export type PdfExpenseLine = {
@@ -51,6 +53,7 @@ export class ExpenseReportPdfService {
   render(report: PdfExpenseReport): Promise<Buffer> {
     return new Promise((resolve, reject) => {
       const doc = new PDFDocument({ size: 'A4', margin: 40, compress: false });
+      registerArabicFonts(doc);
       const chunks: Buffer[] = [];
       doc.on('data', (c) => chunks.push(c));
       doc.on('end', () => resolve(Buffer.concat(chunks)));
@@ -66,16 +69,18 @@ export class ExpenseReportPdfService {
   }
 
   private renderHeader(doc: PDFKit.PDFDocument, report: PdfExpenseReport): void {
-    doc.fontSize(16).text(report.business.name);
+    doc.font(fontFor(report.business.name, 'Helvetica')).fontSize(16).text(report.business.name);
     doc.fontSize(9).fillColor('#555');
-    if (report.business.address) doc.text(report.business.address);
+    if (report.business.address) {
+      doc.font(fontFor(report.business.address, 'Helvetica')).text(report.business.address);
+    }
     const meta = [
       report.business.ice && `ICE: ${report.business.ice}`,
       report.business.phone && `Tél: ${report.business.phone}`,
     ]
       .filter(Boolean)
       .join('  ·  ');
-    if (meta) doc.text(meta);
+    if (meta) doc.font('Helvetica').text(meta);
     doc.moveDown(0.5).fillColor('black');
     doc.fontSize(14).text(`Rapport des dépenses — ${report.month}`);
     doc.moveDown(0.6);
@@ -98,7 +103,10 @@ export class ExpenseReportPdfService {
       if (doc.y > 720) doc.addPage();
       const y = doc.y;
       doc.text(line.date.toISOString().slice(0, 10), cols.date, y);
-      doc.text(line.merchantName ?? '—', cols.merchant, y, { width: 145 });
+      doc
+        .font(fontFor(line.merchantName ?? '', 'Helvetica'))
+        .text(line.merchantName ?? '—', cols.merchant, y, { width: 145 });
+      doc.font('Helvetica');
       doc.text(CATEGORY_LABEL[line.category] ?? line.category, cols.category, y, { width: 100 });
       doc.text(PAYMENT_LABEL[line.paymentMethod] ?? line.paymentMethod, cols.payment, y, {
         width: 60,
