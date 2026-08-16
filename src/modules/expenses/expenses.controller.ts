@@ -74,13 +74,22 @@ export class ExpensesController {
   // Declared before ':id' so "report" is not swallowed by the param route.
   @Get('report')
   @RequireCap('expenses.view')
-  async report(@Query('month') month: string | undefined, @Res() res: Response): Promise<void> {
+  async report(
+    @Query('month') month: string | undefined,
+    @Query('quarter') quarter: string | undefined,
+    @Res() res: Response,
+  ): Promise<void> {
     const businessId = this.tenant.getBusinessId();
     if (!businessId) throw new ValidationError('missing tenant context');
-    const data = await this.svc.monthlyReportData(month ?? '', businessId);
+    if (Boolean(month) === Boolean(quarter)) {
+      throw new ValidationError('provide exactly one of month or quarter');
+    }
+    const data = quarter
+      ? await this.svc.quarterlyReportData(quarter, businessId)
+      : await this.svc.monthlyReportData(month ?? '', businessId);
     const buf = await this.pdf.render(data);
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="depenses-${data.month}.pdf"`);
+    res.setHeader('Content-Disposition', `attachment; filename="depenses-${data.period}.pdf"`);
     res.setHeader('Content-Length', String(buf.length));
     res.end(buf);
   }

@@ -21,6 +21,14 @@ export type ScanResult = {
 };
 
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+const QUARTER_RE = /^\d{4}-Q[1-4]$/;
+
+const QUARTER_MONTH_LABEL_FR: Record<1 | 2 | 3 | 4, string> = {
+  1: 'Jan–Mar',
+  2: 'Avr–Juin',
+  3: 'Juil–Sep',
+  4: 'Oct–Déc',
+};
 
 /** Fields of an Expense row the monthly report consumes. */
 type ReportRow = {
@@ -103,7 +111,40 @@ export class ExpensesService {
     const [year, mon] = month.split('-').map(Number) as [number, number];
     const from = new Date(Date.UTC(year, mon - 1, 1));
     const to = new Date(Date.UTC(year, mon, 0, 23, 59, 59, 999));
+    return this.assembleReport({
+      period: month,
+      title: `Rapport des dépenses — ${month}`,
+      from,
+      to,
+      businessId,
+    });
+  }
 
+  /** Same shape as monthlyReportData but spans a calendar quarter (`YYYY-Qn`). */
+  async quarterlyReportData(quarter: string, businessId: string): Promise<PdfExpenseReport> {
+    if (!QUARTER_RE.test(quarter)) throw new ValidationError('quarter must be YYYY-Qn');
+    const year = Number(quarter.slice(0, 4));
+    const q = Number(quarter.slice(6)) as 1 | 2 | 3 | 4;
+    const startMonth = (q - 1) * 3;
+    const from = new Date(Date.UTC(year, startMonth, 1));
+    const to = new Date(Date.UTC(year, startMonth + 3, 0, 23, 59, 59, 999));
+    return this.assembleReport({
+      period: quarter,
+      title: `Rapport trimestriel — ${year} Q${q} (${QUARTER_MONTH_LABEL_FR[q]})`,
+      from,
+      to,
+      businessId,
+    });
+  }
+
+  private async assembleReport(args: {
+    period: string;
+    title: string;
+    from: Date;
+    to: Date;
+    businessId: string;
+  }): Promise<PdfExpenseReport> {
+    const { period, title, from, to, businessId } = args;
     const [rows, totals, business] = await Promise.all([
       this.expenses.findAll({ from, to }) as Promise<ReportRow[]>,
       this.expenses.summary({ from, to }),
@@ -123,7 +164,8 @@ export class ExpensesService {
     );
 
     return {
-      month,
+      period,
+      title,
       business: business ?? { name: '', address: null, ice: null, phone: null },
       lines,
       totals,

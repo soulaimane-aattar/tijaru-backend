@@ -24,7 +24,8 @@ const jpeg = (): Promise<Buffer> =>
     .toBuffer();
 
 const baseReport = (): PdfExpenseReport => ({
-  month: '2026-08',
+  period: '2026-08',
+  title: 'Rapport des dépenses — 2026-08',
   business: { name: 'Aissa SARL', address: 'Rabat', ice: '000123456', phone: '0522000000' },
   lines: [
     {

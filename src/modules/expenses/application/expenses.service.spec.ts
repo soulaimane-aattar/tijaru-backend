@@ -176,7 +176,8 @@ describe('ExpensesService.monthlyReportData', () => {
     const query = r.findAll.mock.calls[0]?.[0] as { from: Date; to: Date };
     expect(query.from.toISOString()).toBe('2026-08-01T00:00:00.000Z');
     expect(query.to.toISOString()).toBe('2026-08-31T23:59:59.999Z');
-    expect(report.month).toBe('2026-08');
+    expect(report.period).toBe('2026-08');
+    expect(report.title).toBe('Rapport des dépenses — 2026-08');
     expect(report.business.name).toBe('Aissa SARL');
     expect(report.lines).toEqual([
       expect.objectContaining({ merchantName: 'Total', amount: 450.5, receipt: null }),
@@ -222,6 +223,31 @@ describe('ExpensesService.monthlyReportData', () => {
 
     expect(report.lines[0]?.receipt?.ext).toBe('png');
     expect(report.lines[0]?.receipt?.buffer.subarray(1, 4).toString()).toBe('PNG');
+  });
+});
+
+describe('ExpensesService.quarterlyReportData', () => {
+  it('rejects a malformed quarter', async () => {
+    await expect(service().quarterlyReportData('2026-Q5', 'biz1')).rejects.toBeInstanceOf(
+      ValidationError,
+    );
+    await expect(service().quarterlyReportData('26-Q1', 'biz1')).rejects.toBeInstanceOf(
+      ValidationError,
+    );
+  });
+
+  it('queries the full quarter and titles the report', async () => {
+    const r = repo();
+    r.findAll.mockResolvedValue([]);
+    r.summary.mockResolvedValue({ total: 0, byCategory: [] });
+
+    const report = await service(r).quarterlyReportData('2026-Q3', 'biz1');
+
+    const query = r.findAll.mock.calls[0]?.[0] as { from: Date; to: Date };
+    expect(query.from.toISOString()).toBe('2026-07-01T00:00:00.000Z');
+    expect(query.to.toISOString()).toBe('2026-09-30T23:59:59.999Z');
+    expect(report.period).toBe('2026-Q3');
+    expect(report.title).toBe('Rapport trimestriel — 2026 Q3 (Juil–Sep)');
   });
 });
 

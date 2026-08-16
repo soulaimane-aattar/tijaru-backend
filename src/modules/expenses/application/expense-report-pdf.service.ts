@@ -16,8 +16,10 @@ export type PdfExpenseLine = {
 };
 
 export type PdfExpenseReport = {
-  /** Report month as `YYYY-MM`. */
-  month: string;
+  /** Period identifier — `YYYY-MM` for monthly, `YYYY-Qn` for quarterly. */
+  period: string;
+  /** Rendered header title, e.g. `Rapport des dépenses — 2026-08` or `Rapport trimestriel — 2026 Q3 (Juil–Sep)`. */
+  title: string;
   business: { name: string; address?: string | null; ice?: string | null; phone?: string | null };
   lines: PdfExpenseLine[];
   totals: { total: number; byCategory: { category: string; total: number }[] };
@@ -82,7 +84,7 @@ export class ExpenseReportPdfService {
       .join('  ·  ');
     if (meta) doc.font('Helvetica').text(meta);
     doc.moveDown(0.5).fillColor('black');
-    doc.fontSize(14).text(`Rapport des dépenses — ${report.month}`);
+    doc.fontSize(14).text(report.title);
     doc.moveDown(0.6);
   }
 
