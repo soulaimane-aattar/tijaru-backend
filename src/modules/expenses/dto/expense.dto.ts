@@ -26,6 +26,8 @@ export const CreateExpenseSchema = z.object({
   paymentMethod: z.enum(PAYMENT_METHODS).default('cash'),
   /** Relative path returned by `POST /expenses/scan`. */
   receiptPath: z.string().max(300).optional(),
+  /** sha256 of the receipt bytes, returned by `POST /expenses/scan`. */
+  receiptHash: z.string().regex(/^[a-f0-9]{64}$/).optional(),
 });
 export type CreateExpenseInput = z.infer<typeof CreateExpenseSchema>;
 

@@ -4,7 +4,7 @@ import { NotFoundError, ValidationError } from '../../../common/errors';
 import type { BusinessInfoLookup } from '../domain/business-info.lookup';
 import type { ExpensesRepository } from '../domain/expenses.repository';
 import type { OcrProvider } from '../domain/ocr.provider';
-import type { LocalStorageService } from '../infrastructure/local-storage.service';
+import type { LocalStorageService } from '../../../common/storage/local-storage.service';
 
 import { ExpensesService } from './expenses.service';
 
@@ -15,6 +15,7 @@ const repo = (): jest.Mocked<ExpensesRepository> =>
     findAll: jest.fn(),
     findDetail: jest.fn(),
     findById: jest.fn(),
+    findByReceiptHash: jest.fn().mockResolvedValue(null),
     summary: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
@@ -139,6 +140,33 @@ describe('ExpensesService.scan', () => {
     expect(result.suggestion).toBeNull();
     // The photo is still attached, so the user can record the expense by hand.
     expect(result.receiptPath).toBe('biz1/abc.jpg');
+  });
+
+  it('returns a deterministic sha256 hash of the receipt bytes', async () => {
+    const result = await service().scan(JPEG, 'biz1');
+    // Precomputed sha256(JPEG bytes) — locks the hash format the mobile client relies on.
+    expect(result.receiptHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(result.duplicate).toBeNull();
+  });
+
+  it('flags the prior expense when the same receipt bytes were already scanned', async () => {
+    const r = repo();
+    r.findByReceiptHash.mockResolvedValue({
+      id: 'e-prior',
+      date: new Date('2026-08-10T00:00:00Z'),
+      amount: '123.45',
+      merchantName: 'MARJANE',
+    });
+
+    const result = await service(r).scan(JPEG, 'biz1');
+
+    expect(r.findByReceiptHash).toHaveBeenCalledWith(result.receiptHash);
+    expect(result.duplicate).toEqual({
+      id: 'e-prior',
+      date: '2026-08-10T00:00:00.000Z',
+      amount: 123.45,
+      merchantName: 'MARJANE',
+    });
   });
 });
 

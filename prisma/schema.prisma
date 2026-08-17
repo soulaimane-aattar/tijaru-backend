@@ -372,6 +372,7 @@ model Product {
   maxStock    Int       @default(0)
   notes       String?
   tone        String    @default("#94a3b8")
+  imagePath   String?   @map("image_path")
   deletedAt   DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -707,6 +708,7 @@ model Expense {
   note          String?
   paymentMethod PaymentMethod   @default(cash) @map("payment_method")
   receiptPath   String?         @map("receipt_path")
+  receiptHash   String?         @map("receipt_hash") @db.Char(64)
   ocrStatus     OcrStatus?      @map("ocr_status")
   ocrRaw        Json?           @map("ocr_raw")
   createdById   String          @map("created_by_id")
@@ -720,6 +722,7 @@ model Expense {
 
   @@index([businessId, date])
   @@index([businessId, category])
+  @@index([businessId, receiptHash])
   @@map("expenses")
 }
 

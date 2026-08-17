@@ -18,6 +18,7 @@ export type CreateExpenseData = {
   note?: string | undefined;
   paymentMethod: string;
   receiptPath?: string | undefined;
+  receiptHash?: string | undefined;
   ocrStatus?: string | undefined;
   ocrRaw?: unknown;
   createdById: string;
@@ -29,6 +30,14 @@ export type UpdateExpenseData = {
 
 /** Minimal projection the service needs for existence checks and file cleanup. */
 export type ExpenseRef = { id: string; receiptPath: string | null };
+
+/** Fields shown when warning the user that a scanned receipt already exists. */
+export type ExpenseDuplicate = {
+  id: string;
+  date: Date;
+  amount: unknown;
+  merchantName: string | null;
+};
 
 export type ExpenseSummary = {
   total: number;
@@ -42,6 +51,9 @@ export abstract class ExpensesRepository {
   abstract findDetail(id: string): Promise<unknown | null>;
 
   abstract findById(id: string): Promise<ExpenseRef | null>;
+
+  /** Most recent expense (in the current tenant) that stored the same receipt bytes. */
+  abstract findByReceiptHash(hash: string): Promise<ExpenseDuplicate | null>;
 
   abstract summary(query: ListExpensesQuery): Promise<ExpenseSummary>;
 

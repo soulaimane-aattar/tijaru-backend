@@ -6,6 +6,7 @@ import { scoped } from '../../../common/tenant/tenant.helpers';
 import {
   ExpensesRepository,
   type CreateExpenseData,
+  type ExpenseDuplicate,
   type ExpenseRef,
   type ExpenseSummary,
   type UpdateExpenseData,
@@ -53,6 +54,14 @@ export class PrismaExpensesRepository extends ExpensesRepository {
     return this.prisma.expense.findUnique({
       where: { id },
       select: { id: true, receiptPath: true },
+    });
+  }
+
+  findByReceiptHash(hash: string): Promise<ExpenseDuplicate | null> {
+    return this.prisma.expense.findFirst({
+      where: { receiptHash: hash },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, date: true, amount: true, merchantName: true },
     });
   }
 

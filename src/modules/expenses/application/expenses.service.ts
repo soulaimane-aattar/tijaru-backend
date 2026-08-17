@@ -1,23 +1,39 @@
+import { createHash } from 'node:crypto';
+
 import { Injectable } from '@nestjs/common';
 import sharp from 'sharp';
 
 import { NotFoundError, ValidationError } from '../../../common/errors';
 import { BusinessInfoLookup } from '../domain/business-info.lookup';
-import { ExpensesRepository, type ExpenseSummary } from '../domain/expenses.repository';
+import {
+  ExpensesRepository,
+  type ExpenseDuplicate,
+  type ExpenseSummary,
+} from '../domain/expenses.repository';
 import { OcrProvider, type OcrSuggestion } from '../domain/ocr.provider';
 import type {
   CreateExpenseInput,
   ListExpensesQuery,
   UpdateExpenseInput,
 } from '../dto/expense.dto';
-import { LocalStorageService } from '../infrastructure/local-storage.service';
+import { LocalStorageService } from '../../../common/storage/local-storage.service';
 
 import type { PdfExpenseReport, PdfReceipt } from './expense-report-pdf.service';
 
+export type ScanDuplicate = {
+  id: string;
+  date: string;
+  amount: number;
+  merchantName: string | null;
+};
+
 export type ScanResult = {
   receiptPath: string;
+  receiptHash: string;
   ocrStatus: 'done' | 'failed';
   suggestion: OcrSuggestion | null;
+  /** Set when a prior expense in this tenant stored the same receipt bytes. */
+  duplicate: ScanDuplicate | null;
 };
 
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -94,9 +110,29 @@ export class ExpensesService {
     const ext = this.storage.sniffExtension(buffer);
     if (!ext) throw new ValidationError('Unsupported image format');
 
-    const receiptPath = await this.storage.save(businessId, buffer, ext);
+    const receiptHash = createHash('sha256').update(buffer).digest('hex');
+    // Look up duplicates BEFORE writing — a hit still stores the file (user may
+    // confirm the double-entry is intentional) but the UI needs the prior record
+    // to render the warning banner.
+    const prior = await this.expenses.findByReceiptHash(receiptHash);
+    const receiptPath = await this.storage.save('receipts', businessId, buffer, ext);
     const result = await this.ocr.extract(buffer, `receipt.${ext}`);
-    return { receiptPath, ocrStatus: result.status, suggestion: result.suggestion };
+    return {
+      receiptPath,
+      receiptHash,
+      ocrStatus: result.status,
+      suggestion: result.suggestion,
+      duplicate: prior ? this.toDuplicate(prior) : null,
+    };
+  }
+
+  private toDuplicate(row: ExpenseDuplicate): ScanDuplicate {
+    return {
+      id: row.id,
+      date: row.date.toISOString(),
+      amount: Number(row.amount),
+      merchantName: row.merchantName,
+    };
   }
 
   /**
