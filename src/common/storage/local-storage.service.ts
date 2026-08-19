@@ -4,19 +4,19 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
 import { Inject, Injectable } from '@nestjs/common';
 
-import { ENV_TOKEN } from '../../../config/config.module';
-import type { Env } from '../../../config/env';
+import { ENV_TOKEN } from '../../config/config.module';
+import type { Env } from '../../config/env';
 
-export type ReceiptExt = 'jpg' | 'png' | 'webp';
+export type ImageExt = 'jpg' | 'png' | 'webp';
 
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 /**
- * Receipt images on the local filesystem, one directory per business.
+ * Tenant-scoped image storage on the local filesystem.
  *
- * Paths are tenant-scoped by construction: callers pass a businessId and get
- * back a relative path that already contains it, so reading another tenant's
- * receipt would require forging a path — which `resolveSafe` rejects.
+ * Callers pass a `subdir` (e.g. `receipts`, `products`) and a `businessId`,
+ * and get back a relative path that already contains both. Reading another
+ * tenant's file would require forging a path — `resolveSafe` rejects those.
  */
 @Injectable()
 export class LocalStorageService {
@@ -32,7 +32,7 @@ export class LocalStorageService {
    * The mimetype a client declares is attacker-controlled, so it is never
    * trusted: a `.jpg` upload carrying a PHP payload must be rejected here.
    */
-  sniffExtension(buffer: Buffer): ReceiptExt | null {
+  sniffExtension(buffer: Buffer): ImageExt | null {
     if (buffer.length < 12) return null;
     if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return 'jpg';
     if (buffer.subarray(0, 8).equals(PNG_MAGIC)) return 'png';
@@ -45,8 +45,13 @@ export class LocalStorageService {
     return null;
   }
 
-  async save(businessId: string, buffer: Buffer, ext: ReceiptExt): Promise<string> {
-    const relativePath = `${businessId}/${randomBytes(12).toString('hex')}.${ext}`;
+  async save(
+    subdir: string,
+    businessId: string,
+    buffer: Buffer,
+    ext: ImageExt,
+  ): Promise<string> {
+    const relativePath = `${subdir}/${businessId}/${randomBytes(12).toString('hex')}.${ext}`;
     const absolute = this.resolveSafe(relativePath);
     await mkdir(dirname(absolute), { recursive: true });
     await writeFile(absolute, buffer);

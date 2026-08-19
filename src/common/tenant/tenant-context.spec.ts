@@ -27,5 +27,6 @@ describe('TenantContext', () => {
 
   it('auto-scopes the Expense model', () => {
     expect(TENANT_MODELS.has('Expense')).toBe(true);
+    expect(TENANT_MODELS.has('ExpenseCategoryDef')).toBe(true);
   });
 });

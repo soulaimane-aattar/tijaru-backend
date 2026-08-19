@@ -11,6 +11,7 @@ import { JwtAuthGuard } from './common/guards/jwt.guard';
 import { LimitGuard } from './common/guards/limit.guard';
 import { ModuleGuard } from './common/guards/module.guard';
 import { SubscriptionGuard } from './common/guards/subscription.guard';
+import { StorageModule } from './common/storage/storage.module';
 import { TenantInterceptor } from './common/tenant/tenant.interceptor';
 import { ConfigModule, ENV_TOKEN } from './config/config.module';
 import type { Env } from './config/env';
@@ -20,6 +21,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { CategoriesModule } from './modules/categories/categories.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { DeliveryNotesModule } from './modules/delivery-notes/delivery-notes.module';
+import { ExpenseCategoriesModule } from './modules/expense-categories/expense-categories.module';
 import { ExpensesModule } from './modules/expenses/expenses.module';
 import { HealthModule } from './modules/health/health.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
@@ -39,6 +41,7 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module';
 @Module({
   imports: [
     ConfigModule,
+    StorageModule,
     ScheduleModule.forRoot(),
     AuthModule,
     UsersModule,
@@ -58,6 +61,7 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module';
     ActivityModule,
     NotificationsModule,
     ExpensesModule,
+    ExpenseCategoriesModule,
     HealthModule,
     PlatformAdminModule,
     StockLedgerModule,

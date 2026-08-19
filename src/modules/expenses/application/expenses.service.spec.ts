@@ -1,6 +1,7 @@
 import sharp from 'sharp';
 
 import { NotFoundError, ValidationError } from '../../../common/errors';
+import type { ExpenseCategoriesRepository } from '../../expense-categories/domain/expense-categories.repository';
 import type { BusinessInfoLookup } from '../domain/business-info.lookup';
 import type { ExpensesRepository } from '../domain/expenses.repository';
 import type { OcrProvider } from '../domain/ocr.provider';
@@ -37,12 +38,33 @@ const lookupStub = (
   info: unknown = { name: 'Aissa SARL', address: null, ice: null, phone: null },
 ) => ({ get: jest.fn().mockResolvedValue(info) }) as unknown as jest.Mocked<BusinessInfoLookup>;
 
+const categoriesStub = (
+  view: unknown = {
+    id: 'cat-1',
+    key: 'other',
+    label: 'Autre',
+    taxRate: 0,
+    sortOrder: 90,
+    archived: false,
+  },
+) =>
+  ({
+    findAll: jest.fn(),
+    findById: jest.fn(),
+    findByKey: jest.fn().mockResolvedValue(view),
+    create: jest.fn(),
+    update: jest.fn(),
+    countUses: jest.fn(),
+    delete: jest.fn(),
+  }) as unknown as jest.Mocked<ExpenseCategoriesRepository>;
+
 const service = (
   r = repo(),
   s: jest.Mocked<LocalStorageService> = storageStub(),
   o: jest.Mocked<OcrProvider> = ocrStub(),
   b: jest.Mocked<BusinessInfoLookup> = lookupStub(),
-) => new ExpensesService(r, s, o, b);
+  c: jest.Mocked<ExpenseCategoriesRepository> = categoriesStub(),
+) => new ExpensesService(r, s, o, b, c);
 
 describe('ExpensesService', () => {
   it('throws NotFound when getting a missing expense', async () => {

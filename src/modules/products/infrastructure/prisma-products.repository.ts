@@ -166,6 +166,27 @@ export class PrismaProductsRepository extends ProductsRepository {
     });
   }
 
+  async findImagePath(id: string): Promise<string | null> {
+    const row = await this.prisma.product.findFirst({
+      where: { id, deletedAt: null },
+      select: { imagePath: true },
+    });
+    return row?.imagePath ?? null;
+  }
+
+  async setImagePath(id: string, path: string): Promise<string | null> {
+    const prev = await this.findImagePath(id);
+    await this.prisma.product.update({ where: { id }, data: { imagePath: path } });
+    return prev;
+  }
+
+  async clearImagePath(id: string): Promise<string | null> {
+    const prev = await this.findImagePath(id);
+    if (!prev) return null;
+    await this.prisma.product.update({ where: { id }, data: { imagePath: null } });
+    return prev;
+  }
+
   async duplicateFrom(
     sourceId: string,
     identity: { name: string; sku: string; barcode: string },

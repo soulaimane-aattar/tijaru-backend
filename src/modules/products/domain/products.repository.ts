@@ -106,4 +106,13 @@ export abstract class ProductsRepository {
     sourceId: string,
     identity: { name: string; sku: string; barcode: string },
   ): Promise<unknown>;
+
+  /** Storage path of the product image, or null when unset. Tenant-scoped, null if missing. */
+  abstract findImagePath(id: string): Promise<string | null>;
+
+  /** Persist a new image path and return the previous one (for cleanup). */
+  abstract setImagePath(id: string, path: string): Promise<string | null>;
+
+  /** Unset the image path and return the previous one (for cleanup). */
+  abstract clearImagePath(id: string): Promise<string | null>;
 }

@@ -4,6 +4,7 @@ import type { MovementReason } from '@prisma/client';
 import type { AuthUser } from '../../../common/auth/auth-user.type';
 import { ConflictError, NotFoundError, ValidationError } from '../../../common/errors';
 import { PrismaService } from '../../../common/prisma.service';
+import { LocalStorageService } from '../../../common/storage/local-storage.service';
 import { StockLedgerService } from '../../stock-ledger/application/stock-ledger.service';
 import {
   ProductsRepository,
@@ -45,6 +46,7 @@ export class ProductsService {
     private readonly products: ProductsRepository,
     private readonly ledger: StockLedgerService,
     private readonly prisma: PrismaService,
+    private readonly storage: LocalStorageService,
   ) {}
 
   async list(query: ListProductsQuery): Promise<Paginated<unknown>> {
@@ -164,6 +166,38 @@ export class ProductsService {
     const existing = await this.products.findIdentity(id);
     if (!existing) throw new NotFoundError('Product', id);
     await this.products.softDelete(id);
+  }
+
+  /**
+   * Store a new product photo. Replaces any prior image — the old file is
+   * removed best-effort so a stale blob never lingers when a user re-shoots.
+   */
+  async uploadImage(id: string, buffer: Buffer, businessId: string): Promise<{ imagePath: string }> {
+    const existing = await this.products.findIdentity(id);
+    if (!existing) throw new NotFoundError('Product', id);
+    const ext = this.storage.sniffExtension(buffer);
+    if (!ext) throw new ValidationError('Unsupported image format');
+    const imagePath = await this.storage.save('products', businessId, buffer, ext);
+    const previous = await this.products.setImagePath(id, imagePath);
+    if (previous) {
+      await this.storage.remove(previous).catch(() => undefined);
+    }
+    return { imagePath };
+  }
+
+  async deleteImage(id: string): Promise<void> {
+    const existing = await this.products.findIdentity(id);
+    if (!existing) throw new NotFoundError('Product', id);
+    const previous = await this.products.clearImagePath(id);
+    if (previous) {
+      await this.storage.remove(previous).catch(() => undefined);
+    }
+  }
+
+  async readImage(id: string): Promise<{ buffer: Buffer; ext: string }> {
+    const path = await this.products.findImagePath(id);
+    if (!path) throw new NotFoundError('ProductImage', id);
+    return { buffer: await this.storage.read(path), ext: path.split('.').pop() ?? 'jpg' };
   }
 
   async duplicate(id: string): Promise<unknown> {

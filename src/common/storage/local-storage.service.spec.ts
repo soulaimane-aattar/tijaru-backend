@@ -32,19 +32,19 @@ describe('LocalStorageService', () => {
   });
 
   it('writes under a business-scoped directory and returns a relative path', async () => {
-    const path = await storage.save('biz1', JPEG, 'jpg');
-    expect(path).toMatch(/^biz1\/[a-f0-9]+\.jpg$/);
+    const path = await storage.save('receipts', 'biz1', JPEG, 'jpg');
+    expect(path).toMatch(/^receipts\/biz1\/[a-f0-9]+\.jpg$/);
     expect(readFileSync(join(root, path))).toEqual(JPEG);
   });
 
   it('gives every receipt a distinct name', async () => {
-    const a = await storage.save('biz1', JPEG, 'jpg');
-    const b = await storage.save('biz1', JPEG, 'jpg');
+    const a = await storage.save('receipts', 'biz1', JPEG, 'jpg');
+    const b = await storage.save('receipts', 'biz1', JPEG, 'jpg');
     expect(a).not.toEqual(b);
   });
 
   it('reads back what it wrote', async () => {
-    const path = await storage.save('biz1', PNG, 'png');
+    const path = await storage.save('receipts', 'biz1', PNG, 'png');
     await expect(storage.read(path)).resolves.toEqual(PNG);
   });
 
@@ -55,7 +55,7 @@ describe('LocalStorageService', () => {
   });
 
   it('removes a file and tolerates a second removal', async () => {
-    const path = await storage.save('biz1', JPEG, 'jpg');
+    const path = await storage.save('receipts', 'biz1', JPEG, 'jpg');
     await storage.remove(path);
     await expect(storage.remove(path)).resolves.toBeUndefined();
   });

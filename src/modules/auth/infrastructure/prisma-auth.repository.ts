@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { BuiltInRole, BusinessStatus } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma.service';
+import { DEFAULT_EXPENSE_CATEGORIES } from '../../expense-categories/domain/default-categories';
 import {
   AuthRepository,
   type AuthUserView,
@@ -143,6 +144,15 @@ export class PrismaAuthRepository extends AuthRepository {
           businessId: business.id,
           moduleId,
           active: true,
+        })),
+      });
+      await tx.expenseCategoryDef.createMany({
+        data: DEFAULT_EXPENSE_CATEGORIES.map((c) => ({
+          businessId: business.id,
+          key: c.key,
+          label: c.label,
+          taxRate: c.taxRate,
+          sortOrder: c.sortOrder,
         })),
       });
       return { businessId: business.id, userId: user.id };

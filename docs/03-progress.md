@@ -21,6 +21,121 @@
 
 ## Log
 
+### 2026-08-19 — Receipt scan flow: explicit "Analyser" button, no auto-OCR (mobile)
+
+Best-practice receipt-capture pattern: user drives OCR, not the shutter. Before this change, taking a photo or importing from gallery would immediately hit the OCR endpoint — cropping meant waiting for a scan you didn't want, then re-scanning after adjust. Wasteful round-trip, bad on flaky mobile networks.
+
+**Now:**
+1. Take photo / import → image lands in preview only (no OCR).
+2. Preview shows status *"Prêt à analyser"* + a hint *"Recadrez si besoin, puis tapez « Analyser »"*.
+3. Action row: rotate ± / Reprendre / Recadrer — all edit the preview locally, still no network.
+4. Prominent brand-primary **"Analyser"** button below → fires OCR on the current preview.
+5. Once done, badge flips to *"Analysé"* and the button becomes *"Ré-analyser"* if the user wants to redo after another crop/rotate.
+
+**Files:**
+- `mobile/src/features/expenses/components/expense-form.tsx` — split `onPhoto` into `setPreview(uri, mime)` (no OCR, resets scan state) + `runScan()` (explicit, uses stored `receiptMime` for the correct file extension). All entry points — camera, gallery, rotate, crop-overlay confirm — now go through `setPreview` only. New `scanned` boolean drives the status badge + button label. `clearReceipt` resets the new state fields too.
+- Camera tile label swapped from "Scanner / Caméra + OCR" to "Prendre photo / Caméra" so it matches the split behavior.
+
+**Verification.** `npx tsc --noEmit` clean.
+
+### 2026-08-19 — Audit fixes on the categories + PostHog + crop diff
+
+Ran a 3-fork audit (backend / web / mobile) on the uncommitted diff. Zero FAIL rows, ~5 meaningful WARN. All 5 fixed, plus polish:
+
+**Priority.**
+1. `web/App.tsx:119` — `/settings/expense-categories` route now wrapped in `<RoleGuard requires="user">` (was reachable by any authenticated user via URL-force).
+2. `mobile/crop-overlay.tsx` — `Gesture.Pan().runOnJS(true)` on both `centerPan` and `cornerPan` so the JS-closure captures (`bounds`, `clamp`) work reliably; reanimated would otherwise auto-workletize the callbacks and cross-thread capture is fragile. Added a `mounted` ref to guard the `Image.getSize` unmount race.
+3. `web/ExpenseFormPage.tsx` — categories arrive async, so a `useEffect([categories.data, tvaTouched])` recomputes TVA once the real per-category rate lands (was fixed at 20 % if the user typed before the query resolved).
+4. `mobile/expense-form.tsx` — `applyScan` now passes `rateFor(category)` (was hard-coded 20 %); added the symmetric categories-arrive `useEffect` so mobile matches web.
+5. `web/ExpenseFormPage.tsx` — `applyScan` moved the TVA compute inside the functional `setForm((f) => …)` so it reads the fresh `f.category` instead of the stale closure `form.category`.
+
+**Polish.**
+- `web/analytics.tsx` — early-return in `ensureStarted()` when `import.meta.env.DEV`, so PostHog no longer opens a session in dev before opting out.
+- `mobile/analytics.tsx` — `autocapture={false}` (POS/expense screens tap-heavy, would burn PostHog quota; instrument explicitly instead).
+- `web/AdminShell.tsx` + `web/src/i18n/{fr,en,ar}.ts` — nav entry now uses `labelKey: 'nav.expenseCategories'` with FR/EN/AR translations (was hard-coded French).
+- `backend/prisma/migrations/20260818000000_.../migration.sql` — seed `INSERT` now has `ON CONFLICT ("business_id", "key") DO NOTHING`, so mid-migration recovery doesn't abort.
+- Doc drift fixed: transport is 14 %, not 20/0.
+
+**Skipped by design.**
+- Backend TOCTOU on category delete + product image path — bounded (design tolerates orphan keys / stale blobs).
+- Mobile `categories = data ?? []` new-array per render — not hot path.
+- Web `CATEGORY_TONE` static map — `'gray'` fallback for tenant-added categories is intentional.
+- Web `confirm()` native for delete — consistent with `ExpensesPage`, not a regression.
+- `products/new.tsx` `allowsEditing: true` — product photos deliberately 1:1 cropped.
+
+**Verification.** `npx tsc --noEmit` clean on backend + web + mobile.
+
+### 2026-08-19 — TestFlight crash on image resize + PostHog error reporting
+
+**The crash.** TestFlight build 8 crash log (`351E9097-…`) — main-thread `SIGABRT` bubbling through `objc_exception_rethrow` in `CFRunLoopRunSpecific`, with **no Tijaru symbols in the stack**. User reports it triggers when resizing the receipt image. Almost certainly `expo-image-manipulator` throwing a native NSException on iPhone X (2 GB RAM, iOS 16.7): a 12 MP source photo blows past the memory headroom needed to allocate the rotated/cropped bitmap, or the crop rect overshoots the image bounds by 1 px and `UIImage` aborts.
+
+**Defensive fix — new `mobile/src/lib/image-safe.ts`.**
+  - `downsizeIfLarge(uri)` — if the longest side exceeds 2000 px, resize down first (JPEG, 0.9 quality). Called on every image right after `ImagePicker.launchCamera` / `launchImageLibrary` returns, so nothing bigger than 2000 px ever reaches the manipulator.
+  - `safeManipulate(uri, actions)` — same as `ImageManipulator.manipulateAsync` but pre-resizes and reports the failure to PostHog before rethrowing, so we see silent failures.
+  - `safeCropRect(rect, imgSize)` — clamps `originX/Y + width/height` to stay inside the source image, rounds to integers, and never returns a zero-sized rect. iOS `UIImage` NSExceptions on an out-of-bounds rect even by 1 px, and our old crop math relied on `Math.min(imgSize.w, ...)` which bounded `width` alone but let `originX + width` overflow.
+
+**Wired into every image entry point.**
+  - `crop-overlay.tsx` — uses `safeCropRect` + `safeManipulate` on the confirm path.
+  - `expense-form.tsx` — `pickFromGallery`/`takePhoto` downsize the picked asset before OCR; rotate uses `safeManipulate`.
+  - `app/products/new.tsx` — same downsize on camera + gallery picks.
+
+**PostHog wired on both mobile and web (Sentry rejected, PostHog is what we already know / prefer).**
+  - **Mobile:** added `posthog-react-native ^4.63.2`. Config lives in `.env` (best-practice — `EXPO_PUBLIC_POSTHOG_KEY` + `EXPO_PUBLIC_POSTHOG_HOST`, both populated in `.env` and documented in `.env.example`). PostHog project API keys are public by design, so bundling them in the client is expected — no secret in the source.
+  - New `mobile/src/lib/analytics.tsx` — exports `<AnalyticsProvider>` wrapping `PostHogProvider` (autocapture on, EU host default), plus imperative `captureError` / `trackEvent` / `identifyUser` / `resetAnalytics` that share a singleton client so error reports raised outside the React tree still land.
+  - `app/_layout.tsx` — wraps the tree in `<AnalyticsProvider>` inside `SafeAreaProvider`.
+  - `install-error-handler.ts` — every JS fatal + unhandled promise rejection now forwards to `captureError`.
+  - No config plugin / native pod required — `posthog-react-native` is JS-only (uses `expo-file-system` for offline queue, already installed).
+  - **Web:** added `posthog-js ^1.418.1`. Same env-driven config (`VITE_POSTHOG_KEY` / `VITE_POSTHOG_HOST` in `.env` + `.env.example`).
+  - New `web/src/lib/analytics.tsx` — `<AnalyticsProvider>` wrapping `PostHogProvider` (autocapture on, session replay on in prod, off in dev via `opt_out_capturing`), plus a `<RouteTracker>` that fires `$pageview` on every react-router `location.pathname/search` change (default pageview off — SPA needs it wired manually).
+  - `App.tsx` — provider mounted inside `<BrowserRouter>` (needs `useLocation`).
+  - `window.addEventListener('error'|'unhandledrejection')` installed once at PostHog init → both forward to `captureError` with source metadata.
+
+**Verification.**
+  - `npx tsc --noEmit` clean.
+  - Not verified on device — needs a new TestFlight build to confirm both (a) the resize crash is gone and (b) PostHog receives events.
+
+**Follow-ups.**
+  - Ship build 9 to TestFlight; ask the reporter to reproduce the resize flow; verify PostHog `$exception` events appear if anything still throws.
+  - If the crash persists, add `expo-application` restart hooks or drop `MAX_SIDE` to 1500.
+  - Consider adding source-map upload to PostHog (there's a CLI plugin) so the JS frames in captured errors are symbolicated too — deferred until we see the first prod event to confirm the current setup works end-to-end.
+
+### 2026-08-18 — Expense form UX pass (icons, TVA, free crop, per-tenant categories)
+
+Four related changes shipped together so the receipt-scan flow finally feels right.
+
+**1. Rotate/crop icons were invisible.** `↺` and `↻` weren't in the emoji→Ionicons map, so they fell through to `Ionicons name="↺"` which isn't a real glyph name and rendered as tofu. Added `↺` → `arrow-undo`, `↻` → `arrow-redo`, `✂` → `cut-outline` in `mobile/src/ui/icon.tsx`.
+
+**2. TVA is now auto-calculated (web + mobile).** When you type the TTC amount the TVA fills in as `amount × rate / (100 + rate)` and a hint appears: *"Auto-calculée à 20 % TTC — modifiable"*. If you edit the TVA yourself, or if the OCR extracted a TVA from the receipt, we set a `tvaTouched` flag and stop overwriting it. If OCR gave us an amount but no TVA, we auto-fill and leave `tvaTouched=false` — so changing the category later still recomputes with the new rate. The rate comes from the selected category (see #4), not a hardcoded 20 %.
+
+**3. Free-form crop on mobile.** Two issues rolled into one:
+  - `allowsEditing: true` on `expo-image-picker` was forcing a **square** crop on Android, which is useless for tall receipts. Dropped it — the raw photo comes back, and you can see the whole receipt.
+  - Added a real in-app crop overlay: new `mobile/src/features/expenses/components/crop-overlay.tsx`. Full-screen modal, dark backdrop, letterboxed image, 4 corner-drag handles + a center drag to move the whole box. Min 50×50 px, clamped to image bounds. On Valider it converts display coords → image coords via the measured layout, calls `ImageManipulator.manipulateAsync({crop:...})`, then re-runs OCR through the existing `onPhoto()` path. The "Recadrer" button, which used to re-open the gallery, now opens this overlay.
+
+**4. Expense categories are configurable per tenant.** The `ExpenseCategory` Prisma enum is gone. Instead:
+  - New table `expense_category_defs` (`id, businessId, key, label, taxRate, sortOrder, archived`) — one row per category, scoped to a business.
+  - `Expense.category` is now `String @default("other")` (kept the value semantically identical — validation moves up one layer).
+  - Migration `20260818000000_expense_categories_configurable` seeds every existing business with the same 9 defaults (rent, utilities, salaries, supplies, transport, maintenance, taxes, marketing, other) with FR labels and MA-appropriate tax rates — 20 % for goods/services, 14 % for transport, 0 % for salaries / taxes / other. Seed row IDs are deterministic (`seed_<businessId>_<key>`) and the `INSERT` uses `ON CONFLICT ("business_id", "key") DO NOTHING` so partial re-runs are safe.
+  - New NestJS module `expense-categories/` — full CRUD (`GET/POST/PATCH/DELETE /expense-categories`), tenant-scoped via `TENANT_MODELS`, guarded by `expenses.view` / `expenses.edit`. Delete is soft (archive) when a category is still referenced by expenses, hard otherwise. `ExpensesService.assertCategoryUsable()` rejects unknown / archived keys on create/update, so we don't need a DB-level FK (see D-022 for why we deliberately kept it loose).
+  - New-business bootstrap seeds defaults in the same transaction as the business row.
+  - **Web:** new `/settings/expense-categories` admin page (list / add / edit / archive / delete, sort by ordre), plus nav entry in `AdminShell`. The expense form's category select + the list-page filter/badges now resolve labels via `useExpenseCategories`, with `FALLBACK_CATEGORY_LABEL_FR` for the pre-fetch render.
+  - **Mobile:** category chips + list picker load from the same API. TVA auto-calc uses the selected category's `taxRate` instead of a hardcoded 20 %.
+
+**Verification:**
+- Backend `npx tsc --noEmit` clean.
+- Backend tests: `npx jest --testPathPattern="expense-categor|expenses.service|tenant-context"` → **32/32 pass** (3 suites).
+- Web `npx tsc --noEmit` clean.
+- Mobile `npx tsc --noEmit` clean.
+
+**Not verified — one blocker:** the migration hasn't been applied to a live DB. `stock-postgres` isn't running, and host port 5433 is currently held by an unrelated project (`groupeeko_cgp_postgres_1`) — this matches the CLAUDE.md note about the `.env` `DATABASE_URL` pointing at the wrong project DB. To apply: `cd backend && docker compose up -d postgres && DATABASE_URL="postgresql://stock:stock@localhost:5433/stock?schema=public" npx prisma migrate deploy`.
+
+**Decisions logged:** [D-022](02-decisions.md#d-022--2026-08-18--expense-categories-become-a-per-tenant-table-expensecategorydef-expensecategory-demoted-from-enum-to-free-string-validation-lives-in-the-service-layer-not-a-db-fk).
+
+**Follow-ups:**
+- Apply the migration once the Tijaru postgres is back on :5433.
+- E2E test for `POST /expense-categories` tenant isolation.
+- i18n keys for default category labels (currently FR-only fallback map).
+- FK from `Expense.category` → `ExpenseCategoryDef.key` was rejected on purpose (D-022) — historical rows must survive category deletion.
+
 ### 2026-08-17 — Expense receipt duplicate detection (sha256)
 - **Step:** `POST /expenses/scan` now hashes the receipt bytes (sha256) and looks up prior expenses with the same hash before saving. Backend: schema `Expense.receiptHash Char(64)` + `@@index([businessId, receiptHash])`, migration `20260817000000_expense_receipt_hash`; `ExpensesRepository.findByReceiptHash` (tenant-scoped by middleware); `ScanResult` extended with `receiptHash` + `duplicate {id,date,amount,merchantName} | null`; `CreateExpenseSchema.receiptHash` accepted so create persists it. Mobile: `ScanResult` + `ExpenseInput` extended; `expense-form.tsx` stores `receiptHash`, renders amber "⚠️ Reçu déjà enregistré" banner (date · amount · merchant) linking to prior expense, includes hash in create payload; `clearReceipt` resets both. Duplicate is a warning only — user can still confirm the double-entry.
 - **Result:** ✅ `npx jest src/modules/expenses/application/expenses.service.spec.ts` → 21/21 (added 2: deterministic sha256 + prior-expense flag). Backend `npx tsc --noEmit` clean. Mobile `npx tsc --noEmit` clean.

@@ -23,6 +23,7 @@ export const TENANT_MODELS: ReadonlySet<string> = new Set([
   'Activity',
   'BusinessModule',
   'Expense',
+  'ExpenseCategoryDef',
 ]);
 
 type Store = { businessId: string };

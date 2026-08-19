@@ -4,6 +4,7 @@ import { Injectable } from '@nestjs/common';
 import sharp from 'sharp';
 
 import { NotFoundError, ValidationError } from '../../../common/errors';
+import { ExpenseCategoriesRepository } from '../../expense-categories/domain/expense-categories.repository';
 import { BusinessInfoLookup } from '../domain/business-info.lookup';
 import {
   ExpensesRepository,
@@ -64,6 +65,7 @@ export class ExpensesService {
     private readonly storage: LocalStorageService,
     private readonly ocr: OcrProvider,
     private readonly businessInfo: BusinessInfoLookup,
+    private readonly categories: ExpenseCategoriesRepository,
   ) {}
 
   list(query: ListExpensesQuery): Promise<unknown[]> {
@@ -80,14 +82,26 @@ export class ExpensesService {
     return found;
   }
 
-  create(input: CreateExpenseInput, userId: string): Promise<unknown> {
+  async create(input: CreateExpenseInput, userId: string): Promise<unknown> {
+    await this.assertCategoryUsable(input.category);
     return this.expenses.create({ ...input, createdById: userId });
   }
 
   async update(id: string, input: UpdateExpenseInput): Promise<unknown> {
+    if (input.category !== undefined) await this.assertCategoryUsable(input.category);
     const updated = await this.expenses.update(id, input);
     if (updated === 0) throw new NotFoundError('Expense', id);
     return this.expenses.findDetail(id);
+  }
+
+  /**
+   * A category the tenant has archived (or never defined) must not accept new
+   * writes — but historical rows keep their key, so we do not touch existing data.
+   */
+  private async assertCategoryUsable(key: string): Promise<void> {
+    const found = await this.categories.findByKey(key);
+    if (!found) throw new ValidationError(`Unknown expense category: ${key}`);
+    if (found.archived) throw new ValidationError(`Archived expense category: ${key}`);
   }
 
   async remove(id: string): Promise<void> {

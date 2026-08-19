@@ -51,7 +51,7 @@ describe('ProductsService.update — no longer accepts stock', () => {
     const repo = mockRepo();
     const ledger = mockLedger();
     const prisma = mockPrisma();
-    const svc = new ProductsService(repo, ledger, prisma);
+    const svc = new ProductsService(repo, ledger, prisma, {} as never);
 
     const input = { name: 'New name' } as UpdateProductInput;
     await svc.update(PID, input);
@@ -68,7 +68,7 @@ describe('ProductsService.findByBarcode', () => {
     const repo = mockRepo();
     const ledger = mockLedger();
     const prisma = mockPrisma();
-    const svc = new ProductsService(repo, ledger, prisma);
+    const svc = new ProductsService(repo, ledger, prisma, {} as never);
 
     repo.findByBarcode.mockResolvedValue({ id: 'p1', barcode: '4006381333931' } as never);
     await expect(svc.findByBarcode(actor, '4006381333931')).resolves.toMatchObject({ id: 'p1' });
@@ -79,7 +79,7 @@ describe('ProductsService.findByBarcode', () => {
     const repo = mockRepo();
     const ledger = mockLedger();
     const prisma = mockPrisma();
-    const svc = new ProductsService(repo, ledger, prisma);
+    const svc = new ProductsService(repo, ledger, prisma, {} as never);
 
     repo.findByBarcode.mockResolvedValue(null);
     await expect(svc.findByBarcode(actor, '0000000000000')).rejects.toBeInstanceOf(NotFoundError);
@@ -98,7 +98,7 @@ describe('ProductsService.adjust', () => {
     const repo = mockRepo();
     const ledger = mockLedger();
     const prisma = mockPrisma();
-    const svc = new ProductsService(repo, ledger, prisma);
+    const svc = new ProductsService(repo, ledger, prisma, {} as never);
 
     await svc.adjust(actor, PID, baseInput({ delta: 5, reason: 'ecart' }));
 
@@ -118,7 +118,7 @@ describe('ProductsService.adjust', () => {
     const repo = mockRepo();
     const ledger = mockLedger();
     const prisma = mockPrisma();
-    const svc = new ProductsService(repo, ledger, prisma);
+    const svc = new ProductsService(repo, ledger, prisma, {} as never);
 
     await svc.adjust(actor, PID, baseInput({ delta: -3, reason: 'casse' }));
 
@@ -136,7 +136,7 @@ describe('ProductsService.adjust', () => {
     const repo = mockRepo();
     const ledger = mockLedger();
     const prisma = mockPrisma();
-    const svc = new ProductsService(repo, ledger, prisma);
+    const svc = new ProductsService(repo, ledger, prisma, {} as never);
 
     await svc.adjust(actor, PID, baseInput());
 
@@ -149,7 +149,7 @@ describe('ProductsService.adjust', () => {
     const repo = mockRepo();
     const ledger = mockLedger();
     const prisma = mockPrisma();
-    const svc = new ProductsService(repo, ledger, prisma);
+    const svc = new ProductsService(repo, ledger, prisma, {} as never);
 
     await expect(svc.adjust(actor, PID, baseInput({ delta: 0 }))).rejects.toThrow(ValidationError);
     expect(ledger.post).not.toHaveBeenCalled();
@@ -160,7 +160,7 @@ describe('ProductsService.adjust', () => {
     repo.findIdentity.mockResolvedValue(null);
     const ledger = mockLedger();
     const prisma = mockPrisma();
-    const svc = new ProductsService(repo, ledger, prisma);
+    const svc = new ProductsService(repo, ledger, prisma, {} as never);
 
     await expect(svc.adjust(actor, PID, baseInput())).rejects.toThrow(NotFoundError);
     expect(ledger.post).not.toHaveBeenCalled();
@@ -171,7 +171,7 @@ describe('ProductsService.adjust', () => {
     repo.warehouseExists.mockResolvedValue(false);
     const ledger = mockLedger();
     const prisma = mockPrisma();
-    const svc = new ProductsService(repo, ledger, prisma);
+    const svc = new ProductsService(repo, ledger, prisma, {} as never);
 
     await expect(svc.adjust(actor, PID, baseInput())).rejects.toThrow(NotFoundError);
     expect(ledger.post).not.toHaveBeenCalled();
