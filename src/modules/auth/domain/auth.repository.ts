@@ -125,4 +125,10 @@ export abstract class AuthRepository {
 
   /** Module activation flags for the business. */
   abstract findBusinessModules(businessId: string): Promise<BusinessModuleView[]>;
+
+  /** Non-deleted user by id (credential fields only), or null. */
+  abstract findUserById(userId: string): Promise<{ id: string; passwordHash: string } | null>;
+
+  /** Overwrite the user's password hash. */
+  abstract updatePassword(userId: string, passwordHash: string): Promise<void>;
 }

@@ -19,6 +19,7 @@ export interface UpdateUserData {
   name?: string | undefined;
   email?: string | undefined;
   phone?: string | undefined;
+  passwordHash?: string | undefined;
   role?: string | undefined;
   active?: boolean | undefined;
 }

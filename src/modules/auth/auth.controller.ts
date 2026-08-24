@@ -10,6 +10,7 @@ import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { CAPABILITIES, CAPABILITY_IDS, ROLES, ROLE_IDS } from '../../domain/permissions';
 
 import { AuthService } from './application/auth.service';
+import { type ChangePasswordInput, ChangePasswordSchema } from './dto/change-password.dto';
 import {
   type LoginInput,
   LoginSchema,
@@ -84,6 +85,17 @@ export class AuthController {
   @ApiOperation({ summary: 'Revoke the supplied refresh token (current device).' })
   async logout(@Body() body: RefreshInput, @CurrentUser() user: AuthUser): Promise<void> {
     await this.auth.logout(user.id, body.refreshToken);
+  }
+
+  @Post('change-password')
+  @HttpCode(204)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Self-service password change for the logged-in user.' })
+  async changePassword(
+    @Body(new ZodValidationPipe(ChangePasswordSchema)) body: ChangePasswordInput,
+    @CurrentUser() user: AuthUser,
+  ): Promise<void> {
+    await this.auth.changePassword(user.id, body.currentPassword, body.newPassword);
   }
 
   @Get('me')

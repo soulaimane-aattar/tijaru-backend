@@ -172,4 +172,18 @@ export class PrismaAuthRepository extends AuthRepository {
       select: { moduleId: true, active: true },
     });
   }
+
+  async findUserById(userId: string): Promise<{ id: string; passwordHash: string } | null> {
+    return this.prisma.user.findFirst({
+      where: { id: userId, deletedAt: null },
+      select: { id: true, passwordHash: true },
+    });
+  }
+
+  async updatePassword(userId: string, passwordHash: string): Promise<void> {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash },
+    });
+  }
 }

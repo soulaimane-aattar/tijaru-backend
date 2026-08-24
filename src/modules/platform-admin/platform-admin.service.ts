@@ -337,19 +337,24 @@ export class PlatformAdminService {
    * active sessions, and bumps tokenVersion so the old refresh token is rejected. The plaintext
    * is returned exactly once — only its bcrypt hash is persisted.
    */
-  async resetUserPassword(userId: string): Promise<{ tempPassword: string }> {
+  async resetUserPassword(userId: string, customPassword?: string): Promise<{ tempPassword: string }> {
     const user = await this.prisma.user.findFirst({
       where: { id: userId, deletedAt: null },
       select: { id: true, businessId: true, name: true, business: { select: { name: true } } },
     });
     if (!user) throw new NotFoundError('User', userId);
 
-    const policy = await this.prisma.securityPolicy.findUnique({
-      where: { businessId: user.businessId },
-      select: { passwordMinLen: true },
-    });
-    const length = Math.max(10, policy?.passwordMinLen ?? 8);
-    const tempPassword = generateTempPassword(length);
+    let tempPassword: string;
+    if (customPassword && customPassword.length >= 8) {
+      tempPassword = customPassword;
+    } else {
+      const policy = await this.prisma.securityPolicy.findUnique({
+        where: { businessId: user.businessId },
+        select: { passwordMinLen: true },
+      });
+      const length = Math.max(10, policy?.passwordMinLen ?? 8);
+      tempPassword = generateTempPassword(length);
+    }
     const passwordHash = await bcrypt.hash(tempPassword, this.env.BCRYPT_COST);
 
     await this.prisma.user.update({

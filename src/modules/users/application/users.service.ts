@@ -44,10 +44,20 @@ export class UsersService {
   async update(id: string, input: UpdateUserInput): Promise<unknown> {
     if (!(await this.users.exists(id))) throw new NotFoundError('User', id);
 
-    const { warehouseIds, email, ...rest } = input;
+    const { warehouseIds, email, password, ...rest } = input;
+
+    let passwordHash: string | undefined;
+    if (password) {
+      passwordHash = await bcrypt.hash(password, this.env.BCRYPT_COST);
+    }
+
     return this.users.update(
       id,
-      { ...rest, email: email === undefined ? undefined : email.toLowerCase() },
+      {
+        ...rest,
+        email: email === undefined ? undefined : email.toLowerCase(),
+        ...(passwordHash ? { passwordHash } : {}),
+      },
       warehouseIds,
     );
   }

@@ -147,6 +147,18 @@ export class AuthService {
     await this.authRepo.bumpTokenVersion(userId);
   }
 
+  async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<void> {
+    const user = await this.authRepo.findUserById(userId);
+    if (!user) throw new UnauthorizedError('User not found');
+
+    const ok = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!ok) throw new UnauthorizedError('Current password is incorrect');
+
+    const hash = await bcrypt.hash(newPassword, this.env.BCRYPT_COST);
+    await this.authRepo.updatePassword(userId, hash);
+    await this.authRepo.bumpTokenVersion(userId);
+  }
+
   private overridesOf(user: AuthUserView): Partial<Record<CapabilityId, boolean>> {
     const overrides: Partial<Record<CapabilityId, boolean>> = {};
     for (const o of user.overrides) {

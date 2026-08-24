@@ -164,9 +164,12 @@ export class PlatformAdminController {
   @UseGuards(PlatformAdminGuard)
   @Post('admin/platform/users/:id/reset-password')
   @HttpCode(200)
-  @ApiOperation({ summary: 'Reset a user password, returning a one-time temp password (platform admin only).' })
-  async resetUserPassword(@Param('id') id: string): Promise<{ tempPassword: string }> {
-    return this.svc.resetUserPassword(id);
+  @ApiOperation({ summary: 'Reset a user password. Optionally provide a custom password, otherwise generates a temp one.' })
+  async resetUserPassword(
+    @Param('id') id: string,
+    @Body() body: { password?: string },
+  ): Promise<{ tempPassword: string }> {
+    return this.svc.resetUserPassword(id, body?.password);
   }
 
   @Public()

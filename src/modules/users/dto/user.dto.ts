@@ -19,6 +19,7 @@ export const UpdateUserSchema = z
     name: z.string().min(1).max(120),
     email: z.string().email(),
     phone: z.string().optional(),
+    password: z.string().min(8),
     role: RoleEnum,
     active: z.boolean(),
     warehouseIds: z.array(z.string().cuid()),
