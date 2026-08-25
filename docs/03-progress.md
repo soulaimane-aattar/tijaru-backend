@@ -21,6 +21,110 @@
 
 ## Log
 
+### 2026-08-25 — Web+backend: customer credit ceiling (dette alerts) + payment/bon e2e coverage
+
+**Step.** Built the missing dette feature end-to-end and pinned the bons/invoice-payment/POS-credit workflows with Playwright. Discovery first: the backend already had debt plumbing (`GET /delivery-notes/customer-debts` = ΣBL lines − paid − returns; `POST/GET /delivery-notes/:id/payments`; invoice `paid` tracking) but **zero web UI consumed any of it**, customers had no ceiling field, POS had no credit payment UI, and invoices had no record-payment UI.
+
+**Backend (small).**
+- `Customer.creditLimit Decimal?` (nullable = no limit) + hand-written migration `20260825150000_customer_credit_limit` + `prisma generate`.
+- DTO: `creditLimit: z.number().min(0).nullable().optional()` on create (`.partial()` covers update; `null` clears). Repo `CreateCustomerData` extended — service/controller untouched (passthrough).
+
+**Web.**
+- `useCustomerDebts()` hook (`customer-debts` cache key) + `creditLimit` on Customer/CustomerInput.
+- **CustomersPage**: Dette/Limite columns (fmtMAD) merged from customer-debts; état badge — `Dépassé` (red) when balance > limite, `Proche limite` (amber) at ≥80 %; drawer gains a Limite de crédit field (empty → PATCH `null`). `Td` primitive now spreads rest props (testids were being silently dropped).
+- **InvoicesPage**: per-row `Encaisser` action (hidden when paid/draft/cancelled) opening a modal whose amount defaults to the remaining due → `POST /invoices/:id/payments`.
+- **POSPage**: client `<select>`, third `Crédit` button (disabled without a customer), and the dette alert — when `dette BL + ticket > creditLimit`, a `role="alert"` banner shows the math and blocks Crédit. Checkout body carries `customerId` + `{ method:'credit', customerId }`.
+
+**Tests.** RTL: +3 POS credit tests (blocked-over-limit, allowed-within-limit POST shape, disabled-until-customer). Playwright **17 → 29**: `bons-workflow.spec` (BL/BR tab isolation, signature/counters, PDF fetch request), `invoice-payments.spec` (Encaisser only on unpaid rows, prefilled full payment POST {amount:800}, custom partial 150), `customers-debt.spec` (Dette/Limite rendering incl. Dépassé/Proche badges, create-with-ceiling POST, clearing PATCHes null), `pos-credit.spec` (alert math + blocked Crédit over ceiling; allowed credit checkout POST + cart reset).
+
+**Gotchas.** `route.fulfill(x, 201)` — status is a `fulfill` option, not a second arg (`json(data, 201)`); mocked-mutation tests must mutate the fixture list the GET serves, since `invalidateQueries` refetches it.
+
+**Result.** ✅ web gate: tsc clean · svelte-check 0/0 · eslint 0/0 · vitest **146/146** · build ✓ · Playwright **29/29**. ✅ backend: prisma generate + tsc/nest build clean (no DB run — migration applies on next `migrate dev/deploy`).
+
+### 2026-08-25 — Web: Expense + Movement form pages converted to Svelte (D-023, web repo)
+
+**Step.** Third increment: both form pages — the most stateful screens in the app — are now Svelte islands. The whole dépenses and stock/movements domains (lists, forms, journal) run on Svelte with the React shell only providing routing/layout.
+
+**Converted** (React twins deleted):
+- `/expenses/new` + `/expenses/:id/edit` → `pages/expenses/ExpenseFormPage.svelte` (`mode` prop via `SvelteOutlet`). Full port of the tricky bits: OCR scan flow (multipart → `scanReceipt()` extracted from the old hook into a framework-agnostic fn), scanned-field confidence badges via a param'd `{#snippet scanMark()}`, TVA auto-calc from the per-category rate with `tvaTouched` override semantics, edit-mode hydration `$effect`, authenticated receipt blob preview with revoke-on-change cleanup.
+- `/movements/new` → `pages/movements/MovementsFormPage.svelte`. Type segmented control, client-side product picker (radio list), source/destination selects with transfer conditional, qty stepper, reason auto-follows type ($effect), cap-gated submit.
+
+**Two structural fixes with lasting relevance:**
+- **Island routes need unique `key`s.** Navigating `/stock` → `/movements/new` left the Stock page on screen: both routes render `<SvelteOutlet>`, same component type at the same tree position → React *updates* instead of remounting, and the outlet's `useEffect([], [])` never re-runs. Masked until now because the old target was a React page (different type = forced remount). Every island route now carries `key="<route>"`. Relatedly, `SvelteOutlet`'s props went loose (`Component<any>` + `Record<string, unknown>`): literal route props can't satisfy an island's Props union under contravariance; svelte-check enforces prop correctness inside the island instead.
+- **Labels wrapping button groups pollute accessible names.** Wrapping the type segmented control in `<label>` made the Entrée button's accName contain "↔ Transfert", breaking `getByRole('button', {name})` strict mode. Button groups get a plain heading span, never a label.
+
+Also: `useScanReceipt`/`useReceiptImage` hooks retired from `api/expense-queries.ts` (standalone `scanReceipt()` kept; receipt-blob logic moved into the island's `$effect`); new bindings in `api/svelte-queries.ts`: `expenseDetailQuery`, `create/updateExpenseMutation`, `createMovementMutation`, `productsQuery`.
+
+**Result.** ✅ web gate: tsc clean · svelte-check 0/0 · eslint 0/0 · vitest 143/143 · build ✓ · Playwright **17/17** — expenses create (POST body incl. auto-TVA) and movement entry+transfer (POST body incl. conditional `toWarehouseId`) verified against the Svelte forms.
+
+**Next.** Products list/detail (+ e2e spec first — they have none yet), then POS/invoices; AdminShell last.
+
+### 2026-08-25 — Web: Expenses/Bons/Movements pages converted to Svelte behind the e2e net (D-023, web repo)
+
+**Step.** Second migration increment: converted the three list pages to Svelte 5 islands with the 17-test Playwright suite as the safety net — it caught every regression the conversion introduced, and finished green with zero spec edits needed for behavior.
+
+**Converted** (React twins + their RTL tests deleted; routes now mount via `SvelteOutlet`):
+- `/expenses` → `pages/expenses/{ExpensesPage,ExpenseFilters,ExpenseSummary}.svelte` + `display.ts` (tone/label helpers) — filters are `$bindable`, delete uses `createMutation` invalidating the shared `['expenses']` cache.
+- `/bons` → `pages/bons/{BonsPage,BonsMetrics}.svelte` + `actions.ts` (PDF download / WhatsApp share, reusing `lib/whatsapp`) — reuses framework-agnostic `status.ts`; aria-labels go through the new i18n rune binding.
+- `/movements` → `pages/movements/MovementsPage.svelte` — segmented type filter, warehouse/date filters, journal table with relTime(lang).
+
+**Data layer consolidated in `api/svelte-queries.ts`** (absorbed `pages/stock/queries.ts`): one sectioned module of svelte-query bindings whose keys mirror the React hooks. Two load-bearing patterns:
+- **Explicit client injection:** every binding passes `() => queryClient` as svelte-query's second argument. Gotcha that cost a debugging round: Svelte context does NOT reach the island root's own `<script>` — `<QueryClientProvider>` only covers its slot children, so root-level `createQuery` calls crashed with "No QueryClient was found in Svelte context" (the e2e suite flagged it instantly: all island pages rendered empty). With explicit injection, islands need no provider at all (`/stock` only ever worked because its queries lived in child components).
+- **Accessor-style params** (`expensesQuery(() => filters)`): passing a plain object freezes the query at mount; the accessor runs inside createQuery's tracked effect so `$state`/`$props` reads refetch on change.
+
+Also: added optional `ref` to the shared `Movement` type (backend returns it; React had a local cast).
+
+**Result.** ✅ web gate: tsc clean · svelte-check 0/0 · eslint 0/0 · vitest **143/143** (21 files; 2 retired RTL suites removed) · build ✓ · Playwright **17/17** against the fully-Svelte expenses/bons/stock/movements surfaces.
+
+**Next.** Convert the form pages (ExpenseForm, MovementForm) + Products list/detail, then POS/invoices; AdminShell last.
+
+### 2026-08-25 — Web: D-023 migration foundation + real Svelte /stock page + e2e for expenses/bons/stock (web repo)
+
+**Step.** Continued the React→Svelte 5 migration along the documented roadmap (primitives → store bridge → i18n binding → pages) and pinned the expense/bons/stock flows with backend-free Playwright suites before those pages convert.
+
+**Migration foundation.**
+- `api/query-client.ts` — the TanStack `QueryClient` extracted to a singleton both frameworks share: React via `<QueryClientProvider>`, Svelte islands via `@tanstack/svelte-query`'s provider. One client = one cache, so mutations from either side invalidate queries observed by the other.
+- **Version alignment gotcha:** react-query 5.59 + svelte-query 5.90 each nested their own `@tanstack/query-core` → two incompatible `QueryClient` types ("Property 'subscribe' is missing" noise + provider type error). Upgraded react-query → 5.102 and svelte-query → 6.x so npm hoists a single query-core 5.102. **svelte-query v6 is runes-native:** `createQuery` no longer returns a Svelte store — read `query.data`/`query.isLoading` directly, no `$` prefix.
+- Primitives ported to `src/ui/*.svelte`: Badge, Btn, Input (`$bindable` value), PageHeader (+ Card gained rest-prop spread). React twins stay until their last consumer migrates; APIs mirror 1:1 so page ports stay mechanical.
+- Bridges: `auth/auth.svelte.ts` (rune snapshot over the vanilla zustand store — `$state.raw` + reassign on subscribe; zustand remains the source of truth) and `i18n/i18n.svelte.ts` (reactive `t()` reading a `$state` lang var updated on `languageChanged` — the `useTranslation()` equivalent).
+- `mount/navigate.ts` — island→react-router SPA nav via `pushState` + synthetic `popstate`.
+
+**Real `/stock` page (Svelte, modular).** Replaced the pilot stub: `pages/stock/{StockPage,StockTotals,WarehouseValues,LowStockTable}.svelte` + co-located `queries.ts` whose keys mirror the React hooks (shared cache entries). Shows stock value/units totals, per-dépôt breakdown (hidden when `multiWarehouse=false` per D-020, read from the auth bridge), low-stock alerts table (Rupture/Bas badges) linking into product pages. StubPage deleted.
+
+**Playwright (4 → 17 tests).** Shared `e2e/fixtures.ts` (mockAuthenticated with capability/multiWarehouse overrides, `json()` helper); app.spec refactored onto it. New specs: **expenses** (list+summary strip, category filter w/ request-param assert, delete via confirm dialog → DELETE asserted → refetch, create form posting auto-computed TVA), **bons** (metric-card math incl. exclusion rows, type-tab filter, search by number/party, empty state), **stock** (Svelte island totals/breakdown/alerts, single-stock hides breakdown, entry-movement create from the island CTA through to POST body + journal render, transfer requiring destination).
+
+**e2e gotchas worth keeping:**
+- A `200` fulfill with an empty/unparseable body breaks `res.json()` in `apiFetch` → mutation never reaches `onSuccess`. DELETE mocks must return `204`.
+- The GDPR cookie banner intercepts pointer events while unanswered — fixtures seed `localStorage['stock.cookie-consent']='granted'` (returning-user consent).
+- Unassociated `<label>`+`<select>` pairs (movement form Destination) aren't reachable via `getByLabel`; use `label:text-is("Destination *") + select` (ancestor `:has()` over-matches wrappers).
+- Assert a pre-interaction baseline before driving controlled inputs — guarantees React mounted before `fill()`.
+- Fixture-builder defaults can silently satisfy the wrong row (bons partyName default matched the search assertion's target); keep metric/search fixtures mutually exclusive.
+
+**Result.** ✅ web gate: tsc clean · svelte-check 0/0 · eslint 0/0 (--max-warnings=0) · vitest **153/153** (23 files) · build ✓ · Playwright **17/17**.
+
+**Next.** Convert ExpensesPage/BonsPage/MovementsPage to Svelte behind the now-green e2e net (their RTL tests retire at conversion time) → then POS/invoices → AdminShell last.
+
+### 2026-08-25 — Web: React→Svelte migration started (D-023) + Playwright e2e + audit fixes (web repo)
+
+**Step.** Setup audit of `web/` found lint debt + 2 broken tests; fixed them, then started the owner-approved Svelte 5 migration incrementally and added Playwright e2e covering the pilot.
+
+**Audit findings → all fixed.**
+- 31 lint errors (import/order across App.tsx, ProductsPage, ExpensesPage ×2, InvoiceFormPage, QuickAdjustDialog) → `eslint --fix`.
+- 5 lint warnings → analytics.tsx file-level disable (provider+imperative API by design); ProductsPage `items` wrapped in `useMemo` (`q.data` dep).
+- ExpensesPage.test.tsx "No QueryClient set" ×2 — page grew a `useExpenseCategories` call without the test growing a provider/mock → QueryClientProvider wrapper + category hook mock.
+
+**Svelte toolchain (D-023).** `svelte@5.56`, `@sveltejs/vite-plugin-svelte@4` (Vite-5-compatible), `svelte-check`. Dual-plugin vite config `[react(), svelte()]`; `svelte.config.js` with vitePreprocess; `src/svelte-shims.d.ts` for TSX-side imports; `npm run check` = svelte-check.
+- `src/mount/SvelteOutlet.tsx` — React adapter mounting Svelte islands via `mount()`/`unmount()`; generic `<P>` typed against svelte's quirky `Component<Props, Exports, Bindings>` variance (constraint on the 3rd param breaks inference — must write `Component<P>` explicitly).
+- Pilot conversion: `StubPage.tsx` deleted → `StubPage.svelte` (+ new `ui/Card.svelte` primitive); `/stock` route renders through SvelteOutlet inside the React shell.
+
+**Playwright.** `@playwright/test` + chromium; `playwright.config.ts` (webServer `npm run dev` :5174); `npm run e2e`; backend-free tests via pathname-based route mocks — **gotcha:** a `**/api/**` glob also swallows Vite module URLs like `/src/api/client.ts` (empty MIME kills boot); use `(url) => url.pathname.startsWith('/api/')`. Also: `**/api/**` inside a block comment terminates it early (`*/`). vitest excludes `e2e/**`; tsconfig includes `e2e` + playwright.config.ts.
+
+**Result.** ✅ web gate: tsc clean · svelte-check 0/0 · eslint 0/0 (--max-warnings=0) · vitest **141/141** · build ✓ (2.6s) · Playwright **4/4** (landing hero, login→shell, /products→/login redirect, /stock Svelte-in-React pilot).
+
+**Decisions.** D-023 (migrate to Svelte incrementally, overruled stay-on-React recommendation).
+
+**Next.** Migration plan doc (phase order for remaining 39 pages) → port shared primitives (Btn/Input/Badge/Table/PageHeader) → zustand↔runes store bridge → i18next Svelte binding.
+
 ### 2026-08-19 — Receipt scan flow: explicit "Analyser" button, no auto-OCR (mobile)
 
 Best-practice receipt-capture pattern: user drives OCR, not the shutter. Before this change, taking a photo or importing from gallery would immediately hit the OCR endpoint — cropping meant waiting for a scan you didn't want, then re-scanning after adjust. Wasteful round-trip, bad on flaky mobile networks.
