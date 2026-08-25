@@ -11,6 +11,7 @@ export type CreateCustomerData = {
   phone?: string | undefined;
   city?: string | undefined;
   ice?: string | undefined;
+  creditLimit?: number | null | undefined;
 };
 
 export type UpdateCustomerData = {

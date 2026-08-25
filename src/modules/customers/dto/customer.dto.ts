@@ -8,6 +8,8 @@ export const CreateCustomerSchema = z.object({
     .string()
     .regex(/^\d{15}$/, 'ICE must be 15 digits')
     .optional(),
+  // Credit ceiling for dette alerts. null clears the limit.
+  creditLimit: z.number().min(0).nullable().optional(),
 });
 export type CreateCustomerInput = z.infer<typeof CreateCustomerSchema>;
 
