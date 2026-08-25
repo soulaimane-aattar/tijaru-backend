@@ -2,7 +2,7 @@ import { DomainError, NotFoundError } from '../../../common/errors';
 import type { PrismaService } from '../../../common/prisma.service';
 import type { StockLedgerService } from '../../stock-ledger/application/stock-ledger.service';
 import type { POView } from '../domain/po.repository';
-import { PurchaseOrdersRepository } from '../domain/po.repository';
+import type { PurchaseOrdersRepository } from '../domain/po.repository';
 import type { ReceivePOInput } from '../dto/po.dto';
 
 import { POService } from './po.service';

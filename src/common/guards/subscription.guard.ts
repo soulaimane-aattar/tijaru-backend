@@ -4,6 +4,7 @@ import { Reflector } from '@nestjs/core';
 import type { AuthUser } from '../auth/auth-user.type';
 import { BusinessSuspendedError, ForbiddenError, SubscriptionExpiredError } from '../errors';
 import { PrismaService } from '../prisma.service';
+
 import { IS_PUBLIC_KEY } from './jwt.guard';
 
 @Injectable()

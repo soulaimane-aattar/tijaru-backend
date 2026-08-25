@@ -1,11 +1,11 @@
 import sharp from 'sharp';
 
 import { NotFoundError, ValidationError } from '../../../common/errors';
+import type { LocalStorageService } from '../../../common/storage/local-storage.service';
 import type { ExpenseCategoriesRepository } from '../../expense-categories/domain/expense-categories.repository';
 import type { BusinessInfoLookup } from '../domain/business-info.lookup';
 import type { ExpensesRepository } from '../domain/expenses.repository';
 import type { OcrProvider } from '../domain/ocr.provider';
-import type { LocalStorageService } from '../../../common/storage/local-storage.service';
 
 import { ExpensesService } from './expenses.service';
 

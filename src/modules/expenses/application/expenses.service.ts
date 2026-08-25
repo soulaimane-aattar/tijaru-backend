@@ -4,6 +4,7 @@ import { Injectable } from '@nestjs/common';
 import sharp from 'sharp';
 
 import { NotFoundError, ValidationError } from '../../../common/errors';
+import { LocalStorageService } from '../../../common/storage/local-storage.service';
 import { ExpenseCategoriesRepository } from '../../expense-categories/domain/expense-categories.repository';
 import { BusinessInfoLookup } from '../domain/business-info.lookup';
 import {
@@ -17,7 +18,6 @@ import type {
   ListExpensesQuery,
   UpdateExpenseInput,
 } from '../dto/expense.dto';
-import { LocalStorageService } from '../../../common/storage/local-storage.service';
 
 import type { PdfExpenseReport, PdfReceipt } from './expense-report-pdf.service';
 

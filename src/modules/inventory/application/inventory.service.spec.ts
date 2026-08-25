@@ -2,7 +2,7 @@ import { ConflictError, NotFoundError } from '../../../common/errors';
 import type { PrismaService } from '../../../common/prisma.service';
 import type { StockLedgerService } from '../../stock-ledger/application/stock-ledger.service';
 import type { InventoryCountView } from '../domain/inventory.repository';
-import { InventoryRepository } from '../domain/inventory.repository';
+import type { InventoryRepository } from '../domain/inventory.repository';
 import type { ApplyCountInput } from '../dto/inventory.dto';
 
 import { InventoryService } from './inventory.service';

@@ -4,6 +4,7 @@ import type { Reflector } from '@nestjs/core';
 import type { AuthUser } from '../auth/auth-user.type';
 import { BusinessSuspendedError, ForbiddenError, SubscriptionExpiredError } from '../errors';
 import type { PrismaService } from '../prisma.service';
+
 import { SubscriptionGuard } from './subscription.guard';
 
 function makeContext(user?: AuthUser): ExecutionContext {
