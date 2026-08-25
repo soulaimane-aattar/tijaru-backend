@@ -4,7 +4,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 
-import { ConflictError, ForbiddenError, UnauthorizedError } from '../../../common/errors';
+import { ConflictError, ForbiddenError, NotFoundError, UnauthorizedError, ValidationError } from '../../../common/errors';
 import { PermissionsResolver } from '../../../common/permissions-resolver.service';
 import { ENV_TOKEN } from '../../../config/config.module';
 import type { Env } from '../../../config/env';
@@ -149,10 +149,10 @@ export class AuthService {
 
   async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<void> {
     const user = await this.authRepo.findUserById(userId);
-    if (!user) throw new UnauthorizedError('User not found');
+    if (!user) throw new NotFoundError('User', userId);
 
     const ok = await bcrypt.compare(currentPassword, user.passwordHash);
-    if (!ok) throw new UnauthorizedError('Current password is incorrect');
+    if (!ok) throw new ValidationError('Current password is incorrect');
 
     const hash = await bcrypt.hash(newPassword, this.env.BCRYPT_COST);
     await this.authRepo.updatePassword(userId, hash);
