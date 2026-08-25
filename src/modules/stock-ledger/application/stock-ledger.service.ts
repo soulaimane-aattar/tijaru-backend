@@ -65,6 +65,9 @@ export class StockLedgerService {
         line.unitCost != null && existing
           ? (Number(existing.avgCost) * existing.qty + line.unitCost * line.delta) / newQty
           : (line.unitCost ?? Number(existing?.avgCost ?? 0));
+      // Increment must be atomic: a read-modify-write here loses updates
+      // when a concurrent out/transfer touches the same bin between the
+      // read above and the write below.
       await client.stockLevel.upsert({
         where: {
           productId_warehouseId: { productId: line.productId, warehouseId: line.warehouseId },
@@ -76,7 +79,10 @@ export class StockLedgerService {
           qty: line.delta,
           avgCost: newAvg,
         },
-        update: { qty: newQty, avgCost: newAvg },
+        update: {
+          qty: { increment: line.delta },
+          ...(line.unitCost != null ? { avgCost: newAvg } : {}),
+        },
       });
     } else {
       const needed = Math.abs(line.delta);

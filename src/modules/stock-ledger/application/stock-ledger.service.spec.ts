@@ -83,7 +83,7 @@ describe('StockLedgerService.post', () => {
     );
 
     expect(prisma.stockLevel.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ update: expect.objectContaining({ qty: 8 }) }),
+      expect.objectContaining({ update: expect.objectContaining({ qty: { increment: 5 } }) }),
     );
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({ productId: PID, warehouseId: WH, qty: 5, type: 'in' });
@@ -152,7 +152,7 @@ describe('StockLedgerService.post', () => {
     );
     expect(prisma.stockLevel.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        update: expect.objectContaining({ qty: 3 }),
+        update: expect.objectContaining({ qty: { increment: 3 } }),
       }),
     );
     expect(result[0]).toMatchObject({ toWarehouseId: WH2 });
@@ -171,7 +171,9 @@ describe('StockLedgerService.post', () => {
     );
 
     expect(prisma.stockLevel.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ update: expect.objectContaining({ qty: 20, avgCost: 7.5 }) }),
+      expect.objectContaining({
+        update: expect.objectContaining({ qty: { increment: 10 }, avgCost: 7.5 }),
+      }),
     );
   });
 
