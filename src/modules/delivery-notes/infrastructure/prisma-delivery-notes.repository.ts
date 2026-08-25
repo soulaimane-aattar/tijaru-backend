@@ -4,13 +4,16 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma.service';
 import {
   DeliveryNotesRepository,
+  type CustomerDebt,
   type DeliveryCreateData,
   type DeliveryDetail,
   type DeliveryRow,
   type ListParams,
   type ListResult,
+  type PaymentCreateData,
+  type PaymentRow,
 } from '../domain/delivery-notes.repository';
-import type { DeliveryNoteStatus, DeliveryNoteType } from '../dto/delivery-notes.dto';
+import type { BonPaymentMethod, DeliveryNoteStatus, DeliveryNoteType } from '../dto/delivery-notes.dto';
 
 const dec = (n: number | Prisma.Decimal): number =>
   typeof n === 'number' ? n : Number(n.toString());
@@ -44,6 +47,7 @@ export class PrismaDeliveryNotesRepository extends DeliveryNotesRepository {
         sourceRef: data.sourceRef,
         carrier: data.carrier,
         notes: data.notes,
+        returnOfId: data.returnOfId ?? null,
         lines: {
           create: data.lines.map((l) => ({
             productId: l.productId,
@@ -128,6 +132,7 @@ export class PrismaDeliveryNotesRepository extends DeliveryNotesRepository {
           signed: r.signed,
           ordered,
           sent,
+          paid: dec(r.paid),
         };
       }),
     };
@@ -159,6 +164,133 @@ export class PrismaDeliveryNotesRepository extends DeliveryNotesRepository {
     return wh?.id ?? null;
   }
 
+  async addPayment(data: PaymentCreateData, tx?: Prisma.TransactionClient): Promise<PaymentRow> {
+    const db = (tx ?? this.prisma) as Prisma.TransactionClient;
+    const row = await db.deliveryNotePayment.create({
+      data: {
+        businessId: data.businessId,
+        deliveryNoteId: data.deliveryNoteId,
+        amount: data.amount,
+        method: data.method,
+        note: data.note,
+        createdById: data.createdById,
+      },
+      include: {
+        deliveryNote: { select: { number: true } },
+        createdBy: { select: { name: true } },
+      },
+    });
+    await db.deliveryNote.update({
+      where: { id: data.deliveryNoteId },
+      data: { paid: { increment: data.amount } },
+    });
+    return this.toPaymentRow(row);
+  }
+
+  async findPayments(businessId: string, deliveryNoteId: string): Promise<PaymentRow[]> {
+    const rows = await this.prisma.deliveryNotePayment.findMany({
+      where: { businessId, deliveryNoteId },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        deliveryNote: { select: { number: true } },
+        createdBy: { select: { name: true } },
+      },
+    });
+    return rows.map((r) => this.toPaymentRow(r));
+  }
+
+  async listCustomerDebts(businessId: string): Promise<CustomerDebt[]> {
+    // Billed = Σ BL line totals; returned = Σ linked RT line totals. Balance is
+    // what the customer still owes on delivery notes.
+    const rows = await this.prisma.$queryRaw<{
+      customerId: string;
+      customerName: string;
+      billed: Prisma.Decimal;
+      paid: Prisma.Decimal;
+      returned: Prisma.Decimal;
+      balance: Prisma.Decimal;
+    }[]>`
+      SELECT
+        dn.customer_id AS "customerId",
+        COALESCE(c.name, '—') AS "customerName",
+        SUM(L.total) AS "billed",
+        SUM(dn.paid) AS "paid",
+        COALESCE(SUM(RT.total), 0) AS "returned",
+        SUM(L.total) - SUM(dn.paid) - COALESCE(SUM(RT.total), 0) AS "balance"
+      FROM delivery_notes dn
+      JOIN LATERAL (
+        SELECT COALESCE(SUM(l.sent * l.unit_price), 0) AS total
+        FROM delivery_note_lines l WHERE l.delivery_note_id = dn.id
+      ) L ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT COALESCE(SUM(RL.total), 0) AS total
+        FROM delivery_notes r
+        JOIN LATERAL (
+          SELECT COALESCE(SUM(rl.sent * rl.unit_price), 0) AS total
+          FROM delivery_note_lines rl WHERE rl.delivery_note_id = r.id
+        ) RL ON TRUE
+        WHERE r.return_of_id = dn.id AND r.type = 'retour'
+      ) RT ON TRUE
+      LEFT JOIN customers c ON c.id = dn.customer_id
+      WHERE dn.business_id = ${businessId} AND dn.type = 'out' AND dn.customer_id IS NOT NULL
+      GROUP BY dn.customer_id, c.name
+      HAVING SUM(L.total) - SUM(dn.paid) - COALESCE(SUM(RT.total), 0) > 0
+      ORDER BY balance DESC
+    `;
+    return rows.map((r) => ({
+      customerId: r.customerId,
+      customerName: r.customerName,
+      billed: dec(r.billed),
+      paid: dec(r.paid),
+      returned: dec(r.returned),
+      balance: dec(r.balance),
+    }));
+  }
+
+  async listCustomerPayments(businessId: string, customerId: string): Promise<PaymentRow[]> {
+    const rows = await this.prisma.deliveryNotePayment.findMany({
+      where: { businessId, deliveryNote: { customerId } },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+      include: {
+        deliveryNote: { select: { number: true } },
+        createdBy: { select: { name: true } },
+      },
+    });
+    return rows.map((r) => this.toPaymentRow(r));
+  }
+
+  async findReturnedQtyByProduct(businessId: string, bonId: string): Promise<Map<string, number>> {
+    const rows = await this.prisma.deliveryNoteLine.groupBy({
+      by: ['productId'],
+      where: { deliveryNote: { businessId, type: 'retour', returnOfId: bonId } },
+      _sum: { sent: true },
+    });
+    return new Map(rows.map((r) => [r.productId, dec(r._sum.sent ?? 0)]));
+  }
+
+  private toPaymentRow(row: {
+    id: string;
+    deliveryNoteId: string;
+    amount: Prisma.Decimal;
+    method: string;
+    note: string | null;
+    createdAt: Date;
+    deliveryNote: { number: string };
+    createdBy: { name: string };
+  }): PaymentRow {
+    return {
+      id: row.id,
+      deliveryNoteId: row.deliveryNoteId,
+      bonNumber: row.deliveryNote.number,
+      amount: dec(row.amount),
+      method: row.method as BonPaymentMethod,
+      note: row.note,
+      createdByName: row.createdBy.name,
+      createdAt: row.createdAt,
+    };
+  }
+
   private toDetail(row: {
     id: string;
     number: string;
@@ -174,6 +306,8 @@ export class PrismaDeliveryNotesRepository extends DeliveryNotesRepository {
     sourceRef: string | null;
     carrier: string | null;
     signed: boolean;
+    paid: Prisma.Decimal;
+    returnOfId: string | null;
     notes: string | null;
     lines: {
       id: string;
@@ -199,6 +333,8 @@ export class PrismaDeliveryNotesRepository extends DeliveryNotesRepository {
       sourceRef: row.sourceRef,
       carrier: row.carrier,
       signed: row.signed,
+      paid: dec(row.paid),
+      returnOfId: row.returnOfId,
       notes: row.notes,
       lines: row.lines.map((l) => ({
         id: l.id,

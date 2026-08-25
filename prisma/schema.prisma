@@ -170,8 +170,9 @@ model User {
   activities        Activity[]
   posTickets        POTicket[]
   expenses          Expense[]
-  invoicesIssued    Invoice[]       @relation("InvoiceIssuer")
-  deliveryNotes     DeliveryNote[]  @relation("DeliveryNoteIssuer")
+  invoicesIssued    Invoice[]              @relation("InvoiceIssuer")
+  deliveryNotes     DeliveryNote[]         @relation("DeliveryNoteIssuer")
+  bonPayments       DeliveryNotePayment[]  @relation("PaymentCreator")
 
   @@index([businessId])
   @@map("users")
@@ -325,15 +326,17 @@ model Supplier {
 }
 
 model Customer {
-  id         String   @id @default(cuid())
-  businessId String   @map("business_id")
-  name       String
-  phone      String?
-  city       String?
-  ice        String?
-  purchases  Decimal  @default(0) @db.Decimal(14, 2)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id          String   @id @default(cuid())
+  businessId  String   @map("business_id")
+  name        String
+  phone       String?
+  city        String?
+  ice         String?
+  purchases   Decimal  @default(0) @db.Decimal(14, 2)
+  /// Credit ceiling for this customer (dette alert threshold). NULL = no limit.
+  creditLimit Decimal? @map("credit_limit") @db.Decimal(14, 2)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   business      Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
   tickets       POTicket[]
@@ -431,6 +434,7 @@ enum MovementReason {
   peremption
   ajustement
   casse
+  retour
 }
 
 model Movement {
@@ -801,6 +805,7 @@ enum DeliveryNoteType {
   order // BC — bon de commande (vers fournisseur)
   out // BL — bon de livraison (vers client)
   in_ // BR — bon de réception (du fournisseur)  (`in` is a reserved SQL keyword)
+  retour // RT — retour client (annule tout ou partie d'une BL)
 }
 
 enum DeliveryNoteStatus {
@@ -810,6 +815,13 @@ enum DeliveryNoteStatus {
   partial
   delivered
   closed
+}
+
+enum BonPaymentMethod {
+  cash
+  card
+  transfer
+  other
 }
 
 model DeliveryNote {
@@ -827,20 +839,45 @@ model DeliveryNote {
   signed     Boolean            @default(false)
   signedAt   DateTime?          @map("signed_at")
   notes      String?
+  paid       Decimal            @default(0) @db.Decimal(14, 2)
+  returnOfId String?            @map("return_of_id")
   createdAt  DateTime           @default(now())
   updatedAt  DateTime           @updatedAt
 
-  business Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  customer Customer?          @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  supplier Supplier?          @relation(fields: [supplierId], references: [id], onDelete: SetNull)
-  issuedBy User               @relation("DeliveryNoteIssuer", fields: [issuedById], references: [id], onDelete: Restrict)
+  business Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer Customer?            @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  supplier Supplier?            @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  issuedBy User                 @relation("DeliveryNoteIssuer", fields: [issuedById], references: [id], onDelete: Restrict)
+  returnOf DeliveryNote?        @relation("BonReturns", fields: [returnOfId], references: [id], onDelete: SetNull)
+  returns  DeliveryNote[]       @relation("BonReturns")
+  payments DeliveryNotePayment[]
   lines    DeliveryNoteLine[]
 
   @@unique([businessId, number])
   @@index([businessId, date])
   @@index([businessId, type])
   @@index([businessId, status])
+  @@index([customerId])
+  @@index([returnOfId])
   @@map("delivery_notes")
+}
+
+model DeliveryNotePayment {
+  id             String        @id @default(cuid())
+  businessId     String        @map("business_id")
+  deliveryNoteId String        @map("delivery_note_id")
+  amount         Decimal       @db.Decimal(14, 2)
+  method         BonPaymentMethod @default(cash)
+  note           String?
+  createdById    String        @map("created_by_id")
+  createdAt      DateTime      @default(now())
+
+  deliveryNote DeliveryNote @relation(fields: [deliveryNoteId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation("PaymentCreator", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([deliveryNoteId])
+  @@index([businessId, createdAt])
+  @@map("delivery_note_payments")
 }
 
 model DeliveryNoteLine {

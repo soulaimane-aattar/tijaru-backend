@@ -25,10 +25,14 @@ import { DeliveryNotePdfService, type PdfNote } from './application/delivery-not
 import { DeliveryNotesService } from './application/delivery-notes.service';
 import { DeliveryPdfInfoLookup } from './domain/delivery-notes.repository';
 import {
+  type AddPaymentInput,
+  AddPaymentSchema,
   type CreateDeliveryNoteInput,
   CreateDeliveryNoteSchema,
-  type DeliveryNoteStatus,
-  DeliveryNoteStatusSchema,
+  type CreateReturnInput,
+  CreateReturnSchema,
+  SetStatusSchema,
+  type SetStatusInput,
   type ListDeliveryNotesQuery,
   ListDeliveryNotesQuerySchema,
   type UpdateSentInput,
@@ -61,6 +65,20 @@ export class DeliveryNotesController {
     return this.svc.list(this.bid(), query);
   }
 
+  /** Per-customer outstanding balance — declared before `:id` so it wins routing. */
+  @Get('customer-debts')
+  @RequireCap('po.manage')
+  customerDebts(): Promise<unknown> {
+    return this.svc.listCustomerDebts(this.bid());
+  }
+
+  /** Payment history across all of one customer's bons. */
+  @Get('customers/:customerId/payments')
+  @RequireCap('po.manage')
+  customerPayments(@Param('customerId') customerId: string): Promise<unknown> {
+    return this.svc.listCustomerPayments(this.bid(), customerId);
+  }
+
   @Get(':id')
   @RequireCap('po.manage')
   get(@Param('id') id: string): Promise<unknown> {
@@ -88,14 +106,44 @@ export class DeliveryNotesController {
     await this.svc.sign(this.bid(), id, user);
   }
 
+  /** Record a payment (partial or full) against a delivery note. */
+  @Post(':id/payments')
+  @RequireCap('po.manage')
+  @UsePipes(new ZodValidationPipe(AddPaymentSchema))
+  addPayment(
+    @Param('id') id: string,
+    @Body() body: AddPaymentInput,
+    @CurrentUser() user: AuthUser,
+  ): Promise<unknown> {
+    return this.svc.addPayment(this.bid(), id, body, user);
+  }
+
+  @Get(':id/payments')
+  @RequireCap('po.manage')
+  payments(@Param('id') id: string): Promise<unknown> {
+    return this.svc.listPayments(this.bid(), id);
+  }
+
+  /** Return goods against a signed BL — creates and signs a linked RT note. */
+  @Post(':id/return')
+  @RequireCap('po.manage')
+  @UsePipes(new ZodValidationPipe(CreateReturnSchema))
+  createReturn(
+    @Param('id') id: string,
+    @Body() body: CreateReturnInput,
+    @CurrentUser() user: AuthUser,
+  ): Promise<unknown> {
+    return this.svc.createReturn(this.bid(), id, body, user);
+  }
+
   @Patch(':id/status')
   @RequireCap('po.manage')
   @HttpCode(204)
   async setStatus(
     @Param('id') id: string,
-    @Body(new ZodValidationPipe(DeliveryNoteStatusSchema)) status: DeliveryNoteStatus,
+    @Body(new ZodValidationPipe(SetStatusSchema)) body: SetStatusInput,
   ): Promise<void> {
-    await this.svc.setStatus(this.bid(), id, status);
+    await this.svc.setStatus(this.bid(), id, body.status);
   }
 
   @Get(':id/pdf')

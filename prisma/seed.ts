@@ -40,6 +40,9 @@ export async function runSeed(opts: { silent?: boolean } = {}): Promise<void> {
   await prisma.$transaction([
     prisma.activity.deleteMany(),
     prisma.notification.deleteMany(),
+    prisma.deliveryNotePayment.deleteMany(),
+    prisma.deliveryNoteLine.deleteMany(),
+    prisma.deliveryNote.deleteMany(),
     prisma.pOTicketLine.deleteMany(),
     prisma.pOTicket.deleteMany(),
     prisma.pOSession.deleteMany(),

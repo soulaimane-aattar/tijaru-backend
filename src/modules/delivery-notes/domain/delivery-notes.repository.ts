@@ -1,6 +1,6 @@
 import type { Prisma } from '@prisma/client';
 
-import type { DeliveryNoteStatus, DeliveryNoteType } from '../dto/delivery-notes.dto';
+import type { BonPaymentMethod, DeliveryNoteStatus, DeliveryNoteType } from '../dto/delivery-notes.dto';
 
 export interface DeliveryLineData {
   productId: string;
@@ -26,6 +26,7 @@ export interface DeliveryCreateData {
   sourceRef: string | null;
   carrier: string | null;
   notes: string | null;
+  returnOfId?: string | null;
   lines: DeliveryLineData[];
 }
 
@@ -41,6 +42,7 @@ export interface DeliveryRow {
   signed: boolean;
   ordered: number;
   sent: number;
+  paid: number;
 }
 
 export interface DeliveryDetail extends Omit<DeliveryRow, 'partyName' | 'ordered' | 'sent'> {
@@ -51,7 +53,37 @@ export interface DeliveryDetail extends Omit<DeliveryRow, 'partyName' | 'ordered
   issuedById: string;
   issuedByName: string;
   notes: string | null;
+  returnOfId: string | null;
   lines: DeliveryLineRow[];
+}
+
+export interface PaymentRow {
+  id: string;
+  deliveryNoteId: string;
+  bonNumber: string;
+  amount: number;
+  method: BonPaymentMethod;
+  note: string | null;
+  createdByName: string;
+  createdAt: Date;
+}
+
+export interface PaymentCreateData {
+  businessId: string;
+  deliveryNoteId: string;
+  amount: number;
+  method: BonPaymentMethod;
+  note: string | null;
+  createdById: string;
+}
+
+export interface CustomerDebt {
+  customerId: string;
+  customerName: string;
+  billed: number;
+  paid: number;
+  returned: number;
+  balance: number;
 }
 
 export interface ListParams {
@@ -81,6 +113,27 @@ export abstract class DeliveryNotesRepository {
 
   /** Part of the caller's transaction — used when sign() also posts a ledger entry. */
   abstract markSigned(id: string, when: Date, tx: Prisma.TransactionClient): Promise<void>;
+
+  /**
+   * Records a payment and increments the note's `paid` atomically.
+   * Pass a transaction client when the caller enforces the remaining-amount
+   * guard inside the same transaction.
+   */
+  abstract addPayment(
+    data: PaymentCreateData,
+    tx?: Prisma.TransactionClient,
+  ): Promise<PaymentRow>;
+
+  abstract findPayments(businessId: string, deliveryNoteId: string): Promise<PaymentRow[]>;
+
+  /** Per-customer outstanding balance over their delivery notes (BL) minus payments and returns. */
+  abstract listCustomerDebts(businessId: string): Promise<CustomerDebt[]>;
+
+  /** Payment history across all of one customer's bons, newest first. */
+  abstract listCustomerPayments(businessId: string, customerId: string): Promise<PaymentRow[]>;
+
+  /** Quantity already returned per productId across all returns linked to `bonId`. */
+  abstract findReturnedQtyByProduct(businessId: string, bonId: string): Promise<Map<string, number>>;
 
   /**
    * The business's default warehouse (used at sign-time since DeliveryNote

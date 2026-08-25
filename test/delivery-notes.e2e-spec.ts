@@ -163,11 +163,8 @@ describe('Delivery Notes / Bons (e2e)', () => {
   describe('Bon de réception (BR) — inbound receipt', () => {
     let brId: string;
     let brNumber: string;
-    let stockBefore: number;
 
     it('creates a BR with the correct number prefix and prepared status', async () => {
-      stockBefore = await stockAt(productA.id, warehouseId);
-
       const res = await api(app)
         .post('/api/v1/delivery-notes')
         .set(bearer(ownerToken))
@@ -443,8 +440,7 @@ describe('Delivery Notes / Bons (e2e)', () => {
       await api(app)
         .patch(`/api/v1/delivery-notes/${closedId}/status`)
         .set(bearer(ownerToken))
-        .send('"closed"')
-        .set('Content-Type', 'application/json')
+        .send({ status: 'closed' })
         .expect(204);
     });
 

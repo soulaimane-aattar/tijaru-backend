@@ -5,7 +5,7 @@ import { fontFor, registerArabicFonts } from '../../../common/pdf/arabic-fonts';
 
 export type PdfNote = {
   number: string;
-  type: 'order' | 'out' | 'in_';
+  type: 'order' | 'out' | 'in_' | 'retour';
   date: Date;
   status: string;
   signed: boolean;
@@ -27,6 +27,7 @@ const TYPE_LABEL: Record<PdfNote['type'], string> = {
   order: 'Bon de commande',
   out: 'Bon de livraison',
   in_: 'Bon de réception',
+  retour: 'Bon de retour',
 };
 
 // Classic carnet layout metrics (A4, 40pt margins → 515pt of usable width).
@@ -107,7 +108,7 @@ export class DeliveryNotePdfService {
     });
     doc.moveDown(0.8);
 
-    const to = note.type === 'out' ? note.customer : note.supplier;
+    const to = note.type === 'out' || note.type === 'retour' ? note.customer : note.supplier;
     const y = doc.y;
     doc.font('Helvetica-BoldOblique').fontSize(12);
     doc.text('Mr.', x, y);
@@ -171,7 +172,7 @@ export class DeliveryNotePdfService {
 
       const l = note.lines[i];
       if (!l) continue;
-      const qty = Number(note.type === 'out' ? l.sent : l.ordered);
+      const qty = Number(note.type === 'out' || note.type === 'retour' ? l.sent : l.ordered);
       const pu = Number(l.unitPrice);
       const sub = Math.round(qty * pu * 100) / 100;
       const vy = lineY - 12;

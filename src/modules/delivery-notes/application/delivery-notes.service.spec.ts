@@ -39,6 +39,8 @@ const detail = (over: Partial<DeliveryDetail> = {}): DeliveryDetail => ({
   sourceRef: null,
   carrier: null,
   signed: false,
+  paid: 0,
+  returnOfId: null,
   notes: null,
   lines: [{ id: 'l1', productId: PROD, label: 'Coca 33cl', ordered: 10, sent: 0, unitPrice: 0 }],
   ...over,
@@ -54,6 +56,22 @@ const repo = (): jest.Mocked<DeliveryNotesRepository> =>
     updateLineSent: jest.fn().mockResolvedValue(undefined),
     markSigned: jest.fn().mockResolvedValue(undefined),
     findDefaultWarehouseId: jest.fn().mockResolvedValue('wh1'),
+    addPayment: jest.fn().mockImplementation((d) =>
+      Promise.resolve({
+        id: 'pay1',
+        deliveryNoteId: d.deliveryNoteId,
+        bonNumber: 'BL-2026-0001',
+        amount: d.amount,
+        method: d.method,
+        note: d.note,
+        createdByName: 'Youssef',
+        createdAt: new Date(),
+      }),
+    ),
+    findPayments: jest.fn().mockResolvedValue([]),
+    listCustomerDebts: jest.fn().mockResolvedValue([]),
+    listCustomerPayments: jest.fn().mockResolvedValue([]),
+    findReturnedQtyByProduct: jest.fn().mockResolvedValue(new Map()),
   }) as unknown as jest.Mocked<DeliveryNotesRepository>;
 
 const products = (): jest.Mocked<ProductPriceLookup> =>
@@ -323,7 +341,7 @@ describe('unit price + totals', () => {
   it('prefills unitPrice from product.price when line omits it', async () => {
     const r = repo();
     const p = products();
-    p.findById.mockResolvedValue({ id: PROD, price: '12.50' } as any);
+    p.findById.mockResolvedValue({ id: PROD, price: '12.50' });
     await makeSvc(r, p).create(
       baseInput({ lines: [{ productId: PROD, label: 'X', ordered: 2, sent: 0 }] }),
       actor,
@@ -336,9 +354,9 @@ describe('unit price + totals', () => {
   it('keeps explicit unitPrice', async () => {
     const r = repo();
     const p = products();
-    p.findById.mockResolvedValue({ id: PROD, price: '99' } as any);
+    p.findById.mockResolvedValue({ id: PROD, price: '99' });
     await makeSvc(r, p).create(
-      baseInput({ lines: [{ productId: PROD, label: 'X', ordered: 2, sent: 0, unitPrice: 5 } as any] }),
+      baseInput({ lines: [{ productId: PROD, label: 'X', ordered: 2, sent: 0, unitPrice: 5 }] }),
       actor,
     );
     expect(r.create.mock.calls[0]![0].lines).toEqual([
@@ -355,20 +373,20 @@ describe('unit price + totals', () => {
         { sent: '2', ordered: '2', unitPrice: '7.5' },
       ],
     };
-    expect(makeSvc(repo(), products()).computeTotals(note as any).subtotal).toBe(45);
+    expect(makeSvc(repo(), products()).computeTotals(note).subtotal).toBe(45);
   });
 
   it('computeTotals: BC/BR uses ordered × unitPrice', () => {
     const svc = makeSvc(repo(), products());
     const noteBC = { type: 'order' as const, lines: [{ sent: '0', ordered: '4', unitPrice: '25' }] };
     const noteBR = { type: 'in_' as const, lines: [{ sent: '0', ordered: '3', unitPrice: '10' }] };
-    expect(svc.computeTotals(noteBC as any).subtotal).toBe(100);
-    expect(svc.computeTotals(noteBR as any).subtotal).toBe(30);
+    expect(svc.computeTotals(noteBC).subtotal).toBe(100);
+    expect(svc.computeTotals(noteBR).subtotal).toBe(30);
   });
 
   it('computeTotals: empty lines → 0', () => {
     expect(
-      makeSvc(repo(), products()).computeTotals({ type: 'out', lines: [] } as any)
+      makeSvc(repo(), products()).computeTotals({ type: 'out' as const, lines: [] })
         .subtotal,
     ).toBe(0);
   });
@@ -383,6 +401,144 @@ describe('unit price + totals', () => {
     );
     const result = await makeSvc(r, products()).get(BID, 'dn1');
     expect(result.lines[0]).toEqual(expect.objectContaining({ unitPrice: 2.5, subtotal: 10 }));
-    expect(result.totals).toEqual({ subtotal: 10 });
+    expect(result.totals).toEqual({ subtotal: 10, paid: 0, remaining: 10 });
+  });
+});
+
+describe('DeliveryNotesService.addPayment', () => {
+  const paidBon = (over: Partial<DeliveryDetail> = {}) =>
+    detail({
+      type: 'out',
+      signed: true,
+      lines: [{ id: 'l1', productId: PROD, label: 'X', ordered: 10, sent: 10, unitPrice: 10 }],
+      ...over,
+    });
+
+  it('records a partial payment and leaves a remaining balance', async () => {
+    const r = repo();
+    r.findDetail.mockResolvedValue(paidBon());
+    const payment = await makeSvc(r, products()).addPayment(
+      BID,
+      'dn1',
+      { amount: 40, method: 'cash' },
+      actor,
+    );
+    expect(payment.amount).toBe(40);
+    expect(r.addPayment).toHaveBeenCalledWith(
+      expect.objectContaining({ deliveryNoteId: 'dn1', amount: 40, method: 'cash' }),
+    );
+  });
+
+  it('accepts a payment equal to the full remaining balance', async () => {
+    const r = repo();
+    r.findDetail.mockResolvedValue(paidBon({ paid: 60 }));
+    await makeSvc(r, products()).addPayment(BID, 'dn1', { amount: 40, method: 'cash' }, actor);
+    expect(r.addPayment).toHaveBeenCalledWith(expect.objectContaining({ amount: 40 }));
+  });
+
+  it('rejects overpayment beyond the remaining balance', async () => {
+    const r = repo();
+    r.findDetail.mockResolvedValue(paidBon({ paid: 80 }));
+    await expect(
+      makeSvc(r, products()).addPayment(BID, 'dn1', { amount: 50, method: 'cash' }, actor),
+    ).rejects.toMatchObject({ response: { code: 'overpay' } });
+  });
+
+  it('rejects payment on an already fully-paid note', async () => {
+    const r = repo();
+    r.findDetail.mockResolvedValue(paidBon({ paid: 100 }));
+    await expect(
+      makeSvc(r, products()).addPayment(BID, 'dn1', { amount: 10, method: 'cash' }, actor),
+    ).rejects.toMatchObject({ response: { code: 'already_paid' } });
+  });
+
+  it('rejects payment on non-delivery notes (BC/BR)', async () => {
+    const r = repo();
+    r.findDetail.mockResolvedValue(paidBon({ type: 'in_', customerId: null, supplierId: SUPPLIER }));
+    await expect(
+      makeSvc(r, products()).addPayment(BID, 'dn1', { amount: 10, method: 'cash' }, actor),
+    ).rejects.toMatchObject({ response: { code: 'payments_only_on_delivery' } });
+  });
+});
+
+describe('DeliveryNotesService.createReturn', () => {
+  const signedBl = (over: Partial<DeliveryDetail> = {}) =>
+    detail({
+      type: 'out',
+      signed: true,
+      lines: [{ id: 'l1', productId: PROD, label: 'Coca 33cl', ordered: 10, sent: 10, unitPrice: 5 }],
+      ...over,
+    });
+
+  it('creates a linked RT note, signs it (restock) and mirrors BL prices', async () => {
+    const r = repo();
+    r.create.mockImplementation((d) =>
+      Promise.resolve(detail({ id: 'rt1', number: d.number, type: 'retour', signed: false })),
+    );
+    r.findDetail
+      .mockResolvedValueOnce(signedBl())
+      .mockResolvedValueOnce(signedBl({ id: 'rt1', signed: false }))
+      .mockResolvedValueOnce(
+        signedBl({
+          id: 'rt1',
+          type: 'retour',
+          sourceRef: 'BL-2026-0001',
+          returnOfId: 'dn1',
+          lines: [
+            { id: 'rl1', productId: PROD, label: 'Coca 33cl', ordered: 3, sent: 3, unitPrice: 5 },
+          ],
+        }),
+      );
+    const result = await makeSvc(r, products()).createReturn(
+      BID,
+      'dn1',
+      { lines: [{ lineId: 'l1', qty: 3 }] },
+      actor,
+    );
+    const createdData = r.create.mock.calls[0]![0];
+    expect(createdData.type).toBe('retour');
+    expect(createdData.returnOfId).toBe('dn1');
+    expect(createdData.sourceRef).toBe('BL-2026-0001');
+    expect(createdData.lines[0]).toEqual(
+      expect.objectContaining({ productId: PROD, sent: 3, ordered: 3, unitPrice: 5 }),
+    );
+    expect(result.totals.subtotal).toBe(15);
+  });
+
+  it('rejects returns on unsigned BLs', async () => {
+    const r = repo();
+    r.findDetail.mockResolvedValue(signedBl({ signed: false }));
+    await expect(
+      makeSvc(r, products()).createReturn(BID, 'dn1', { lines: [{ lineId: 'l1', qty: 1 }] }, actor),
+    ).rejects.toMatchObject({ response: { code: 'not_signed' } });
+  });
+
+  it('rejects returning more than what was sent minus already returned', async () => {
+    const r = repo();
+    r.findDetail.mockResolvedValue(signedBl());
+    r.findReturnedQtyByProduct.mockResolvedValue(new Map([[PROD, 8]]));
+    await expect(
+      makeSvc(r, products()).createReturn(BID, 'dn1', { lines: [{ lineId: 'l1', qty: 3 }] }, actor),
+    ).rejects.toMatchObject({ response: { code: 'invalid_return_qty' } });
+  });
+
+  it('rejects returns on non-BL notes', async () => {
+    const r = repo();
+    r.findDetail.mockResolvedValue(signedBl({ type: 'order', customerId: null, supplierId: SUPPLIER }));
+    await expect(
+      makeSvc(r, products()).createReturn(BID, 'dn1', { lines: [{ lineId: 'l1', qty: 1 }] }, actor),
+    ).rejects.toMatchObject({ response: { code: 'return_only_on_delivery' } });
+  });
+
+  it('assigns RT prefix to return notes', async () => {
+    const r = repo();
+    r.findDetail.mockResolvedValue(signedBl());
+    await makeSvc(r, products()).createReturn(
+      BID,
+      'dn1',
+      { lines: [{ lineId: 'l1', qty: 2 }] },
+      actor,
+    );
+    expect(r.create.mock.calls[0]![0].number).toMatch(/^RT-\d{4}-0001$/);
   });
 });

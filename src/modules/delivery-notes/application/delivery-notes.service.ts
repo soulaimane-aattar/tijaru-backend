@@ -8,12 +8,16 @@ import type { LedgerLine } from '../../stock-ledger/domain/stock-ledger.types';
 import {
   DeliveryNotesRepository,
   ProductPriceLookup,
+  type CustomerDebt,
   type DeliveryDetail,
   type DeliveryLineData,
   type DeliveryLineRow,
+  type PaymentRow,
 } from '../domain/delivery-notes.repository';
 import type {
+  AddPaymentInput,
   CreateDeliveryNoteInput,
+  CreateReturnInput,
   DeliveryNoteStatus,
   DeliveryNoteType,
   ListDeliveryNotesQuery,
@@ -27,13 +31,14 @@ export interface DeliveryNoteLineDto extends DeliveryLineRow {
 /** Response shape: `DeliveryDetail` with per-line subtotal and note-level totals. */
 export interface DeliveryNoteDto extends Omit<DeliveryDetail, 'lines'> {
   lines: DeliveryNoteLineDto[];
-  totals: { subtotal: number };
+  totals: { subtotal: number; paid: number; remaining: number };
 }
 
 const PREFIX: Record<DeliveryNoteType, string> = {
   order: 'BC',
   out: 'BL',
   in_: 'BR',
+  retour: 'RT',
 };
 
 /**
@@ -133,7 +138,8 @@ export class DeliveryNotesService {
 
   /**
    * Pure: sum of line quantity × unitPrice, rounded to 2dp.
-   * BL (`out`) bills what was actually sent; BC/BR bill the ordered quantity.
+   * BL (`out`) and returns (`retour`) bill what was actually sent;
+   * BC/BR bill the ordered quantity.
    */
   computeTotals(note: {
     type: DeliveryNoteType;
@@ -144,7 +150,7 @@ export class DeliveryNotesService {
     }>;
   }): { subtotal: number } {
     const qty = (l: { sent: number | string; ordered: number | string }) =>
-      Number(note.type === 'out' ? l.sent : l.ordered);
+      Number(note.type === 'out' || note.type === 'retour' ? l.sent : l.ordered);
     const price = (l: { unitPrice: number | string }) => Number(l.unitPrice ?? 0);
     const subtotal = note.lines.reduce((s, l) => s + qty(l) * price(l), 0);
     return { subtotal: Math.round(subtotal * 100) / 100 };
@@ -152,14 +158,20 @@ export class DeliveryNotesService {
 
   private toResponse(note: DeliveryDetail): DeliveryNoteDto {
     const totals = this.computeTotals(note);
-    const qty = (l: DeliveryLineRow) => (note.type === 'out' ? l.sent : l.ordered);
+    const qty = (l: DeliveryLineRow) =>
+      note.type === 'out' || note.type === 'retour' ? l.sent : l.ordered;
+    const paid = Math.min(Number(note.paid ?? 0), totals.subtotal);
     return {
       ...note,
       lines: note.lines.map((l) => ({
         ...l,
         subtotal: Math.round(qty(l) * l.unitPrice * 100) / 100,
       })),
-      totals,
+      totals: {
+        subtotal: totals.subtotal,
+        paid: Math.round(paid * 100) / 100,
+        remaining: Math.round((totals.subtotal - paid) * 100) / 100,
+      },
     };
   }
 
@@ -202,10 +214,11 @@ export class DeliveryNotesService {
    * Stock effect depends on type:
    *  - `out` (BL, livraison) decrements stock — reason `vente`.
    *  - `in_` (BR, réception) increments stock — reason `achat`.
+   *  - `retour` (RT, retour client) increments stock — reason `retour`.
    *  - `order` (BC, bon de commande) has no stock effect.
    *
-   * DeliveryNote carries no warehouseId of its own, so out/in_ signing uses
-   * the business's default warehouse (mirrors POS session warehouse pick).
+   * DeliveryNote carries no warehouseId of its own, so out/in_/retour signing
+   * uses the business's default warehouse (mirrors POS session warehouse pick).
    * Only lines with `sent > 0` post to the ledger.
    */
   async sign(businessId: string, id: string, actor: AuthUser): Promise<void> {
@@ -214,23 +227,24 @@ export class DeliveryNotesService {
     if (inv.signed) return;
 
     await this.prisma.$transaction(async (tx) => {
-      if (inv.type === 'out' || inv.type === 'in_') {
+      if (inv.type !== 'order') {
         const linesToPost = inv.lines.filter((l) => l.sent > 0);
         if (linesToPost.length > 0) {
           const warehouseId = await this.repo.findDefaultWarehouseId(businessId, tx);
           if (!warehouseId) throw new ValidationError('no_default_warehouse');
-          const factor = inv.type === 'out' ? -1 : 1;
+          const direction = inv.type === 'out' ? -1 : 1;
+          const reason = inv.type === 'out' ? 'vente' : inv.type === 'in_' ? 'achat' : 'retour';
           const lines: LedgerLine[] = linesToPost.map((l) => ({
             productId: l.productId,
             warehouseId,
-            delta: factor * l.sent,
+            delta: direction * l.sent,
           }));
           await this.ledger.post(
             {
               businessId,
               userId: actor.id,
-              type: factor === -1 ? 'out' : 'in',
-              reason: factor === -1 ? 'vente' : 'achat',
+              type: direction === -1 ? 'out' : 'in',
+              reason,
               ref: inv.number,
               lines,
             },
@@ -240,6 +254,126 @@ export class DeliveryNotesService {
       }
       await this.repo.markSigned(id, new Date(), tx);
     });
+  }
+
+  /**
+   * Record a payment against a delivery note. Only `out` notes carry client
+   * debt. Rejects overpayment: amount is capped at the remaining balance.
+   */
+  async addPayment(
+    businessId: string,
+    id: string,
+    input: AddPaymentInput,
+    actor: AuthUser,
+  ): Promise<PaymentRow> {
+    const inv = await this.repo.findDetail(businessId, id);
+    if (!inv) throw new NotFoundError('DeliveryNote', id);
+    if (inv.type !== 'out') {
+      throw new DomainError('payments_only_on_delivery', 'Only delivery notes can be paid', 422);
+    }
+    const total = this.computeTotals(inv).subtotal;
+    const remaining = Math.round((total - Number(inv.paid)) * 100) / 100;
+    if (remaining <= 0) {
+      throw new DomainError('already_paid', 'This note is already fully paid', 422);
+    }
+    if (input.amount > remaining + 0.001) {
+      throw new DomainError(
+        'overpay',
+        `Payment exceeds the remaining balance (${remaining.toFixed(2)})`,
+        422,
+      );
+    }
+    return this.repo.addPayment({
+      businessId,
+      deliveryNoteId: id,
+      amount: input.amount,
+      method: input.method,
+      note: input.note ?? null,
+      createdById: actor.id,
+    });
+  }
+
+  listPayments(businessId: string, id: string): Promise<PaymentRow[]> {
+    return this.repo.findPayments(businessId, id);
+  }
+
+  /**
+   * Return goods against a signed BL. Creates a linked RT note that is signed
+   * immediately (the goods are factually back), which restocks via the ledger
+   * and reduces the customer's debt by the returned value. A product cannot be
+   * returned more than was sent minus what previous returns already took back.
+   */
+  async createReturn(
+    businessId: string,
+    id: string,
+    input: CreateReturnInput,
+    actor: AuthUser,
+  ): Promise<DeliveryNoteDto> {
+    const bl = await this.repo.findDetail(businessId, id);
+    if (!bl) throw new NotFoundError('DeliveryNote', id);
+    if (bl.type !== 'out') {
+      throw new DomainError('return_only_on_delivery', 'Only delivery notes can be returned', 422);
+    }
+    if (!bl.signed) {
+      throw new DomainError('not_signed', 'Sign the delivery note before returning it', 422);
+    }
+    if (!bl.customerId) {
+      throw new DomainError('missing_customer', 'The note has no customer', 422);
+    }
+
+    const alreadyReturned = await this.repo.findReturnedQtyByProduct(businessId, bl.id);
+    const lineByPk = new Map(bl.lines.map((l) => [l.id, l]));
+
+    const lines: DeliveryLineData[] = input.lines.map((rl) => {
+      const src = lineByPk.get(rl.lineId);
+      if (!src) throw new NotFoundError('DeliveryNoteLine', rl.lineId);
+      const previouslyReturned = alreadyReturned.get(src.productId) ?? 0;
+      const returnable = Math.round((src.sent - previouslyReturned) * 1000) / 1000;
+      if (rl.qty > returnable + 1e-9) {
+        throw new DomainError(
+          'invalid_return_qty',
+          `Cannot return ${rl.qty} of "${src.label}" — only ${Math.max(returnable, 0)} returnable`,
+          422,
+        );
+      }
+      return {
+        productId: src.productId,
+        label: src.label,
+        ordered: rl.qty,
+        sent: rl.qty,
+        unitPrice: src.unitPrice,
+      };
+    });
+
+    const date = new Date();
+    const number = await this.nextNumber(actor.businessId, 'retour', date.getFullYear());
+    const created = await this.repo.create({
+      businessId: actor.businessId,
+      number,
+      type: 'retour',
+      date,
+      status: 'delivered',
+      customerId: bl.customerId,
+      supplierId: null,
+      issuedById: actor.id,
+      sourceRef: bl.number,
+      carrier: null,
+      notes: input.notes ?? null,
+      returnOfId: bl.id,
+      lines,
+    });
+    // Goods are back: post the restock right away so debt and stock stay in sync.
+    await this.sign(businessId, created.id, actor);
+    const fresh = await this.repo.findDetail(businessId, created.id);
+    return this.toResponse(fresh!);
+  }
+
+  listCustomerDebts(businessId: string): Promise<CustomerDebt[]> {
+    return this.repo.listCustomerDebts(businessId);
+  }
+
+  listCustomerPayments(businessId: string, customerId: string): Promise<PaymentRow[]> {
+    return this.repo.listCustomerPayments(businessId, customerId);
   }
 
   async setStatus(businessId: string, id: string, status: DeliveryNoteStatus): Promise<void> {
