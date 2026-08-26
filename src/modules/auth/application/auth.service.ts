@@ -238,6 +238,7 @@ export class AuthService {
         subscription: null,
         enabledVatRates: [0, 7, 10, 14, 20],
         multiWarehouse: true,
+        bonsAffectStock: true,
       };
     }
 
@@ -253,6 +254,7 @@ export class AuthService {
       subscription: business ? { plan: business.plan, end: business.subscriptionEnd } : null,
       enabledVatRates: business?.enabledVatRates ?? [0, 7, 10, 14, 20],
       multiWarehouse: business?.multiWarehouse ?? true,
+      bonsAffectStock: business?.bonsAffectStock ?? true,
     };
   }
 

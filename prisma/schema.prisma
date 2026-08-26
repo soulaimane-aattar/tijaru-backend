@@ -74,6 +74,8 @@ model Business {
   maxWarehouses     Int              @default(2) @map("max_warehouses")
   multiWarehouse    Boolean          @default(true) @map("multi_warehouse")
   enabledVatRates   Int[]            @default([0, 7, 10, 14, 20]) @map("enabled_vat_rates")
+  /// When false, signing bons no longer moves stock (documentary signatures only).
+  bonsAffectStock   Boolean          @default(true) @map("bons_affect_stock")
   createdBy         String?          @map("created_by")
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt

@@ -88,6 +88,9 @@ const ledger = (): jest.Mocked<StockLedgerService> =>
 const prisma = (): jest.Mocked<PrismaService> =>
   ({
     $transaction: jest.fn().mockImplementation((fn: (tx: unknown) => unknown) => fn({})),
+    business: {
+      findUnique: jest.fn().mockResolvedValue({ bonsAffectStock: true }),
+    },
   }) as unknown as jest.Mocked<PrismaService>;
 
 const makeSvc = (
@@ -540,5 +543,113 @@ describe('DeliveryNotesService.createReturn', () => {
       actor,
     );
     expect(r.create.mock.calls[0]![0].number).toMatch(/^RT-\d{4}-0001$/);
+  });
+});
+
+describe('DeliveryNotesService.sign — stock integration (configurable)', () => {
+  it('signing a BL posts negative ledger lines for every sent line (multi-product, multi-qty)', async () => {
+    const r = repo();
+    r.findDetail.mockResolvedValue(
+      detail({
+        type: 'out',
+        lines: [
+          { id: 'l1', productId: PROD, label: 'Coca 33cl', ordered: 10, sent: 4, unitPrice: 5 },
+          { id: 'l2', productId: 'p2', label: 'Sucre 2kg', ordered: 8, sent: 3, unitPrice: 12 },
+          { id: 'l3', productId: 'p3', label: 'Rien envoyé', ordered: 6, sent: 0, unitPrice: 9 },
+        ],
+      }),
+    );
+    const l = ledger();
+    await makeSvc(r, products(), l).sign(BID, 'dn1', actor);
+
+    expect(l.post).toHaveBeenCalledTimes(1);
+    const posted = l.post.mock.calls[0]![0];
+    expect(posted).toMatchObject({ businessId: BID, type: 'out', reason: 'vente', ref: 'BL-2026-0001' });
+    // Only lines with sent > 0 post — and BL deltas are negative (decrement).
+    expect(posted.lines).toEqual([
+      { productId: PROD, warehouseId: 'wh1', delta: -4 },
+      { productId: 'p2', warehouseId: 'wh1', delta: -3 },
+    ]);
+    expect(r.markSigned).toHaveBeenCalledTimes(1);
+  });
+
+  it('signing a BR posts positive ledger lines with reason achat', async () => {
+    const r = repo();
+    r.findDetail.mockResolvedValue(
+      detail({
+        type: 'in_',
+        number: 'BR-2026-0007',
+        lines: [
+          { id: 'l1', productId: PROD, label: 'Coca 33cl', ordered: 10, sent: 10, unitPrice: 5 },
+        ],
+      }),
+    );
+    const l = ledger();
+    await makeSvc(r, products(), l).sign(BID, 'dn1', actor);
+
+    const posted = l.post.mock.calls[0]![0];
+    expect(posted).toMatchObject({ type: 'in', reason: 'achat', ref: 'BR-2026-0007' });
+    expect(posted.lines).toEqual([{ productId: PROD, warehouseId: 'wh1', delta: 10 }]);
+  });
+
+  it('signing a BC never touches the ledger (no stock effect)', async () => {
+    const r = repo();
+    r.findDetail.mockResolvedValue(
+      detail({ type: 'order', customerId: null, supplierId: SUPPLIER, lines: [{ id: 'l1', productId: PROD, label: 'X', ordered: 5, sent: 5, unitPrice: 1 }] }),
+    );
+    const l = ledger();
+    await makeSvc(r, products(), l).sign(BID, 'dn1', actor);
+
+    expect(l.post).not.toHaveBeenCalled();
+    expect(r.markSigned).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-signing is idempotent — no second ledger post', async () => {
+    const r = repo();
+    r.findDetail.mockResolvedValue(detail({ signed: true }));
+    const l = ledger();
+    await makeSvc(r, products(), l).sign(BID, 'dn1', actor);
+
+    expect(l.post).not.toHaveBeenCalled();
+    expect(r.markSigned).not.toHaveBeenCalled();
+  });
+
+  it('bonsAffectStock=false → documentary signature only, no ledger post', async () => {
+    const r = repo();
+    r.findDetail.mockResolvedValue(detail());
+    const tx = prisma();
+    (tx.business.findUnique as jest.Mock).mockResolvedValue({ bonsAffectStock: false });
+    const l = ledger();
+    await makeSvc(r, products(), l, tx).sign(BID, 'dn1', actor);
+
+    expect(tx.business.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: BID }, select: { bonsAffectStock: true } }),
+    );
+    expect(l.post).not.toHaveBeenCalled();
+    expect(r.markSigned).toHaveBeenCalledTimes(1);
+  });
+
+  it('missing business row defaults the feature ON', async () => {
+    const r = repo();
+    r.findDetail.mockResolvedValue(
+      detail({ lines: [{ id: 'l1', productId: PROD, label: 'Coca', ordered: 10, sent: 2, unitPrice: 5 }] }),
+    );
+    const tx = prisma();
+    (tx.business.findUnique as jest.Mock).mockResolvedValue(null);
+    const l = ledger();
+    await makeSvc(r, products(), l, tx).sign(BID, 'dn1', actor);
+
+    expect(l.post).toHaveBeenCalledTimes(1);
+  });
+
+  it('insufficient stock rejects the whole sign — nothing marked signed', async () => {
+    const r = repo();
+    r.findDetail.mockResolvedValue(detail({ lines: [{ id: 'l1', productId: PROD, label: 'Coca', ordered: 50, sent: 50, unitPrice: 5 }] }));
+    const l = ledger();
+    l.post.mockRejectedValue(new DomainError('insufficient_stock', 'Stock insuffisant', 422));
+    await expect(makeSvc(r, products(), l).sign(BID, 'dn1', actor)).rejects.toMatchObject({
+      response: { code: 'insufficient_stock' },
+    });
+    expect(r.markSigned).not.toHaveBeenCalled();
   });
 });

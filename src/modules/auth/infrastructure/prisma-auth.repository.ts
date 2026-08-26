@@ -162,7 +162,13 @@ export class PrismaAuthRepository extends AuthRepository {
   async findBusinessById(businessId: string): Promise<BusinessSubscriptionView | null> {
     return this.prisma.business.findUnique({
       where: { id: businessId },
-      select: { plan: true, subscriptionEnd: true, enabledVatRates: true, multiWarehouse: true },
+      select: {
+        plan: true,
+        subscriptionEnd: true,
+        enabledVatRates: true,
+        multiWarehouse: true,
+        bonsAffectStock: true,
+      },
     });
   }
 

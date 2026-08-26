@@ -211,23 +211,35 @@ export class DeliveryNotesService {
    * Sign a delivery note. Idempotent: an already-signed note is a no-op
    * (never re-posts to the ledger).
    *
-   * Stock effect depends on type:
+   * Stock effect depends on type — and only applies when the business has
+   * `bonsAffectStock` enabled (default):
    *  - `out` (BL, livraison) decrements stock — reason `vente`.
    *  - `in_` (BR, réception) increments stock — reason `achat`.
    *  - `retour` (RT, retour client) increments stock — reason `retour`.
    *  - `order` (BC, bon de commande) has no stock effect.
    *
+   * With the feature disabled, signing is documentary only: the note flips to
+   * signed and nothing touches the ledger.
+   *
    * DeliveryNote carries no warehouseId of its own, so out/in_/retour signing
    * uses the business's default warehouse (mirrors POS session warehouse pick).
-   * Only lines with `sent > 0` post to the ledger.
+   * Only lines with `sent > 0` post to the ledger. The ledger's conditional
+   * decrement enforces availability: an insufficient-stock BL rejects the
+   * whole transaction (nothing is marked signed).
    */
   async sign(businessId: string, id: string, actor: AuthUser): Promise<void> {
     const inv = await this.repo.findDetail(businessId, id);
     if (!inv) throw new NotFoundError('DeliveryNote', id);
     if (inv.signed) return;
 
+    const biz = await this.prisma.business.findUnique({
+      where: { id: businessId },
+      select: { bonsAffectStock: true },
+    });
+    const stockEnabled = biz?.bonsAffectStock ?? true;
+
     await this.prisma.$transaction(async (tx) => {
-      if (inv.type !== 'order') {
+      if (stockEnabled && inv.type !== 'order') {
         const linesToPost = inv.lines.filter((l) => l.sent > 0);
         if (linesToPost.length > 0) {
           const warehouseId = await this.repo.findDefaultWarehouseId(businessId, tx);

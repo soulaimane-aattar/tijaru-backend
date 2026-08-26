@@ -69,6 +69,7 @@ export interface BusinessSubscriptionView {
   subscriptionEnd: Date | null;
   enabledVatRates: number[];
   multiWarehouse: boolean;
+  bonsAffectStock: boolean;
 }
 
 /** Business module activation flag. */

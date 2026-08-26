@@ -287,6 +287,7 @@ describe('AuthService', () => {
         subscriptionEnd: new Date('2026-12-31'),
         enabledVatRates: [0, 20],
         multiWarehouse: false,
+        bonsAffectStock: false,
       });
       repo.findBusinessModules.mockResolvedValue([
         { moduleId: 'pos', active: true },
@@ -299,6 +300,7 @@ describe('AuthService', () => {
         subscription: { plan: 'pro', end: new Date('2026-12-31') },
         enabledVatRates: [0, 20],
         multiWarehouse: false,
+        bonsAffectStock: false,
       });
     });
 
