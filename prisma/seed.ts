@@ -79,6 +79,10 @@ export async function runSeed(opts: { silent?: boolean } = {}): Promise<void> {
       address: 'Zone Industrielle Aïn Sebaâ, Lot 42',
       city: 'Casablanca',
       phone: '+212522123456',
+      // Headroom so e2e flows (extra users/warehouses/products) don't trip LimitGuard.
+      maxUsers: 25,
+      maxProducts: 5000,
+      maxWarehouses: 10,
     },
   });
 
@@ -139,6 +143,17 @@ export async function runSeed(opts: { silent?: boolean } = {}): Promise<void> {
       active: true,
       isDefault: false,
     },
+  });
+
+  // ─── Expense categories (per-tenant, validated on expense writes) ───────
+  await prisma.expenseCategoryDef.createMany({
+    data: [
+      { businessId: business.id, key: 'other', label: 'Autres', sortOrder: 0 },
+      { businessId: business.id, key: 'supplies', label: 'Fournitures', sortOrder: 1 },
+      { businessId: business.id, key: 'rent', label: 'Loyer', sortOrder: 2 },
+      { businessId: business.id, key: 'utilities', label: 'Eau & électricité', sortOrder: 3 },
+      { businessId: business.id, key: 'transport', label: 'Transport', sortOrder: 4 },
+    ],
   });
 
   // ─── Users (spec §2) ────────────────────────────────────────────────────

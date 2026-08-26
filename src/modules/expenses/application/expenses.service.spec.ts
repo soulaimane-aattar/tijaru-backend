@@ -99,7 +99,7 @@ describe('ExpensesService', () => {
 
   it('deletes the receipt file along with the expense', async () => {
     const r = repo();
-    r.findById.mockResolvedValue({ id: 'e1', receiptPath: 'biz1/abc.jpg' });
+    r.findById.mockResolvedValue({ id: 'e1', receiptPath: 'biz1/abc.jpg', businessId: 'biz1' });
     r.delete.mockResolvedValue(1);
     const storage = storageStub();
 
@@ -110,7 +110,7 @@ describe('ExpensesService', () => {
 
   it('still deletes the expense when the receipt file is already gone', async () => {
     const r = repo();
-    r.findById.mockResolvedValue({ id: 'e1', receiptPath: 'biz1/abc.jpg' });
+    r.findById.mockResolvedValue({ id: 'e1', receiptPath: 'biz1/abc.jpg', businessId: 'biz1' });
     r.delete.mockResolvedValue(1);
     const storage = storageStub();
     storage.remove.mockRejectedValue(new Error('ENOENT'));
@@ -304,7 +304,7 @@ describe('ExpensesService.quarterlyReportData', () => {
 describe('ExpensesService.readReceipt', () => {
   it('returns the bytes and extension of an existing receipt', async () => {
     const r = repo();
-    r.findById.mockResolvedValue({ id: 'e1', receiptPath: 'biz1/abc.jpg' });
+    r.findById.mockResolvedValue({ id: 'e1', receiptPath: 'biz1/abc.jpg', businessId: 'biz1' });
 
     const result = await service(r).readReceipt('e1');
 
@@ -314,7 +314,7 @@ describe('ExpensesService.readReceipt', () => {
 
   it('throws NotFound when the expense has no receipt', async () => {
     const r = repo();
-    r.findById.mockResolvedValue({ id: 'e1', receiptPath: null });
+    r.findById.mockResolvedValue({ id: 'e1', receiptPath: null, businessId: 'biz1' });
     await expect(service(r).readReceipt('e1')).rejects.toBeInstanceOf(NotFoundError);
   });
 

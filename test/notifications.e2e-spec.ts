@@ -51,12 +51,13 @@ describe('Notifications (e2e)', () => {
       const res = await api(app).post('/api/v1/notifications/scan').set(bearer(tokens.owner)).expect(201);
       expect(res.body.lowStock).toBeGreaterThanOrEqual(1);
 
+      // Other seed products are also below threshold — select ours by title.
       const n = await prisma.notification.findFirst({
-        where: { businessId, type: 'lowStock' },
+        where: { businessId, type: 'lowStock', title: 'Sucre Cosumar lingot' },
         orderBy: { date: 'desc' },
       });
       expect(n).toBeTruthy();
-      expect(n?.body).toContain('Sucre Cosumar lingot');
+      expect(n?.body).toContain('stock');
     });
 
     it('is idempotent (dedup on unread)', async () => {

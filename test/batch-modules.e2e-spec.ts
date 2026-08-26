@@ -145,11 +145,12 @@ describe('Batch modules (PO/inventory/reports/activity/notifications) e2e', () =
         .set(bearer(ownerToken))
         .send({ lines: [{ productId: startRes.body.lines[0].productId, counted: 0 }] })
         .expect(201);
+      // Re-applying an already-applied count is a conflict, not a validation error.
       await api(app)
         .post(`/api/v1/inventory/${startRes.body.id}/apply`)
         .set(bearer(ownerToken))
         .send({ lines: [{ productId: startRes.body.lines[0].productId, counted: 0 }] })
-        .expect(422);
+        .expect(409);
     });
   });
 

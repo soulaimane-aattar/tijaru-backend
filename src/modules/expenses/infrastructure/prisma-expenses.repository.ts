@@ -53,7 +53,9 @@ export class PrismaExpensesRepository extends ExpensesRepository {
   findById(id: string): Promise<ExpenseRef | null> {
     return this.prisma.expense.findUnique({
       where: { id },
-      select: { id: true, receiptPath: true },
+      // businessId must stay selected: the tenant middleware post-filters
+      // findUnique results on it (see tenant.middleware.ts).
+      select: { id: true, receiptPath: true, businessId: true },
     });
   }
 

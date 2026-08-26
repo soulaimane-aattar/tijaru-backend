@@ -29,7 +29,7 @@ export type UpdateExpenseData = {
 };
 
 /** Minimal projection the service needs for existence checks and file cleanup. */
-export type ExpenseRef = { id: string; receiptPath: string | null };
+export type ExpenseRef = { id: string; receiptPath: string | null; businessId: string };
 
 /** Fields shown when warning the user that a scanned receipt already exists. */
 export type ExpenseDuplicate = {
