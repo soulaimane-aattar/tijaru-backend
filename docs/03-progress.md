@@ -21,6 +21,24 @@
 
 ## Log
 
+### 2026-08-25 — Mobile+backend: fix bon thermal print & PDF download
+
+**Step.** Fixed two broken flows on the mobile app: thermal print of bons was crashing, PDF share/download was failing silently.
+
+**Root causes.**
+1. **Data shape mismatch.** `GET /delivery-notes/:id` returns a flat DTO (`{ id, number, type, customerName, ... }`). Mobile `BonDetail` type expects `{ bon: BonRow, lines, totals, businessName }`. Accessing `detail.bon.number` → undefined crash → `PrintableBon` never renders → bitmap capture fails → print fails.
+2. **Missing `businessName`.** Backend detail endpoint never included business info; `PrintableBon` needs it for the letterhead.
+3. **PDF download URL divergence.** `lib/pdf.ts` duplicated `BASE_URL` construction instead of using shared `apiUrl()` from the client — could diverge from the canonical API URL. No auth guard: if tokens not yet loaded, download silently fails with 401.
+
+**Fixes.**
+- **Backend** (`delivery-notes.controller.ts`): `get()` now enriches the response with `businessName` from `pdfInfo.getBusiness()`.
+- **Mobile** (`features/bons/api.ts`): `getBonDetail()` transforms flat API response → `BonDetail` shape (constructs `bon: BonRow` with derived `partyName`, `ordered`, `sent`).
+- **Mobile** (`components/PrintableBon.tsx`): Redesigned layout with bordered table (Qté | Désignation | PU | Total), header row with inverted colors, alternating row tint. Keeps 576-dot width for 80mm thermal.
+- **Mobile** (`lib/pdf.ts`): Replaced duplicate `BASE_URL` with `apiUrl()`, added early `not_authenticated` throw when token is null.
+- **i18n**: Added `bons.typeReturn` key (fr/en/ar) for retour bon type label.
+
+**Result.** ✅ backend: 427/427 tests pass, tsc clean. ✅ mobile: tsc clean, no type errors.
+
 ### 2026-08-25 — Web+backend: customer credit ceiling (dette alerts) + payment/bon e2e coverage
 
 **Step.** Built the missing dette feature end-to-end and pinned the bons/invoice-payment/POS-credit workflows with Playwright. Discovery first: the backend already had debt plumbing (`GET /delivery-notes/customer-debts` = ΣBL lines − paid − returns; `POST/GET /delivery-notes/:id/payments`; invoice `paid` tracking) but **zero web UI consumed any of it**, customers had no ceiling field, POS had no credit payment UI, and invoices had no record-payment UI.

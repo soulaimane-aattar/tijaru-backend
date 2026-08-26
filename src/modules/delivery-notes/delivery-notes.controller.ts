@@ -81,8 +81,13 @@ export class DeliveryNotesController {
 
   @Get(':id')
   @RequireCap('po.manage')
-  get(@Param('id') id: string): Promise<unknown> {
-    return this.svc.get(this.bid(), id);
+  async get(@Param('id') id: string): Promise<unknown> {
+    const businessId = this.bid();
+    const [note, biz] = await Promise.all([
+      this.svc.get(businessId, id),
+      this.pdfInfo.getBusiness(businessId),
+    ]);
+    return { ...note, businessName: biz?.name ?? null };
   }
 
   @Post()
