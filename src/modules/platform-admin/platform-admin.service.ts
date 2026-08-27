@@ -264,8 +264,19 @@ export class PlatformAdminService {
    */
   async updateSettings(
     id: string,
-    input: { multiWarehouse?: boolean | undefined; tvaEnabled?: boolean | undefined },
-  ): Promise<{ multiWarehouse: boolean; enabledVatRates: number[] }> {
+    input: {
+      multiWarehouse?: boolean | undefined;
+      tvaEnabled?: boolean | undefined;
+      enabledVatRates?: number[] | undefined;
+      defaultVatRate?: number | undefined;
+      bonsAffectStock?: boolean | undefined;
+    },
+  ): Promise<{
+    multiWarehouse: boolean;
+    enabledVatRates: number[];
+    defaultVatRate: number;
+    bonsAffectStock: boolean;
+  }> {
     const biz = await this.prisma.business.findUnique({ where: { id } });
     if (!biz) throw new NotFoundError('Business', id);
 
@@ -316,6 +327,31 @@ export class PlatformAdminService {
       details.push(`tva: ${input.tvaEnabled ? 'on' : 'off'}`);
     }
 
+    // Fine-grained TVA: exact rate set + default. The default must stay enabled —
+    // validated against the FINAL set (request rates override current ones).
+    if (input.enabledVatRates !== undefined || input.defaultVatRate !== undefined) {
+      const finalRates = input.enabledVatRates ?? biz.enabledVatRates;
+      const finalDefault = input.defaultVatRate ?? biz.defaultVatRate;
+      if (!finalRates.includes(finalDefault)) {
+        throw new ConflictError('default_vat_not_enabled');
+      }
+      await this.prisma.business.update({
+        where: { id },
+        data: { enabledVatRates: finalRates, defaultVatRate: finalDefault },
+      });
+      details.push(
+        `tva rates: [${finalRates.join(',')}] default: ${finalDefault}`,
+      );
+    }
+
+    if (input.bonsAffectStock !== undefined && input.bonsAffectStock !== biz.bonsAffectStock) {
+      await this.prisma.business.update({
+        where: { id },
+        data: { bonsAffectStock: input.bonsAffectStock },
+      });
+      details.push(`bons-affect-stock: ${input.bonsAffectStock ? 'on' : 'off'}`);
+    }
+
     if (details.length) {
       await this.audit({
         action: 'update-settings',
@@ -325,10 +361,72 @@ export class PlatformAdminService {
       });
     }
 
-    const updated = await this.prisma.business.findUniqueOrThrow({
+    return await this.prisma.business.findUniqueOrThrow({
       where: { id },
-      select: { multiWarehouse: true, enabledVatRates: true },
+      select: {
+        multiWarehouse: true,
+        enabledVatRates: true,
+        defaultVatRate: true,
+        bonsAffectStock: true,
+      },
     });
+  }
+
+  /**
+   * Platform-admin control of one business employee's access: change their
+   * built-in role and/or activate/deactivate the account. Guards against
+   * locking a business out: the last active owner can't be demoted or
+   * deactivated.
+   */
+  async updateBusinessUser(
+    businessId: string,
+    userId: string,
+    input: {
+      role?:
+        | 'owner'
+        | 'admin'
+        | 'manager'
+        | 'stockkeeper'
+        | 'cashier'
+        | 'viewer'
+        | undefined;
+      active?: boolean | undefined;
+    },
+  ): Promise<{ id: string; name: string; email: string; role: string; active: boolean }> {
+    const user = await this.prisma.user.findFirst({ where: { id: userId, businessId } });
+    if (!user) throw new NotFoundError('User', userId);
+
+    const losesOwner =
+      (input.role !== undefined && user.role === 'owner' && input.role !== 'owner') ||
+      (input.active === false && user.role === 'owner' && user.active);
+    if (losesOwner) {
+      const otherOwners = await this.prisma.user.count({
+        where: { businessId, role: 'owner', active: true, id: { not: userId }, deletedAt: null },
+      });
+      if (otherOwners === 0) {
+        throw new ConflictError('last_owner');
+      }
+    }
+
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(input.role !== undefined ? { role: input.role } : {}),
+        ...(input.active !== undefined ? { active: input.active } : {}),
+      },
+      select: { id: true, name: true, email: true, role: true, active: true },
+    });
+
+    await this.audit({
+      action: 'update-business-user',
+      targetId: userId,
+      targetName: user.name,
+      detail: [
+        ...(input.role !== undefined ? [`role: ${input.role}`] : []),
+        ...(input.active !== undefined ? [`active: ${input.active}`] : []),
+      ].join(', ') || 'no-op',
+    });
+
     return updated;
   }
 

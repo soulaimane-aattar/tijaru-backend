@@ -239,6 +239,7 @@ export class AuthService {
         enabledVatRates: [0, 7, 10, 14, 20],
         multiWarehouse: true,
         bonsAffectStock: true,
+        defaultVatRate: 20,
       };
     }
 
@@ -255,6 +256,7 @@ export class AuthService {
       enabledVatRates: business?.enabledVatRates ?? [0, 7, 10, 14, 20],
       multiWarehouse: business?.multiWarehouse ?? true,
       bonsAffectStock: business?.bonsAffectStock ?? true,
+      defaultVatRate: business?.defaultVatRate ?? 20,
     };
   }
 

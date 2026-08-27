@@ -288,6 +288,7 @@ describe('AuthService', () => {
         enabledVatRates: [0, 20],
         multiWarehouse: false,
         bonsAffectStock: false,
+        defaultVatRate: 0,
       });
       repo.findBusinessModules.mockResolvedValue([
         { moduleId: 'pos', active: true },
@@ -301,6 +302,7 @@ describe('AuthService', () => {
         enabledVatRates: [0, 20],
         multiWarehouse: false,
         bonsAffectStock: false,
+        defaultVatRate: 0,
       });
     });
 

@@ -22,6 +22,7 @@ import {
   type UpdateBusinessSettingsInput,
 } from './dto/update-business-settings.dto';
 import { UpdateBusinessSchema, type UpdateBusinessInput } from './dto/update-business.dto';
+import { UpdateBusinessUserSchema, type UpdateBusinessUserInput } from './dto/update-business-user.dto';
 import { UpdateModulesSchema, type UpdateModulesInput } from './dto/update-modules.dto';
 import { PlatformAdminGuard } from './platform-admin.guard';
 import { PlatformAdminService } from './platform-admin.service';
@@ -195,5 +196,20 @@ export class PlatformAdminController {
     @Body() body: UpdateBusinessSettingsInput,
   ): Promise<unknown> {
     return this.svc.updateSettings(id, body);
+  }
+
+  @Public()
+  @UseGuards(PlatformAdminGuard)
+  @Patch('admin/platform/businesses/:id/users/:userId')
+  @UsePipes(new ZodValidationPipe(UpdateBusinessUserSchema))
+  @ApiOperation({
+    summary: "Change one business employee's role or active flag (platform admin only).",
+  })
+  async updateBusinessUser(
+    @Param('id') id: string,
+    @Param('userId') userId: string,
+    @Body() body: UpdateBusinessUserInput,
+  ): Promise<unknown> {
+    return this.svc.updateBusinessUser(id, userId, body);
   }
 }

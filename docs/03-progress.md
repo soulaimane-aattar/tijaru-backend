@@ -31,6 +31,50 @@
 
 **Next.** Redeploy (`make deploy`) so prod image picks up corrected font path; no migration/decision needed.
 
+### 2026-08-26 — Web+backend: super-admin per-business configuration console
+
+**Step.** Gave the super admin full per-business control from the web console: fine TVA (active rates + default), the bons→stock toggle, modules, and employee roles/access — extending the existing platform-admin module rather than adding a new one.
+
+**Backend.**
+- `Business.defaultVatRate Int @default(20)` + migration `20260825170000_business_default_vat_rate`; surfaced on `/auth/me`.
+- `PATCH admin/platform/businesses/:id/settings` extended: accepts exact `enabledVatRates[]`, `defaultVatRate`, and `bonsAffectStock` alongside legacy `multiWarehouse`/`tvaEnabled`. Validation: the default must belong to the FINAL enabled set (`default_vat_not_enabled` conflict otherwise). Everything audited via `update-settings`.
+- New `PATCH admin/platform/businesses/:id/users/:userId` (`UpdateBusinessUserSchema`: role enum / active): tenant-scoped lookup (cross-business ids 404), guards the **last active owner** against demotion/deactivation (`conflict`), audited as `update-business-user`.
+- Specs +6: settings save/validation/bons-flag, role change, last-owner guard, cross-business 404. Fixed stale auth-spec fixture for the new me() field.
+
+**Web.**
+- `pa-api.ts`: typed `PASettingsPayload/Result`, `updateBusinessUser`, `PABusinessRole`; PABusiness carries `defaultVatRate`/`bonsAffectStock`.
+- **PABusinessDetailPage**: replaced the coarse TVA on/off card with a Configuration card — active-rate chips (0/7/10/14/20, last-one-removal guarded client-side), default-rate radio group among enabled chips, multi-stock toggle, and "Les bons consomment le stock" toggle; one Save posts rates+default together. New Employés card: inline role `<select>` + access `Toggle` per employee (immediate PATCH). Auth store/bridge/types/fixtures carry `defaultVatRate`.
+
+**Tests.** Playwright **34 → 40** (`pa-config.spec`, first PA-console suite): chips render pressed-state from settings, disable-rate+save POSTs exact `{enabledVatRates, defaultVatRate}`, default switch included in payload, bons toggle PATCHes immediately, module toggles through `/modules`, employee role/access PATCHes asserted per user.
+
+**Gotchas.** PA pages live at TOP-LEVEL paths (`/businesses/:id`) inside the shared AdminShell — no `/platform-admin` prefix (spec initially 404'd to `/`). Super-admin sessions bootstrap from the JWT alone (`type:'platform-admin'`) — no API mock needed for auth. Repeated this session: arm `waitForRequest` before the triggering action; mutation dispatch races any post-action expect.
+
+**Result.** ✅ backend: tsc clean · PA+auth jest **58/58** · nest build ✓. ✅ web: tsc · svelte-check 0/0 · eslint · vitest 146/146 · build ✓ · Playwright **40/40**.
+
+**Addendum (same day) — module depth for Customers/Suppliers.**
+- `customers` + `suppliers` joined the togglable module set: PA console Modules card, signup seed (`prisma-auth.repository` defaultModules), and **backfill migration `20260825171000_backfill_customers_suppliers_modules`** — without it, gating the nav would have hidden Clients/Fournisseurs for every existing tenant (module rows are opt-in per business).
+- AdminShell: Clients/Fournisseurs nav entries now carry `module:` flags (same filter as all gated entries).
+- Playwright +3 (→ **43/43**): customers module toggle through `/modules`; tenant-nav depth — Clients link disappears when the module is inactive and reappears when active. Gotcha: nav rendering requires BOTH the module AND the capability (`suppliers.manage`, …) — module-only fixtures hide links for cap reasons and mask regressions.
+
+### 2026-08-26 — Web+backend: configurable bon→stock integration + workflow tests
+
+**Step.** Made the bon signing → stock-ledger effect configurable per business and pinned the whole workflow with tests on both sides. The ledger effect already existed (`sign()`: BL `out` decrements via reason `vente`, BR `in_` increments via `achat`, RT retour increments, BC order never touches stock; default warehouse; only lines with `sent > 0`; idempotent) — what was missing was the toggle and any UI to sign from.
+
+**Backend.**
+- `Business.bonsAffectStock Boolean @default(true)` + migration `20260825160000_bons_affect_stock`; surfaced on `/auth/me` (auth repo select + domain type + service payload, default true when business row missing).
+- `sign()` reads the flag before its transaction: disabled → documentary signature only (markSigned, no ledger post). Availability stays enforced by the ledger's conditional decrement — an insufficient-stock BL rejects and marks nothing signed.
+- Unit specs (+7): multi-product/multi-qty posting with exact negative deltas (BL) / positive (BR), sent=0 lines skipped, BC no-op, idempotency, flag-off skip, missing-row defaults ON, insufficient-stock rollback. Fixed pre-existing spec breakage from an earlier commit (`ExpenseRef.businessId` fixtures ×3, auth me fixture).
+
+**Web.**
+- Auth store/bridge/types carry `bonsAffectStock` (default true).
+- **BonsPage**: `Signer` action on unsigned non-order rows (hidden entirely when the feature is off), pending state, success invalidates bons/movements/products/reports, failure surfaces a `role="alert"` banner ("… le bon reste non signé") so insufficient stock is recoverable.
+
+**Tests.** Playwright **29 → 34** (`bon-stock.spec`): Signer visibility matrix (unsigned BL/BR yes · signed · BC no), BL sign → POST `{}` asserted → journal shows `Sortie -4 vente` against the bon ref → list flips to `✓ Oui`, BR sign → `Entrée +20 achat`, feature-off hides Signer everywhere while PDF/WA actions remain, insufficient-stock 422 shows the alert and keeps the retry button. RTL unchanged (146/146).
+
+**Infra gotcha worth remembering:** Playwright's `reuseExistingServer` silently served **other projects' dev servers** to the suite — first `cgp-dev` on :5174 (its login page for every test), then `epargn.app` grabbed :5176 mid-run. E2e now pins its own port (**5179**) with `--strictPort`; never reuse the shared Vite default here. Also: arm `waitForRequest` BEFORE the click — a routed fulfill can beat a post-click listener; and don't assert refetches of unmounted queries (`invalidateQueries` only refetches active observers).
+
+**Result.** ✅ backend: prisma generate · tsc clean · affected jest suites **95/95** · nest build ✓ (migrations apply on next deploy). ✅ web: tsc · svelte-check 0/0 · eslint · vitest 146/146 · build ✓ · Playwright **34/34**.
+
 ### 2026-08-25 — Mobile+backend: fix bon thermal print & PDF download
 
 **Step.** Fixed two broken flows on the mobile app: thermal print of bons was crashing, PDF share/download was failing silently.

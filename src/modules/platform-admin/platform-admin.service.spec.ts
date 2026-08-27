@@ -521,4 +521,125 @@ describe('PlatformAdminService', () => {
       expect(result).toEqual({ total: 10, active: 6, expired: 1, pending: 2, suspended: 1 });
     });
   });
+
+  describe('updateSettings — fine TVA + bons stock flag', () => {
+    const baseBiz = {
+      id: 'b1',
+      name: 'Épice Atlas',
+      city: 'Casa',
+      multiWarehouse: true,
+      enabledVatRates: [0, 7, 10, 14, 20],
+      defaultVatRate: 20,
+      bonsAffectStock: true,
+    };
+
+    it('saves an exact rate set with its default and returns the full settings', async () => {
+      const prisma = mockPrisma();
+      prisma.business.findUnique.mockResolvedValue(baseBiz);
+      prisma.business.update.mockResolvedValue({});
+      prisma.business.findUniqueOrThrow.mockResolvedValue({
+        multiWarehouse: true,
+        enabledVatRates: [0, 10],
+        defaultVatRate: 10,
+        bonsAffectStock: true,
+      });
+
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv);
+      const result = await svc.updateSettings('b1', { enabledVatRates: [0, 10], defaultVatRate: 10 });
+
+      expect(prisma.business.update).toHaveBeenCalledWith({
+        where: { id: 'b1' },
+        data: { enabledVatRates: [0, 10], defaultVatRate: 10 },
+      });
+      expect(result).toEqual({
+        multiWarehouse: true,
+        enabledVatRates: [0, 10],
+        defaultVatRate: 10,
+        bonsAffectStock: true,
+      });
+    });
+
+    it('rejects a default VAT rate that is not in the final enabled set', async () => {
+      const prisma = mockPrisma();
+      prisma.business.findUnique.mockResolvedValue(baseBiz);
+
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv);
+      // 14 requested as default but not part of the enabled set.
+      await expect(
+        svc.updateSettings('b1', { enabledVatRates: [0, 20], defaultVatRate: 14 }),
+      ).rejects.toMatchObject({ response: { code: 'conflict' } });
+      expect(prisma.business.update).not.toHaveBeenCalled();
+    });
+
+    it('persists bonsAffectStock=false (bons stop consuming stock)', async () => {
+      const prisma = mockPrisma();
+      prisma.business.findUnique.mockResolvedValue(baseBiz);
+      prisma.business.update.mockResolvedValue({});
+      prisma.business.findUniqueOrThrow.mockResolvedValue({
+        multiWarehouse: true,
+        enabledVatRates: [0, 7, 10, 14, 20],
+        defaultVatRate: 20,
+        bonsAffectStock: false,
+      });
+
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv);
+      const result = await svc.updateSettings('b1', { bonsAffectStock: false });
+
+      expect(prisma.business.update).toHaveBeenCalledWith({
+        where: { id: 'b1' },
+        data: { bonsAffectStock: false },
+      });
+      expect(result.bonsAffectStock).toBe(false);
+    });
+  });
+
+  describe('updateBusinessUser — employee access from the super admin', () => {
+    const employee = {
+      id: 'u2',
+      businessId: 'b1',
+      name: 'Hicham',
+      email: 'hicham@biz.ma',
+      role: 'cashier',
+      active: true,
+    };
+
+    it('changes an employee role', async () => {
+      const prisma = mockPrisma();
+      prisma.user.findFirst.mockResolvedValue(employee);
+      prisma.user.update.mockResolvedValue({ ...employee, role: 'manager' });
+      prisma.platformAuditLog.create.mockResolvedValue({});
+
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv);
+      const result = await svc.updateBusinessUser('b1', 'u2', { role: 'manager' });
+
+      expect(prisma.user.update).toHaveBeenCalledWith({
+        where: { id: 'u2' },
+        data: { role: 'manager' },
+        select: { id: true, name: true, email: true, role: true, active: true },
+      });
+      expect(result.role).toBe('manager');
+    });
+
+    it('blocks deactivating the last active owner', async () => {
+      const prisma = mockPrisma();
+      prisma.user.findFirst.mockResolvedValue({ ...employee, role: 'owner' });
+      prisma.user.count.mockResolvedValue(0); // no other active owner
+
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv);
+      await expect(svc.updateBusinessUser('b1', 'u2', { active: false })).rejects.toMatchObject({
+        response: { code: 'conflict' },
+      });
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('404s when the user belongs to another business', async () => {
+      const prisma = mockPrisma();
+      prisma.user.findFirst.mockResolvedValue(null);
+
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv);
+      await expect(
+        svc.updateBusinessUser('b1', 'u-elsewhere', { role: 'viewer' }),
+      ).rejects.toBeInstanceOf(NotFoundError);
+    });
+  });
 });

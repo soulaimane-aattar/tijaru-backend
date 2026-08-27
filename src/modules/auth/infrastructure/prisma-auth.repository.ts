@@ -138,7 +138,16 @@ export class PrismaAuthRepository extends AuthRepository {
           role: BuiltInRole.owner,
         },
       });
-      const defaultModules = ['stock', 'pos', 'expenses', 'purchase-orders', 'inventory', 'reports'];
+      const defaultModules = [
+        'stock',
+        'pos',
+        'expenses',
+        'purchase-orders',
+        'inventory',
+        'reports',
+        'customers',
+        'suppliers',
+      ];
       await tx.businessModule.createMany({
         data: defaultModules.map((moduleId) => ({
           businessId: business.id,
@@ -168,6 +177,7 @@ export class PrismaAuthRepository extends AuthRepository {
         enabledVatRates: true,
         multiWarehouse: true,
         bonsAffectStock: true,
+        defaultVatRate: true,
       },
     });
   }
