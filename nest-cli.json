@@ -4,7 +4,7 @@
   "sourceRoot": "src",
   "compilerOptions": {
     "deleteOutDir": true,
-    "assets": [{ "include": "common/pdf/fonts/**/*.ttf", "outDir": "dist" }],
+    "assets": [{ "include": "common/pdf/fonts/**/*.ttf", "outDir": "dist/src" }],
     "watchAssets": true
   }
 }

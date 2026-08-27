@@ -21,6 +21,16 @@
 
 ## Log
 
+### 2026-08-27 — Fix: BC/bon PDF download 500 (Arabic font asset path mismatch)
+
+**Bug.** Mobile TestFlight: `UnableToDownloadException … response has status 500` opening a purchase-order PDF (`GET purchase-orders/:id/pdf`, same code path as delivery-note PDFs).
+
+**Root cause.** `nest-cli.json` asset rule copied `common/pdf/fonts/**/*.ttf` to `dist/`, but tsc (no `rootDir` strip, `outDir: ./dist`) compiles to `dist/src/...` (entrypoint `dist/src/main.js`). `arabic-fonts.ts`'s `path.join(__dirname, 'fonts')` resolves to `dist/src/common/pdf/fonts` at runtime — file didn't exist there (only `dist/common/pdf/fonts`). `registerFont` threw ENOENT inside `DeliveryNotePdfService.render()`'s Promise executor → unhandled rejection → 500 in prod images (only prod: dev runs via ts-node/jest straight from `src`, masking it).
+
+**Fix.** `nest-cli.json`: asset `outDir` `"dist"` → `"dist/src"`. Verified: `rm -rf dist && npm run build` now places `dist/src/common/pdf/fonts/*.ttf` matching runtime `__dirname`. `delivery-note-pdf.service.spec.ts` still green (2/2, ts-jest reads `src` directly, doesn't exercise the asset-copy path).
+
+**Next.** Redeploy (`make deploy`) so prod image picks up corrected font path; no migration/decision needed.
+
 ### 2026-08-25 — Mobile+backend: fix bon thermal print & PDF download
 
 **Step.** Fixed two broken flows on the mobile app: thermal print of bons was crashing, PDF share/download was failing silently.
