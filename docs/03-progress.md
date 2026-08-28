@@ -21,6 +21,12 @@
 
 ## Log
 
+### 2026-08-28 — Mobile: thermal bon print truncated + simpler PrintableBon
+- **Step:** BLE thermal print of a bon printed only the two dashed separators (everything below the fold missing) while POS receipts printed fine. Cause: `captureRef` on iOS uses `drawViewHierarchyInRect`, which only rasterises the on-screen part; the bon's table sat below `PrintPreview`'s 65%-height scaled viewport. Fix (mobile repo): `src/services/printer/bitmap.ts` → `useRenderInContext: true` (full layer tree, ignores visibility/ancestor transform); `src/hooks/usePrinter.ts` waits 2 rAF before capture. `src/components/PrintableBon.tsx` rewritten as receipt-style 576px layout: centered header, dashed separators, N°/Date/party meta, two-row lines (label / `qty x pu … total`), big Total — no boxed table, no filled header, no alt-row tint (same primitives as `PrintableReceipt`, known-good on cheap printers). Backend A4 carnet PDF untouched.
+- **Result:** ✅ `npx tsc --noEmit` clean in mobile (only pre-existing `baseUrl` deprecation notice). Device print not yet re-run — needs user test on the BLE printer.
+- **Decisions:** none.
+- **Next:** user prints a bon on device; if still truncated on Android, move printable out of the scaled `PrintPreview` wrapper into an offscreen unscaled container.
+
 ### 2026-08-27 — Fix: BC/bon PDF download 500 (Arabic font asset path mismatch)
 
 **Bug.** Mobile TestFlight: `UnableToDownloadException … response has status 500` opening a purchase-order PDF (`GET purchase-orders/:id/pdf`, same code path as delivery-note PDFs).
