@@ -21,6 +21,12 @@
 
 ## Log
 
+### 2026-08-29 — Product `nameFr` field for French names on printed bons
+- **Step:** Added optional `nameFr` (`name_fr`) column to Product model (Prisma schema + manual migration SQL). Backend DTO (`CreateProductSchema`) accepts `nameFr`; `CreateProductData` interface updated; Prisma spreads it through automatically. Mobile: `Product` type gains `nameFr: string | null`. Product creation form (`app/products/new.tsx`) gets "Nom (français)" `<Field>` with hint. Bon creation (`app/bons/new.tsx:284`) changed from `label: prod.name` to `label: prod.nameFr ?? prod.name`.
+- **Result:** ✅ mobile jest 66/66, backend `tsc --noEmit` clean. Migration pending DB apply (`prisma migrate dev` — DB not running locally).
+- **Decisions:** D-028.
+- **Next:** Apply migration on running DB. User tests creating product with French name, then creating bon — label should show French name on printed ticket.
+
 ### 2026-08-29 — French-only bon printing + business logo support
 - **Step:** Replaced blanket `transliterate()` wrapping with targeted approach: UI labels print in French (forced `lng: 'fr'` at call site), only Arabic user data (product/client/business names) is transliterated. Added `kind: 'raw'` to `TicketLine` union for inline ESC/POS bytes. Backend: `POST/GET/DELETE /admin/logo` endpoints in `AdminController` using `LocalStorageService` (follows products image pattern). `PdfBusinessInfo` now includes `logo` field; `GET /delivery-notes/:id` returns `businessLogo`. Mobile: `logo-cache.ts` — fetches logo, Skia decode → 1-bit threshold → ESC/POS raster, cached in memory. Settings screen gains logo upload card (`expo-image-picker`). `useBusinessLogoUrl`, `useUploadLogo`, `useRemoveLogo` hooks in `features/admin/api.ts`. i18n keys added (fr/en/ar).
 - **Result:** ✅ mobile jest 66/66 (17 bon-ticket tests incl. 3 new: logo raw line, no-logo, French-labels-only). Backend `tsc --noEmit` clean. No migration needed — `Business.logo` column already exists.

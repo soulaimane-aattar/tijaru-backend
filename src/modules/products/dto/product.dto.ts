@@ -26,6 +26,7 @@ export const StockEntrySchema = z.object({
 
 export const CreateProductSchema = z.object({
   name: z.string().min(1).max(160),
+  nameFr: z.string().max(160).optional(),
   barcode: ean13,
   sku: z.string().min(1).max(40),
   categoryId: z.string().cuid(),

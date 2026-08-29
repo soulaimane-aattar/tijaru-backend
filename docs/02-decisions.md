@@ -2,6 +2,11 @@
 
 > One entry per significant decision. Newest on top. Format: date · decision · why · rejected alternatives.
 
+## D-028 — 2026-08-29 · Product `nameFr` field for French names on printed bons
+- **Decision:** Added optional `nameFr` (`name_fr`) column to `products` table. Mobile bon creation uses `product.nameFr ?? product.name` as the denormalized `label` snapshot. Product form gains "Nom (français)" optional field. Existing bons keep their stored labels unchanged.
+- **Why:** User rejected transliteration for product names — phonetic Arabic→Latin is unhelpful for inventory items. Actual French product names are needed for professional bons. Field is optional so products entered in Latin need no extra work.
+- **Rejected:** OCR/AI translation of product names (overkill, product names are domain-specific); mandatory French name (would block Arabic-only users); backfilling existing bon labels (denormalized snapshot — changing stored bons is wrong).
+
 ## D-027 — 2026-08-29 · Bon printing uses French UI labels + business logo; transliteration narrowed to user data only
 - **Decision:** `buildBonTicketLines` no longer wraps every string in `transliterate()`. UI labels (N°, Date, Client, TOTAL, Signé) are French — call site forces `lng: 'fr'` via `bonTicketLabels((k) => i18n.t(k, { lng: 'fr' }))`. Only user data (businessName, partyName, line.label) is transliterated when it contains Arabic. New `kind: 'raw'` TicketLine variant carries pre-encoded ESC/POS bytes (logo bitmap). Backend gains `POST/GET/DELETE /admin/logo` endpoints (follows products image pattern). Mobile settings gets logo upload card via `expo-image-picker`. `logo-cache.ts` fetches logo, decodes via Skia, thresholds to 1-bit, converts to ESC/POS raster, caches in memory.
 - **Why:** User wants professional French bons, not transliterated Arabic labels. Transliterating "Bon de livraison" to itself was a no-op; transliterating Arabic UI labels produced unreadable phonetics for French speakers. French labels are the natural choice for Moroccan SMB receipts. Logo adds brand identity to printed bons.

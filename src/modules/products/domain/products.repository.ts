@@ -46,6 +46,7 @@ export interface StockLevelInput {
 
 export interface CreateProductData {
   name: string;
+  nameFr?: string | undefined;
   barcode: string;
   sku: string;
   categoryId: string;
