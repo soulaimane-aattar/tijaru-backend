@@ -163,6 +163,7 @@ export interface PdfBusinessInfo {
   address: string | null;
   ice: string | null;
   phone: string | null;
+  logo: string | null;
 }
 
 export interface PdfPartyInfo {

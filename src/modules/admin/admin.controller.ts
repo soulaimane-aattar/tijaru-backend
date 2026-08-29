@@ -1,7 +1,23 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, UsePipes } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  Res,
+  UploadedFile,
+  UseInterceptors,
+  UsePipes,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import type { Response } from 'express';
 
 import { RequireCap } from '../../common/decorators/require-cap.decorator';
+import { ValidationError } from '../../common/errors';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 
 import { AdminPolicyService } from './application/admin-policy.service';
@@ -109,5 +125,37 @@ export class AdminController {
   @UsePipes(new ZodValidationPipe(PatchSecurityPolicySchema))
   patchPolicy(@Body() body: PatchSecurityPolicyInput): Promise<unknown> {
     return this.policy.patch(body);
+  }
+
+  // ─── Business logo ────────────────────────────────────────────────────────
+
+  private static readonly MIME_BY_EXT: Record<string, string> = {
+    png: 'image/png',
+    webp: 'image/webp',
+    jpg: 'image/jpeg',
+  };
+
+  @Get('logo')
+  @RequireCap('settings.manage')
+  async getLogo(@Res() res: Response): Promise<void> {
+    const { buffer, ext } = await this.settings.readLogo();
+    res.setHeader('content-type', AdminController.MIME_BY_EXT[ext] ?? 'image/png');
+    res.setHeader('cache-control', 'private, max-age=3600');
+    res.send(buffer);
+  }
+
+  @Post('logo')
+  @RequireCap('settings.manage')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 2 * 1024 * 1024 } }))
+  uploadLogo(@UploadedFile() file: Express.Multer.File | undefined): Promise<unknown> {
+    if (!file) throw new ValidationError('file is required');
+    return this.settings.uploadLogo(file.buffer);
+  }
+
+  @Delete('logo')
+  @HttpCode(204)
+  @RequireCap('settings.manage')
+  async removeLogo(): Promise<void> {
+    await this.settings.removeLogo();
   }
 }

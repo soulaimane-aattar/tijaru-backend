@@ -87,7 +87,7 @@ export class DeliveryNotesController {
       this.svc.get(businessId, id),
       this.pdfInfo.getBusiness(businessId),
     ]);
-    return { ...note, businessName: biz?.name ?? null };
+    return { ...note, businessName: biz?.name ?? null, businessLogo: biz?.logo ?? null };
   }
 
   @Post()

@@ -17,7 +17,7 @@ export class PrismaDeliveryPdfInfoLookup extends DeliveryPdfInfoLookup {
   async getBusiness(businessId: string): Promise<PdfBusinessInfo | null> {
     const b = await this.prisma.business.findUnique({
       where: { id: businessId },
-      select: { name: true, address: true, ice: true, phone: true },
+      select: { name: true, address: true, ice: true, phone: true, logo: true },
     });
     return b ?? null;
   }
