@@ -52,7 +52,8 @@ const repo = (): jest.Mocked<InvoicesRepository> =>
 
 const baseInput = (over: Partial<CreateInvoiceInput> = {}): CreateInvoiceInput => ({
   customerId: CUSTOMER,
-  dueDate: new Date('2026-09-10'),
+  date: new Date('2026-01-15'),
+  dueDate: new Date('2026-02-15'),
   lines: [
     { productId: PROD_A, label: 'Huile Lesieur 5L', qty: 2, priceHt: 100, vat: 20, discount: 0 },
   ],
