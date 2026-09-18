@@ -39,6 +39,8 @@ const MATRIX: Record<CapabilityId, Record<RoleId, boolean>> = {
   'activity.view':             { owner: true, admin: true, manager: false, stockkeeper: false, cashier: false, viewer: false },
   'billing.manage':            { owner: true, admin: false, manager: false, stockkeeper: false, cashier: false, viewer: false },
   'settings.manage':           { owner: true, admin: true, manager: false, stockkeeper: false, cashier: false, viewer: false },
+  'hr.view':                   { owner: true, admin: true, manager: true, stockkeeper: true, cashier: true, viewer: true },
+  'hr.manage':                 { owner: true, admin: true, manager: true, stockkeeper: false, cashier: false, viewer: false },
 };
 
 describe('permissions matrix (spec §6.2)', () => {
@@ -53,9 +55,9 @@ describe('permissions matrix (spec §6.2)', () => {
     expect(ROLE_PERMS.owner.size).toBe(CAPABILITY_IDS.length);
   });
 
-  it('viewer is read-only: dashboard, products, expenses, reports', () => {
+  it('viewer is read-only: dashboard, products, expenses, reports, hr', () => {
     expect([...ROLE_PERMS.viewer].sort()).toEqual(
-      ['dashboard.view', 'products.view', 'expenses.view', 'reports.view'].sort(),
+      ['dashboard.view', 'products.view', 'expenses.view', 'reports.view', 'hr.view'].sort(),
     );
   });
 });
