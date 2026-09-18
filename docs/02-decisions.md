@@ -2,6 +2,11 @@
 
 > One entry per significant decision. Newest on top. Format: date · decision · why · rejected alternatives.
 
+## D-029 — 2026-09-18 · Web HR team-dashboard nav item gated on `hr.manage`, not `hr.view`
+- **Decision:** Task 7 brief specified `cap: 'hr.view'` for the `/hr` sidebar item and page guard. Used `hr.manage` instead, matching the actual backend requirement (`GET /hr/attendance/team` is `@RequireCap('hr.manage')` in `backend/src/modules/hr/hr.controller.ts`).
+- **Why:** `hr.view` only grants access to check-in/check-out/own-history endpoints; the team dashboard calls the manage-scoped endpoint. Following the brief literally would show a nav item and page that 403s for any user who only has `hr.view`.
+- **Rejected:** Following the brief as written (`hr.view`) — would ship a broken/misleading nav entry for non-manager staff.
+
 ## D-028 — 2026-08-29 · Product `nameFr` field for French names on printed bons
 - **Decision:** Added optional `nameFr` (`name_fr`) column to `products` table. Mobile bon creation uses `product.nameFr ?? product.name` as the denormalized `label` snapshot. Product form gains "Nom (français)" optional field. Existing bons keep their stored labels unchanged.
 - **Why:** User rejected transliteration for product names — phonetic Arabic→Latin is unhelpful for inventory items. Actual French product names are needed for professional bons. Field is optional so products entered in Latin need no extra work.

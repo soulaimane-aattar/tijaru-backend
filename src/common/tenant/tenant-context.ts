@@ -26,6 +26,8 @@ export const TENANT_MODELS: ReadonlySet<string> = new Set([
   'ExpenseCategoryDef',
   'Attendance',
   'AttendancePause',
+  'Estimate',
+  'EstimateLine',
 ]);
 
 type Store = { businessId: string };

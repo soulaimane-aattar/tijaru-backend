@@ -21,6 +21,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { CategoriesModule } from './modules/categories/categories.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { DeliveryNotesModule } from './modules/delivery-notes/delivery-notes.module';
+import { EstimatesModule } from './modules/estimates/estimates.module';
 import { ExpenseCategoriesModule } from './modules/expense-categories/expense-categories.module';
 import { ExpensesModule } from './modules/expenses/expenses.module';
 import { HealthModule } from './modules/health/health.module';
@@ -57,6 +58,7 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module';
     PurchaseOrdersModule,
     InventoryModule,
     InvoicesModule,
+    EstimatesModule,
     DeliveryNotesModule,
     ReportsModule,
     ActivityModule,
