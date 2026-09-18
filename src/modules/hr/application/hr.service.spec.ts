@@ -1,6 +1,6 @@
 import type { AuthUser } from '../../../common/auth/auth-user.type';
 import { ConflictError, DomainError } from '../../../common/errors';
-import type { AttendanceRow } from '../domain/hr.repository';
+import type { AttendanceRow, HrRepository } from '../domain/hr.repository';
 
 import { HrService } from './hr.service';
 
@@ -39,7 +39,7 @@ const repo = () =>
     listHistory: jest.fn().mockResolvedValue({ items: [], total: 0 }),
     findOpenOlderThan: jest.fn().mockResolvedValue([]),
     forceCheckOut: jest.fn().mockResolvedValue(undefined),
-  }) as any;
+  }) as jest.Mocked<HrRepository>;
 
 describe('HrService.checkIn', () => {
   it('creates attendance when no open record exists', async () => {
@@ -62,7 +62,7 @@ describe('HrService.checkOut', () => {
     r.sumPauseMinutes.mockResolvedValue(0);
     await new HrService(r).checkOut({ lat: 33.59, lng: -7.61 }, actor);
     expect(r.checkOut).toHaveBeenCalled();
-    const callArgs = r.checkOut.mock.calls[0][1];
+    const callArgs = r.checkOut.mock.calls[0]![1];
     expect(callArgs.workedHours).toBeCloseTo(2, 0);
   });
 
@@ -76,7 +76,7 @@ describe('HrService.checkOut', () => {
     r.findOpenByUser.mockResolvedValue(row({ checkIn: new Date(Date.now() - 3600_000 * 4) }));
     r.sumPauseMinutes.mockResolvedValue(60);
     await new HrService(r).checkOut({ lat: 33.59, lng: -7.61 }, actor);
-    const callArgs = r.checkOut.mock.calls[0][1];
+    const callArgs = r.checkOut.mock.calls[0]![1];
     expect(callArgs.workedHours).toBeCloseTo(3, 0);
   });
 

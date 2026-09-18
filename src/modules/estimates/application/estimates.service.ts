@@ -101,7 +101,7 @@ export class EstimatesService {
     businessId: string,
     id: string,
     input: UpdateEstimateInput,
-    actor: AuthUser,
+    _actor: AuthUser,
   ): Promise<EstimateDetail> {
     const existing = await this.repo.findDetail(businessId, id);
     if (!existing) throw new NotFoundError('Estimate', id);

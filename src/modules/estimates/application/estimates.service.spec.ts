@@ -47,7 +47,7 @@ const repo = (): jest.Mocked<EstimatesRepository> =>
     list: jest.fn(),
     update: jest.fn().mockImplementation((_id, d) => Promise.resolve(detail(d))),
     remove: jest.fn().mockResolvedValue(undefined),
-  }) as any;
+  }) as jest.Mocked<EstimatesRepository>;
 
 const baseInput = (): CreateEstimateInput => ({
   customerId: CUSTOMER,

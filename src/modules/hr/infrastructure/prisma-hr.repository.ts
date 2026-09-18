@@ -15,6 +15,7 @@ const includePayload = {
   user: { select: { name: true } },
 } as const;
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function toRow(r: any): AttendanceRow {
   return {
     id: r.id,
