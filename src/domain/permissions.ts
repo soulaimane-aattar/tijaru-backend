@@ -51,6 +51,8 @@ export const CAPABILITY_IDS = [
   'activity.view',
   'billing.manage',
   'settings.manage',
+  'hr.view',
+  'hr.manage',
 ] as const;
 export type CapabilityId = (typeof CAPABILITY_IDS)[number];
 
@@ -69,7 +71,8 @@ export type CapabilityMeta = {
     | 'reports'
     | 'journal'
     | 'billing'
-    | 'settings';
+    | 'settings'
+    | 'hr';
   labelFr: string;
 };
 
@@ -100,6 +103,8 @@ export const CAPABILITIES: Record<CapabilityId, CapabilityMeta> = {
   'activity.view': { id: 'activity.view', domain: 'journal', labelFr: "Journal d'activité" },
   'billing.manage': { id: 'billing.manage', domain: 'billing', labelFr: 'Facturation' },
   'settings.manage': { id: 'settings.manage', domain: 'settings', labelFr: 'Paramètres' },
+  'hr.view': { id: 'hr.view', domain: 'hr', labelFr: 'Voir pointage' },
+  'hr.manage': { id: 'hr.manage', domain: 'hr', labelFr: 'Gérer pointage' },
 };
 
 /**
@@ -130,6 +135,8 @@ export const ROLE_PERMS: Record<RoleId, ReadonlySet<CapabilityId>> = {
     'reports.view',
     'activity.view',
     'settings.manage',
+    'hr.view',
+    'hr.manage',
   ]),
   manager: new Set<CapabilityId>([
     'dashboard.view',
@@ -147,6 +154,8 @@ export const ROLE_PERMS: Record<RoleId, ReadonlySet<CapabilityId>> = {
     'expenses.create',
     'expenses.edit',
     'reports.view',
+    'hr.view',
+    'hr.manage',
   ]),
   stockkeeper: new Set<CapabilityId>([
     'dashboard.view',
@@ -155,13 +164,15 @@ export const ROLE_PERMS: Record<RoleId, ReadonlySet<CapabilityId>> = {
     'stock.out',
     'stock.transfer',
     'inventory.count',
+    'hr.view',
   ]),
-  cashier: new Set<CapabilityId>(['dashboard.view', 'products.view', 'stock.out']),
+  cashier: new Set<CapabilityId>(['dashboard.view', 'products.view', 'stock.out', 'hr.view']),
   viewer: new Set<CapabilityId>([
     'dashboard.view',
     'products.view',
     'expenses.view',
     'reports.view',
+    'hr.view',
   ]),
 };
 

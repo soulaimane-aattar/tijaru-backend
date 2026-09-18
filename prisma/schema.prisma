@@ -106,6 +106,7 @@ model Business {
   deliveryNotes      DeliveryNote[]
   estimates          Estimate[]
   expenseCategoryDefs ExpenseCategoryDef[]
+  attendances         Attendance[]
 
   @@map("businesses")
 }
@@ -179,6 +180,7 @@ model User {
   deliveryNotes     DeliveryNote[]         @relation("DeliveryNoteIssuer")
   estimatesIssued   Estimate[]             @relation("EstimateIssuer")
   bonPayments       DeliveryNotePayment[]  @relation("PaymentCreator")
+  attendances       Attendance[]
 
   @@index([businessId])
   @@map("users")
@@ -961,4 +963,43 @@ model EstimateLine {
 
   @@index([estimateId])
   @@map("estimate_lines")
+}
+
+// ─── HR / Attendance ─────────────────────────────────────────────────────────
+
+model Attendance {
+  id         String    @id @default(cuid())
+  businessId String    @map("business_id")
+  userId     String    @map("user_id")
+  checkIn    DateTime  @default(now()) @map("check_in")
+  checkOut   DateTime? @map("check_out")
+  workedHours Float?   @map("worked_hours")
+  latIn      Float     @map("lat_in")
+  lngIn      Float     @map("lng_in")
+  latOut     Float?    @map("lat_out")
+  lngOut     Float?    @map("lng_out")
+  note       String?
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  business Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pauses   AttendancePause[]
+
+  @@unique([userId, checkOut], name: "one_open_per_user")
+  @@index([businessId, userId])
+  @@index([businessId, checkIn])
+  @@map("attendances")
+}
+
+model AttendancePause {
+  id           String    @id @default(cuid())
+  attendanceId String    @map("attendance_id")
+  startedAt    DateTime  @default(now()) @map("started_at")
+  endedAt      DateTime? @map("ended_at")
+
+  attendance Attendance @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
+
+  @@index([attendanceId])
+  @@map("attendance_pauses")
 }
