@@ -24,6 +24,7 @@ import { DeliveryNotesModule } from './modules/delivery-notes/delivery-notes.mod
 import { ExpenseCategoriesModule } from './modules/expense-categories/expense-categories.module';
 import { ExpensesModule } from './modules/expenses/expenses.module';
 import { HealthModule } from './modules/health/health.module';
+import { HrModule } from './modules/hr/hr.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { InvoicesModule } from './modules/invoices/invoices.module';
 import { MovementsModule } from './modules/movements/movements.module';
@@ -65,6 +66,7 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module';
     HealthModule,
     PlatformAdminModule,
     StockLedgerModule,
+    HrModule,
     LoggerModule.forRootAsync({
       inject: [ENV_TOKEN],
       useFactory: (env: Env) => ({
