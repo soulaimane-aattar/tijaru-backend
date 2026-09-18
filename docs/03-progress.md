@@ -16,10 +16,23 @@
 | 8+ | POS, customers, suppliers, purchase-orders, admin, tenancy | all | 🟡 in progress — screens exist, gates unverified |
 | 10 | Unified auth + subscriptions + super admin panel | backend + web | ✅ 12 tasks complete, final review passed, branch ready |
 | 9 | Dépenses + receipt OCR | backend + ocr-service + web | ✅ migration applied, 196 unit + 132 e2e green, live OCR verified in browser |
+| 11 | HR / Attendance (Pointage) | backend + mobile + web | ✅ 29 suites / 465 tests green, all 3 repos committed |
 
 > **retro** = phase completed before this log existed; status inferred from code, gate not re-verified. First future session touching a retro phase: verify its gate, then flip to plain ✅.
 
 ## Log
+
+### 2026-09-18 — HR/Attendance (Pointage) module — full implementation complete
+- **Step:** New `hr` module across all 3 repos. Backend (branch `feat/hr-attendance`, 6 commits): Prisma models `Attendance` + `AttendancePause` with migration, `hr.view`/`hr.manage` capabilities added to all roles, tenant scoping registered, full DDD module (`modules/hr/` — DTOs, abstract repo, Prisma repo, service with check-in/out/pause/today/history/team/auto-checkout cron, controller with 6 endpoints), `hr` added to default modules seed. Mobile (2 commits): API layer (6 react-query hooks), PunchScreen (biometric via `expo-local-authentication`, GPS via `expo-location`, live timer, status card, action buttons), HistoryScreen, HR tile in More tab. Web (1 commit): HrPage team table + date filters + status badges, API hooks, route, sidebar, i18n fr/en/ar.
+- **Result:** ✅ Backend: 29 suites / 465 tests all passing, `tsc --noEmit` clean, `npm run build` clean. Mobile: `tsc --noEmit` clean, eslint clean. Web: `tsc --noEmit` clean, `vite build` succeeds. Backend commits: `fef05b3..0ef7924`. Mobile commits: `c2e6e47`, `051edc8`. Web commit: `9268a67`.
+- **Decisions:** D-029 (hr.manage for web team dashboard). Ruling: `@@unique([userId, checkOut])` allows multiple NULLs — service-layer guard sufficient for MVP.
+- **Next:** Merge `feat/hr-attendance` to main. Manual testing: check-in/out flow on mobile with biometric + GPS, web dashboard with real data.
+
+### 2026-09-18 — HR/Attendance Task 7: Web team attendance dashboard
+- **Step:** Web repo (`/Users/soul/WORKSPACE/souldev/GestionStock/web`). Added `src/api/hr-queries.ts` (`useTeamAttendance` hook hitting `GET /hr/attendance/team`), `src/pages/HrPage.tsx` (Pointage équipe: date-range filter default last-7-days, table Employé/Date/Arrivée/Départ/Travaillé/Pauses/Statut, status badges Présent/En pause/Terminé, loading/empty states, total count). Route `/hr` in `App.tsx` (`RoleGuard requires="user"`). Sidebar item in `AdminShell.tsx` (`groups.analyse`, `Clock` icon, `cap: 'hr.manage'`, `module: 'hr'`) + `pageKeys` title-bar entry. `CapabilityId` in `src/api/types.ts` gained `hr.view`/`hr.manage` (was missing entirely). i18n keys (`nav.hr`, `subtitles.hr`, `hr.*` block) added to fr/en/ar.
+- **Result:** ✅ `tsc --noEmit` clean, `eslint` clean on touched files (pre-existing unrelated `import/order` errors in `App.tsx` left untouched), `vite build` succeeds. No test suite exists for page components in this repo (no sibling `.test.tsx` for comparable pages) — N/A. Commit `9268a67` (web repo) "feat(hr): add web attendance dashboard with team table".
+- **Decisions:** D-029 (used `hr.manage` cap instead of brief's `hr.view`, matching actual backend endpoint requirement).
+- **Next:** Task 8 (if any) — mobile HR screens or admin roles page surfacing `hr.view`/`hr.manage` in the role matrix, if not already covered.
 
 ### 2026-08-29 — Product `nameFr` field for French names on printed bons
 - **Step:** Added optional `nameFr` (`name_fr`) column to Product model (Prisma schema + manual migration SQL). Backend DTO (`CreateProductSchema`) accepts `nameFr`; `CreateProductData` interface updated; Prisma spreads it through automatically. Mobile: `Product` type gains `nameFr: string | null`. Product creation form (`app/products/new.tsx`) gets "Nom (français)" `<Field>` with hint. Bon creation (`app/bons/new.tsx:284`) changed from `label: prod.name` to `label: prod.nameFr ?? prod.name`.
