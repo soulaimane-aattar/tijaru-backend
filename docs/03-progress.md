@@ -17,11 +17,18 @@
 | 10 | Unified auth + subscriptions + super admin panel | backend + web | ✅ 12 tasks complete, final review passed, branch ready |
 | 9 | Dépenses + receipt OCR | backend + ocr-service + web | ✅ migration applied, 196 unit + 132 e2e green, live OCR verified in browser |
 | 11 | HR / Attendance (Pointage) | backend + mobile + web | ✅ 29 suites / 465 tests green, all 3 repos committed |
-| 12 | Marketplace (B2B orders, tiers, webhooks) | backend + web + mobile | 🟡 phase 2/6 done — listings, catalog, orders + FSM |
+| 12 | Marketplace (B2B orders, tiers, webhooks) | backend + web + mobile | 🟡 phase 3/6 done — backend complete (listings, orders, integrations) |
 
 > **retro** = phase completed before this log existed; status inferred from code, gate not re-verified. First future session touching a retro phase: verify its gate, then flip to plain ✅.
 
 ## Log
+
+### 2026-09-19 — Marketplace phase 3: webhooks + API keys (backend complete)
+- **Step:** New `integrations` module. `Webhook`/`WebhookDelivery` outbox (Saleor `EventDelivery` shape): `WebhookDispatcher.enqueue()` writes rows, `drain()` POSTs with `Tijaru-Event` / `Tijaru-Delivery-Id` / `Tijaru-Signature: sha256=<HMAC over raw body>`, retry `attempts²` minutes, `MAX_ATTEMPTS = 8` → `failed`. Cron `*/1` is inert under `NODE_ENV=test` (a minute-poller across e2e suites made them flaky); tests call `drain()`. Order events carry an `odoo` block mirroring `sale.order` (`name`, `client_order_ref`, `product_uom_qty`, `price_unit`, `tax_rate`). API keys in the Medusa `api_key` shape (public prefix, sha256 hash, `revokedAt`, `lastUsedAt`); `JwtAuthGuard` accepts a `tj_…` bearer and synthesises an owner AuthUser for that tenant, so **every existing endpoint** serves machine callers — no second API surface. CRUD at `/integrations/{webhooks,api-keys,events}` behind `settings.manage`.
+- **Result:** ✅ `tsc` + `eslint src test --max-warnings=0` clean. Unit **33 suites / 508 tests** (+6). E2E **17 suites / 224 tests** (+10 in `test/integrations.e2e-spec.ts`, run against a real `node:http` receiver): signature verifies with the issued secret and fails with a wrong one; receiver 500 → delivery stays `pending`, `attempts=1`, `lastError` contains 500, `nextAt` pushed out; `order.created` body carries `data.odoo.order_line[0] = {product_uom_qty:4, price_unit:50, tax_rate:20}`; API key authenticates `GET /orders/received` and 401s after revoke. Four consecutive clean full-suite runs. Commit `2ec0a9e`.
+- **Fix to pre-existing breakage:** `prisma/seed.ts` never disconnected its module-level `PrismaClient`; each e2e spec file imports the module, so pools accumulated until Postgres answered `FATAL: sorry, too many clients already` (surfaced only once three more spec files existed). `runSeed()` now disconnects.
+- **Decisions:** none new.
+- **Next:** Phase 4 — web UI (5 Svelte islands: listings + tiers editor, price groups, catalog/cart, orders reçues/envoyées, order detail), nav + i18n fr/en/ar, customers price-group select, bell mapping for `orderReceived`/`orderStatus`.
 
 ### 2026-09-19 — Marketplace phase 2: orders + state machine
 - **Step:** `POST /orders` (buyer), `GET /orders/sent|received(/:id)`, `POST /orders/received/:id/status` (seller), `POST /orders/sent/:id/cancel` (buyer). `domain/order-state-machine.ts` = Vendure-style transition table + per-actor rule (buyer may only `pending→cancelled`); responses expose `allowedNext`. Prices resolved server-side from the seller ladder + buyer price group — client prices ignored. One seller per order, no self-ordering, per-seller `CMD-YYYY-NNNN`. Shipping posts through `StockLedgerService` inside the update transaction (D-017). Notifications both directions (`orderReceived` / `orderStatus`). Seed reset now clears marketplace rows first (Restrict FKs on product/customer). Detail + transition routes are split per side because `CapsGuard` ANDs caps.
