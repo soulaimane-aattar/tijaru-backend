@@ -17,11 +17,17 @@
 | 10 | Unified auth + subscriptions + super admin panel | backend + web | ✅ 12 tasks complete, final review passed, branch ready |
 | 9 | Dépenses + receipt OCR | backend + ocr-service + web | ✅ migration applied, 196 unit + 132 e2e green, live OCR verified in browser |
 | 11 | HR / Attendance (Pointage) | backend + mobile + web | ✅ 29 suites / 465 tests green, all 3 repos committed |
-| 12 | Marketplace (B2B orders, tiers, webhooks) | backend + web + mobile | 🟡 phase 1/6 done — listings, price groups, catalog |
+| 12 | Marketplace (B2B orders, tiers, webhooks) | backend + web + mobile | 🟡 phase 2/6 done — listings, catalog, orders + FSM |
 
 > **retro** = phase completed before this log existed; status inferred from code, gate not re-verified. First future session touching a retro phase: verify its gate, then flip to plain ✅.
 
 ## Log
+
+### 2026-09-19 — Marketplace phase 2: orders + state machine
+- **Step:** `POST /orders` (buyer), `GET /orders/sent|received(/:id)`, `POST /orders/received/:id/status` (seller), `POST /orders/sent/:id/cancel` (buyer). `domain/order-state-machine.ts` = Vendure-style transition table + per-actor rule (buyer may only `pending→cancelled`); responses expose `allowedNext`. Prices resolved server-side from the seller ladder + buyer price group — client prices ignored. One seller per order, no self-ordering, per-seller `CMD-YYYY-NNNN`. Shipping posts through `StockLedgerService` inside the update transaction (D-017). Notifications both directions (`orderReceived` / `orderStatus`). Seed reset now clears marketplace rows first (Restrict FKs on product/customer). Detail + transition routes are split per side because `CapsGuard` ANDs caps.
+- **Result:** ✅ `tsc --noEmit` + `eslint src test --max-warnings=0` clean. Unit **32 suites / 502 tests** (+5 FSM). E2E **16 suites / 214 tests** (+16 in `test/orders.e2e-spec.ts`): qty 150 priced at 85 → HT 12750 / TVA 2550 / TTC 15300; stock 500 → 350 on ship with a `Movement{type:out, reason:vente, ref:CMD-…}`; ship of 400 against 350 → **409** with status left at `in_progress` and stock unchanged; third tenant 404s the order; buyer cancel allowed only while `pending` (403 after). Commit `2bdd52e`.
+- **Decisions:** none new (D-030/D-031 stand).
+- **Next:** Phase 3 — integrations: webhook outbox + HMAC signature and per-tenant API keys accepted by `JwtAuthGuard`.
 
 ### 2026-09-19 — Marketplace phase 1: listings, price groups, cross-tenant catalog
 - **Step:** New `marketplace` module on branch `feat/marketplace` (branched off `feat/hr-attendance`). Schema: `PriceGroup`, `Listing`, `ListingTier`, `Order`/`OrderLine`, `Webhook`, `WebhookDelivery`, `ApiKey`; `Customer` gains `priceGroupId` + `buyerBusinessId` (`@@unique([businessId, buyerBusinessId])`); `NotificationType` gains `orderReceived`/`orderStatus`. `TenantContext.runUnscoped()` added. `domain/pricing.ts` (`resolveUnitPrice`), DDD module (dto/domain/application/infrastructure + controller), caps `marketplace.manage`/`marketplace.buy`, module gate `marketplace` added to both seeds. Order/webhook/apikey models are shipped but unused until phases 2–3. Plan: `~/.claude/plans/make-aplinig-the-add-rosy-liskov.md`. Modeled on Odoo `product.pricelist.item`, Vendure `OrderProcess`, Saleor webhook `EventDelivery`, Medusa `api_key` (URLs in the plan).
