@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { IntegrationsModule } from '../integrations/integrations.module';
 import { StockLedgerModule } from '../stock-ledger/stock-ledger.module';
 
 import { MarketplaceService } from './application/marketplace.service';
@@ -12,7 +13,7 @@ import { MarketplaceController } from './marketplace.controller';
 import { OrdersController } from './orders.controller';
 
 @Module({
-  imports: [StockLedgerModule],
+  imports: [StockLedgerModule, IntegrationsModule],
   controllers: [MarketplaceController, OrdersController],
   providers: [
     MarketplaceService,

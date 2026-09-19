@@ -552,6 +552,11 @@ export async function runSeed(opts: { silent?: boolean } = {}): Promise<void> {
   void cMounir;
   void cAicha;
   void cRachid;
+
+  // e2e suites import this module once per spec file; without an explicit
+  // disconnect each one leaks a connection pool and later suites hit
+  // "too many clients already".
+  await prisma.$disconnect();
 }
 
 if (require.main === module) {

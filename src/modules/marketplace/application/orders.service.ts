@@ -3,6 +3,7 @@ import type { OrderStatus } from '@prisma/client';
 
 import type { AuthUser } from '../../../common/auth/auth-user.type';
 import { DomainError, NotFoundError } from '../../../common/errors';
+import { WebhookDispatcher } from '../../integrations/application/webhook-dispatcher.service';
 import { allowedNext, assertTransition, type Actor } from '../domain/order-state-machine';
 import type {
   ListOrdersResult,
@@ -20,7 +21,42 @@ export type OrderView = OrderDetail & { allowedNext: OrderStatus[]; side: Actor 
 
 @Injectable()
 export class OrdersService {
-  constructor(private readonly repo: OrdersRepository) {}
+  constructor(
+    private readonly repo: OrdersRepository,
+    private readonly webhooks: WebhookDispatcher,
+  ) {}
+
+  /**
+   * Webhook body. Field names shadow Odoo's `sale.order` so a connector can map
+   * them straight across (`name`, `client_order_ref`, `product_uom_qty`, …).
+   */
+  private static payload(order: OrderDetail): Record<string, unknown> {
+    return {
+      id: order.id,
+      number: order.number,
+      status: order.status,
+      sellerBusinessId: order.sellerBusinessId,
+      buyerBusinessId: order.buyerBusinessId,
+      buyerName: order.buyerName,
+      subtotalHt: order.subtotalHt,
+      vatTotal: order.vatTotal,
+      totalTtc: order.totalTtc,
+      externalRef: order.externalRef,
+      lines: order.lines,
+      odoo: {
+        name: order.number,
+        client_order_ref: order.externalRef,
+        partner_ref: order.buyerBusinessId,
+        order_line: order.lines.map((l) => ({
+          product_ref: l.productId,
+          name: l.name,
+          product_uom_qty: l.qty,
+          price_unit: l.unitPrice,
+          tax_rate: l.vat,
+        })),
+      },
+    };
+  }
 
   /**
    * Place an order as the buyer tenant. Prices are resolved server-side from
@@ -98,6 +134,7 @@ export class OrdersService {
       `Nouvelle commande ${order.number}`,
       `${buyerName} a commandé ${lines.length} article(s) — ${order.totalTtc} MAD`,
     );
+    await this.webhooks.enqueue(seller, 'order.created', OrdersService.payload(order));
 
     return this.view(order, 'buyer');
   }
@@ -146,6 +183,11 @@ export class OrdersService {
         ? `${updated.sellerName} a mis à jour votre commande : ${to}`
         : `${updated.buyerName} a annulé la commande`,
     );
+
+    // Both parties may have integrations watching the order.
+    const event = { ...OrdersService.payload(updated), previousStatus: current.status };
+    await this.webhooks.enqueue(updated.sellerBusinessId, 'order.status_changed', event);
+    await this.webhooks.enqueue(updated.buyerBusinessId, 'order.status_changed', event);
 
     return this.view(updated, side);
   }
