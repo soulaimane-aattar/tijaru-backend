@@ -17,11 +17,18 @@
 | 10 | Unified auth + subscriptions + super admin panel | backend + web | ✅ 12 tasks complete, final review passed, branch ready |
 | 9 | Dépenses + receipt OCR | backend + ocr-service + web | ✅ migration applied, 196 unit + 132 e2e green, live OCR verified in browser |
 | 11 | HR / Attendance (Pointage) | backend + mobile + web | ✅ 29 suites / 465 tests green, all 3 repos committed |
-| 12 | Marketplace (B2B orders, tiers, webhooks) | backend + web + mobile | 🟡 phase 4/6 done — backend + web complete; mobile next |
+| 12 | Marketplace (B2B orders, tiers, webhooks) | backend + web + mobile | 🟡 phase 5/6 done — backend + web + mobile; only push left |
 
 > **retro** = phase completed before this log existed; status inferred from code, gate not re-verified. First future session touching a retro phase: verify its gate, then flip to plain ✅.
 
 ## Log
+
+### 2026-09-19 — Marketplace phase 5: mobile screens (mobile repo)
+- **Step:** `app/marketplace/index.tsx` (buyer catalog, per-buyer tier price with a "Votre tarif" badge, stepper cart whose first tap jumps to the listing minimum, sticky total + checkout), `app/orders/index.tsx` (reçues/envoyées toggle, status badges), `app/orders/[id].tsx` (lines, totals, notes, actions rendered from the server's `allowedNext`). `src/features/marketplace/{api,keys,index}.ts` with a key factory (cache is persisted → keys must stay byte-identical). `marketplace.*` added to `CapabilityId`; two More-tab tiles gated on `hasModule('marketplace')` + `hasCap('marketplace.buy')`. Design-system only: `Card`/`Badge`/`Btn`/`Empty`/`Field`/`ScreenHeader`/`Icon`, `spacing.*` tokens, no raw emoji in `<Text>`.
+- **Result:** ✅ `npm test` **7 suites / 66 tests**; `eslint` clean on the new/changed files; `tsc --noEmit` reports only the **pre-existing** `tsconfig.json(12,5) TS5101 baseUrl deprecated` (no code type errors — the repo-wide `npm run lint` also has 30 pre-existing errors in untouched files, e.g. `src/ui/demo-banner.tsx` restricted imports). Commit `d17bf8d` (mobile repo).
+- **Caveat:** the screens have **not** been driven on a simulator/device yet — only the API they call is verified (e2e + live browser). Next session: run Expo and walk catalog → order → status.
+- **Decisions:** none new.
+- **Next:** Phase 6 — Expo push notifications (`PushToken` table, `POST /me/push-token`, send on order events), or merge the three branches first.
 
 ### 2026-09-19 — Marketplace phase 4: web UI + super-admin module toggle (web repo)
 - **Step:** Four Svelte islands (D-023): `pages/marketplace/ListingsPage.svelte` (publish a product, price groups, tier-ladder editor), `pages/marketplace/CatalogPage.svelte` (buyer catalog, per-buyer price, local cart, checkout), `pages/orders/OrdersPage.svelte` (reçues/envoyées tabs + status filter), `pages/orders/OrderDetailPage.svelte` (lines, totals, notes, actions built from the server's `allowedNext` — the FSM is never re-derived client-side). New `api/marketplace.ts` + `api/marketplace-queries.ts`, `api.put()`, `marketplace.*` in `CapabilityId`, routes in `App.tsx`, nav entries + `pageKeys` in `AdminShell.tsx`, fr/en/ar strings. **Super-admin:** `PABusinessDetailPage.tsx` `MODULES` had drifted from the backend — `estimates`, `hr` and `marketplace` were gated but not toggleable; all three added (the backend DTO already accepts any module id).
