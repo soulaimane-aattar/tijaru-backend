@@ -2,6 +2,17 @@
 
 > One entry per significant decision. Newest on top. Format: date · decision · why · rejected alternatives.
 
+## D-031 — 2026-09-19 · Tier price = cheapest of the buyer's group ladder and the public ladder
+- **Decision:** `resolveUnitPrice` consults both the buyer's price-group tiers and the public (`priceGroupId = NULL`) tiers, and applies whichever matching step is cheaper. Odoo's "first matching item in the partner's pricelist wins" rule is kept *within* each ladder (highest `min_quantity <= qty`).
+- **Why:** With a single-ladder rule, a customer put into a discount group could be quoted *more* than a walk-in buyer at a quantity where only the public ladder has a deeper step (group 100→85 vs public 1000→80 at qty 1000). A group assignment must never raise a price.
+- **Rejected:** Pure Odoo semantics (partner pricelist only) — surfaces the inversion above, and forces sellers to duplicate every public step into every group. Medusa's `min_quantity`/`max_quantity` windows — ranges add a second failure mode (gaps) for no gain here.
+
+## D-030 — 2026-09-19 · Marketplace models stay out of `TENANT_MODELS`; cross-tenant reads use explicit scope switches
+- **Decision:** `Listing`, `ListingTier`, `PriceGroup`, `Order`, `OrderLine`, `Webhook`, `WebhookDelivery`, `ApiKey` are **not** registered in `TENANT_MODELS`; their repositories filter on `businessId` themselves. When a marketplace query must touch a *tenant-scoped* model belonging to the other party (e.g. the seller's `Customer` row read during a buyer's request), it runs inside `TenantContext.run(otherBusinessId, …)` or the new `TenantContext.runUnscoped(…)`.
+- **Why:** A marketplace request is inherently two-tenant (buyer reads seller inventory; seller notifies buyer). The auto-scoping middleware (D-021) would silently rewrite those queries to the caller's own `businessId` and return empty results. Keeping the new models out of the set makes the cross-tenant intent explicit at the query site instead of fighting the middleware.
+- **Caveat found while implementing:** Prisma promises are **lazy** — a query returned from the callback without being awaited dispatches *after* the scope is restored, so the middleware re-applies the caller's tenant. Both helpers must be used as `await ctx.run(bid, async () => prisma…)`.
+- **Rejected:** Adding the models to `TENANT_MODELS` and bypassing with `$queryRaw` — loses type safety on every catalog read. A second unscoped PrismaClient — two connection pools and two middleware stories.
+
 ## D-029 — 2026-09-18 · Web HR team-dashboard nav item gated on `hr.manage`, not `hr.view`
 - **Decision:** Task 7 brief specified `cap: 'hr.view'` for the `/hr` sidebar item and page guard. Used `hr.manage` instead, matching the actual backend requirement (`GET /hr/attendance/team` is `@RequireCap('hr.manage')` in `backend/src/modules/hr/hr.controller.ts`).
 - **Why:** `hr.view` only grants access to check-in/check-out/own-history endpoints; the team dashboard calls the manage-scoped endpoint. Following the brief literally would show a nav item and page that 403s for any user who only has `hr.view`.

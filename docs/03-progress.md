@@ -17,10 +17,17 @@
 | 10 | Unified auth + subscriptions + super admin panel | backend + web | ✅ 12 tasks complete, final review passed, branch ready |
 | 9 | Dépenses + receipt OCR | backend + ocr-service + web | ✅ migration applied, 196 unit + 132 e2e green, live OCR verified in browser |
 | 11 | HR / Attendance (Pointage) | backend + mobile + web | ✅ 29 suites / 465 tests green, all 3 repos committed |
+| 12 | Marketplace (B2B orders, tiers, webhooks) | backend + web + mobile | 🟡 phase 1/6 done — listings, price groups, catalog |
 
 > **retro** = phase completed before this log existed; status inferred from code, gate not re-verified. First future session touching a retro phase: verify its gate, then flip to plain ✅.
 
 ## Log
+
+### 2026-09-19 — Marketplace phase 1: listings, price groups, cross-tenant catalog
+- **Step:** New `marketplace` module on branch `feat/marketplace` (branched off `feat/hr-attendance`). Schema: `PriceGroup`, `Listing`, `ListingTier`, `Order`/`OrderLine`, `Webhook`, `WebhookDelivery`, `ApiKey`; `Customer` gains `priceGroupId` + `buyerBusinessId` (`@@unique([businessId, buyerBusinessId])`); `NotificationType` gains `orderReceived`/`orderStatus`. `TenantContext.runUnscoped()` added. `domain/pricing.ts` (`resolveUnitPrice`), DDD module (dto/domain/application/infrastructure + controller), caps `marketplace.manage`/`marketplace.buy`, module gate `marketplace` added to both seeds. Order/webhook/apikey models are shipped but unused until phases 2–3. Plan: `~/.claude/plans/make-aplinig-the-add-rosy-liskov.md`. Modeled on Odoo `product.pricelist.item`, Vendure `OrderProcess`, Saleor webhook `EventDelivery`, Medusa `api_key` (URLs in the plan).
+- **Result:** ✅ migration `20260919120000_marketplace` applied to :5433; `prisma migrate diff` → "empty migration" (no drift). `tsc --noEmit` clean, `eslint src --max-warnings=0` clean. Unit **31 suites / 497 tests** (was 29/465; +7 pricing, +2 permission-matrix rows). E2E **15 suites / 198 tests** (was 14/181; +17 in `test/marketplace.e2e-spec.ts`: cross-tenant 404s, cashier 403, module-disabled 403, duplicate/foreign tier rejection, own-listings hidden, tier resolution at qty 150 → 90 public / 85 group / 2000 → 80). Commit `75dcb01`.
+- **Decisions:** D-030 (cross-tenant scoping + lazy-Prisma caveat), D-031 (cheapest-of-two-ladders pricing).
+- **Next:** Phase 2 — orders: Vendure-style FSM (`pending→confirmed→in_progress→shipped→delivered`, `cancelled`), stock posted through `StockLedgerService` on `shipped`, notifications both directions, per-seller numbering.
 
 ### 2026-09-18 — HR/Attendance (Pointage) module — full implementation complete
 - **Step:** New `hr` module across all 3 repos. Backend (branch `feat/hr-attendance`, 6 commits): Prisma models `Attendance` + `AttendancePause` with migration, `hr.view`/`hr.manage` capabilities added to all roles, tenant scoping registered, full DDD module (`modules/hr/` — DTOs, abstract repo, Prisma repo, service with check-in/out/pause/today/history/team/auto-checkout cron, controller with 6 endpoints), `hr` added to default modules seed. Mobile (2 commits): API layer (6 react-query hooks), PunchScreen (biometric via `expo-local-authentication`, GPS via `expo-location`, live timer, status card, action buttons), HistoryScreen, HR tile in More tab. Web (1 commit): HrPage team table + date filters + status badges, API hooks, route, sidebar, i18n fr/en/ar.
