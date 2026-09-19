@@ -88,7 +88,7 @@ export async function runSeed(opts: { silent?: boolean } = {}): Promise<void> {
 
   // Module gates (ModuleGuard 403s any @RequiresModule route without a row).
   await prisma.businessModule.createMany({
-    data: ['stock', 'pos', 'expenses', 'purchase-orders', 'inventory', 'reports', 'invoices', 'delivery-notes'].map(
+    data: ['stock', 'pos', 'expenses', 'purchase-orders', 'inventory', 'reports', 'invoices', 'delivery-notes', 'marketplace'].map(
       (moduleId) => ({ businessId: business.id, moduleId, active: true }),
     ),
   });

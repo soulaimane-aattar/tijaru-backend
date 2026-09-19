@@ -53,6 +53,8 @@ export const CAPABILITY_IDS = [
   'settings.manage',
   'hr.view',
   'hr.manage',
+  'marketplace.manage',
+  'marketplace.buy',
 ] as const;
 export type CapabilityId = (typeof CAPABILITY_IDS)[number];
 
@@ -72,7 +74,8 @@ export type CapabilityMeta = {
     | 'journal'
     | 'billing'
     | 'settings'
-    | 'hr';
+    | 'hr'
+    | 'marketplace';
   labelFr: string;
 };
 
@@ -105,6 +108,16 @@ export const CAPABILITIES: Record<CapabilityId, CapabilityMeta> = {
   'settings.manage': { id: 'settings.manage', domain: 'settings', labelFr: 'Paramètres' },
   'hr.view': { id: 'hr.view', domain: 'hr', labelFr: 'Voir pointage' },
   'hr.manage': { id: 'hr.manage', domain: 'hr', labelFr: 'Gérer pointage' },
+  'marketplace.manage': {
+    id: 'marketplace.manage',
+    domain: 'marketplace',
+    labelFr: 'Gérer la vitrine et les commandes reçues',
+  },
+  'marketplace.buy': {
+    id: 'marketplace.buy',
+    domain: 'marketplace',
+    labelFr: 'Acheter sur la marketplace',
+  },
 };
 
 /**
@@ -137,6 +150,8 @@ export const ROLE_PERMS: Record<RoleId, ReadonlySet<CapabilityId>> = {
     'settings.manage',
     'hr.view',
     'hr.manage',
+    'marketplace.manage',
+    'marketplace.buy',
   ]),
   manager: new Set<CapabilityId>([
     'dashboard.view',
@@ -156,6 +171,8 @@ export const ROLE_PERMS: Record<RoleId, ReadonlySet<CapabilityId>> = {
     'reports.view',
     'hr.view',
     'hr.manage',
+    'marketplace.manage',
+    'marketplace.buy',
   ]),
   stockkeeper: new Set<CapabilityId>([
     'dashboard.view',

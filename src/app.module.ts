@@ -28,6 +28,7 @@ import { HealthModule } from './modules/health/health.module';
 import { HrModule } from './modules/hr/hr.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { InvoicesModule } from './modules/invoices/invoices.module';
+import { MarketplaceModule } from './modules/marketplace/marketplace.module';
 import { MovementsModule } from './modules/movements/movements.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { PlatformAdminModule } from './modules/platform-admin/platform-admin.module';
@@ -69,6 +70,7 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module';
     PlatformAdminModule,
     StockLedgerModule,
     HrModule,
+    MarketplaceModule,
     LoggerModule.forRootAsync({
       inject: [ENV_TOKEN],
       useFactory: (env: Env) => ({

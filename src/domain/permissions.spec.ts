@@ -41,6 +41,8 @@ const MATRIX: Record<CapabilityId, Record<RoleId, boolean>> = {
   'settings.manage':           { owner: true, admin: true, manager: false, stockkeeper: false, cashier: false, viewer: false },
   'hr.view':                   { owner: true, admin: true, manager: true, stockkeeper: true, cashier: true, viewer: true },
   'hr.manage':                 { owner: true, admin: true, manager: true, stockkeeper: false, cashier: false, viewer: false },
+  'marketplace.manage':        { owner: true, admin: true, manager: true, stockkeeper: false, cashier: false, viewer: false },
+  'marketplace.buy':           { owner: true, admin: true, manager: true, stockkeeper: false, cashier: false, viewer: false },
 };
 
 describe('permissions matrix (spec §6.2)', () => {

@@ -40,6 +40,15 @@ export class TenantContext {
     return this.als.run({ businessId }, fn);
   }
 
+  /**
+   * Run `fn` with no tenant scope, so the middleware leaves its queries alone.
+   * Only for deliberately cross-tenant work (marketplace, D-030): the caller is
+   * then responsible for filtering on businessId itself.
+   */
+  runUnscoped<T>(fn: () => T): T {
+    return this.als.exit(fn);
+  }
+
   getBusinessId(): string | undefined {
     return this.als.getStore()?.businessId;
   }
