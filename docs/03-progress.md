@@ -17,11 +17,20 @@
 | 10 | Unified auth + subscriptions + super admin panel | backend + web | ✅ 12 tasks complete, final review passed, branch ready |
 | 9 | Dépenses + receipt OCR | backend + ocr-service + web | ✅ migration applied, 196 unit + 132 e2e green, live OCR verified in browser |
 | 11 | HR / Attendance (Pointage) | backend + mobile + web | ✅ 29 suites / 465 tests green, all 3 repos committed |
-| 12 | Marketplace (B2B orders, tiers, webhooks) | backend + web + mobile | 🟡 phase 3/6 done — backend complete (listings, orders, integrations) |
+| 12 | Marketplace (B2B orders, tiers, webhooks) | backend + web + mobile | 🟡 phase 4/6 done — backend + web complete; mobile next |
 
 > **retro** = phase completed before this log existed; status inferred from code, gate not re-verified. First future session touching a retro phase: verify its gate, then flip to plain ✅.
 
 ## Log
+
+### 2026-09-19 — Marketplace phase 4: web UI + super-admin module toggle (web repo)
+- **Step:** Four Svelte islands (D-023): `pages/marketplace/ListingsPage.svelte` (publish a product, price groups, tier-ladder editor), `pages/marketplace/CatalogPage.svelte` (buyer catalog, per-buyer price, local cart, checkout), `pages/orders/OrdersPage.svelte` (reçues/envoyées tabs + status filter), `pages/orders/OrderDetailPage.svelte` (lines, totals, notes, actions built from the server's `allowedNext` — the FSM is never re-derived client-side). New `api/marketplace.ts` + `api/marketplace-queries.ts`, `api.put()`, `marketplace.*` in `CapabilityId`, routes in `App.tsx`, nav entries + `pageKeys` in `AdminShell.tsx`, fr/en/ar strings. **Super-admin:** `PABusinessDetailPage.tsx` `MODULES` had drifted from the backend — `estimates`, `hr` and `marketplace` were gated but not toggleable; all three added (the backend DTO already accepts any module id).
+- **Result:** ✅ web gate: `tsc` clean · `svelte-check` **0 errors / 0 warnings** · `eslint src --max-warnings=0` clean (also fixed 2 pre-existing `import/order` errors) · `vitest` **146/146** · `vite build` ✓. Commit `735bb56` (web repo).
+  - **Browser, live against the API** (seller `youssef@elamrani.ma`, buyer tenant `Acheteur Demo SARL`): storefront shows the ladder and `Gros · 1 client`; buyer catalog shows **100,00 MAD → 85,00 MAD with a "Votre tarif" badge at qty 150**; order **CMD-2026-0002** placed from the UI (HT 12 750 · TVA 2 550 · TTC 15 300), buyer detail offers only **Annulée**; seller drove CMD-2026-0001 to **Livrée**, stock **500 → 350** with `out CMD-2026-0001 qty=150`; a `shipped` attempt against insufficient stock returned **409** and left the status untouched.
+  - **Super-admin toggle verified end to end:** switching Marketplace off + *Save modules* wrote `business_modules.marketplace=false` and `GET /marketplace/listings` answered **403**; switching back on restored it.
+- **Bug found and fixed in the browser:** the catalog quantity input was controlled (`value=` + `oninput`) while a price refetch fired on every keystroke — the re-render clobbered the field and `150` landed as `15`. Now `bind:value` with a getter/setter pair, and the quantity feeding the price query is debounced 400 ms.
+- **Decisions:** none new.
+- **Next:** Phase 5 — mobile (catalog + orders screens under `app/marketplace`, `app/orders`, linked from the More tab); phase 6 — Expo push.
 
 ### 2026-09-19 — Marketplace phase 3: webhooks + API keys (backend complete)
 - **Step:** New `integrations` module. `Webhook`/`WebhookDelivery` outbox (Saleor `EventDelivery` shape): `WebhookDispatcher.enqueue()` writes rows, `drain()` POSTs with `Tijaru-Event` / `Tijaru-Delivery-Id` / `Tijaru-Signature: sha256=<HMAC over raw body>`, retry `attempts²` minutes, `MAX_ATTEMPTS = 8` → `failed`. Cron `*/1` is inert under `NODE_ENV=test` (a minute-poller across e2e suites made them flaky); tests call `drain()`. Order events carry an `odoo` block mirroring `sale.order` (`name`, `client_order_ref`, `product_uom_qty`, `price_unit`, `tax_rate`). API keys in the Medusa `api_key` shape (public prefix, sha256 hash, `revokedAt`, `lastUsedAt`); `JwtAuthGuard` accepts a `tj_…` bearer and synthesises an owner AuthUser for that tenant, so **every existing endpoint** serves machine callers — no second API surface. CRUD at `/integrations/{webhooks,api-keys,events}` behind `settings.manage`.
