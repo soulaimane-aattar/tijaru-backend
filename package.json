@@ -1,6 +1,6 @@
 {
   "name": "stock-backend",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Tijaru — Inventory + POS + Admin API (NestJS)",
   "private": true,
   "type": "commonjs",
