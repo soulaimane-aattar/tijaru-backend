@@ -15,6 +15,8 @@ import type {
 } from '../domain/orders.repository';
 import { OrdersRepository } from '../domain/orders.repository';
 
+import { SELLABLE_SELLER } from './sellable-seller';
+
 const dec = (n: number | Prisma.Decimal): number =>
   typeof n === 'number' ? n : Number(n.toString());
 
@@ -87,7 +89,9 @@ export class PrismaOrdersRepository extends OrdersRepository {
 
   async findListings(ids: string[]): Promise<OrderableListing[]> {
     const rows = await this.prisma.listing.findMany({
-      where: { id: { in: ids } },
+      // Same seller-state gate as the catalog: a listing whose owner is
+      // suspended, expired or has the module off is not orderable.
+      where: { id: { in: ids }, business: SELLABLE_SELLER },
       include: { tiers: true },
     });
     return rows.map((l) => ({
@@ -147,13 +151,30 @@ export class PrismaOrdersRepository extends OrdersRepository {
     return `${prefix}${String(n + 1).padStart(4, '0')}`;
   }
 
+  /**
+   * `nextNumber` reads the highest number and adds one, so two orders placed
+   * with the same seller at the same instant pick the same one and the second
+   * trips `@@unique([sellerBusinessId, number])`. Retry on that collision with
+   * a freshly-read number rather than surfacing a 500.
+   */
   async create(data: OrderCreateData): Promise<OrderDetail> {
     const { lines, ...header } = data;
-    const order = await this.prisma.order.create({
-      data: { ...header, lines: { create: lines } },
-      include: DETAIL_INCLUDE,
-    });
-    return toDetail(order);
+    let number = header.number;
+
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        const order = await this.prisma.order.create({
+          data: { ...header, number, lines: { create: lines } },
+          include: DETAIL_INCLUDE,
+        });
+        return toDetail(order);
+      } catch (e) {
+        const collided =
+          e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002' && attempt < 5;
+        if (!collided) throw e;
+        number = await this.nextNumber(header.sellerBusinessId, number.slice(0, -4));
+      }
+    }
   }
 
   async findDetail(id: string): Promise<OrderDetail | null> {

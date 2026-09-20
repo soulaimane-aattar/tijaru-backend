@@ -3,7 +3,6 @@ import { Injectable } from '@nestjs/common';
 import { ConflictError, DomainError, NotFoundError } from '../../../common/errors';
 import type {
   CatalogResult,
-  CatalogRow,
   ListingRow,
   PriceGroupRow,
 } from '../domain/marketplace.repository';
@@ -15,7 +14,6 @@ import type {
   PriceGroupInput,
   TierInput,
   UpdateListingInput,
-  UpdatePriceGroupInput,
 } from '../dto/marketplace.dto';
 
 const round2 = (n: number): number => Math.round(n * 100) / 100;
@@ -48,16 +46,6 @@ export class MarketplaceService {
 
   createPriceGroup(businessId: string, input: PriceGroupInput): Promise<PriceGroupRow> {
     return this.repo.createPriceGroup(businessId, input);
-  }
-
-  async updatePriceGroup(
-    businessId: string,
-    id: string,
-    input: UpdatePriceGroupInput,
-  ): Promise<PriceGroupRow> {
-    const row = await this.repo.updatePriceGroup(businessId, id, input);
-    if (!row) throw new NotFoundError('PriceGroup', id);
-    return row;
   }
 
   async deletePriceGroup(businessId: string, id: string): Promise<void> {
@@ -144,12 +132,6 @@ export class MarketplaceService {
       page: query.page,
       pageSize: query.pageSize,
     });
-  }
-
-  async catalogItem(buyerBusinessId: string, id: string): Promise<CatalogRow> {
-    const row = await this.repo.findCatalogListing(id, buyerBusinessId);
-    if (!row) throw new NotFoundError('Listing', id);
-    return row;
   }
 
   listSellers(

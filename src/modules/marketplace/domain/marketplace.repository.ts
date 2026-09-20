@@ -82,11 +82,6 @@ export abstract class MarketplaceRepository {
     businessId: string,
     data: { name: string; isDefault: boolean },
   ): Promise<PriceGroupRow>;
-  abstract updatePriceGroup(
-    businessId: string,
-    id: string,
-    data: { name?: string | undefined; isDefault?: boolean | undefined },
-  ): Promise<PriceGroupRow | null>;
   abstract deletePriceGroup(businessId: string, id: string): Promise<boolean>;
 
   // listings (seller side)
@@ -110,7 +105,6 @@ export abstract class MarketplaceRepository {
 
   // catalog (buyer side, cross-tenant)
   abstract catalog(params: CatalogParams): Promise<CatalogResult>;
-  abstract findCatalogListing(id: string, buyerBusinessId: string): Promise<CatalogRow | null>;
   abstract listSellers(
     buyerBusinessId: string,
   ): Promise<{ id: string; name: string; city: string | null; listings: number }[]>;

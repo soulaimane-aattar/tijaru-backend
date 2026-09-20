@@ -291,6 +291,24 @@ describe('Marketplace orders — lifecycle (e2e)', () => {
       expect(still.body.status).toBe('in_progress');
     });
 
+    it('refuses to order from a seller whose subscription expired', async () => {
+      await prisma.business.update({
+        where: { id: sellerBusinessId },
+        data: { plan: 'expired' },
+      });
+
+      await api(app)
+        .post('/api/v1/orders')
+        .set(bearer(buyerToken))
+        .send({ lines: [{ listingId, qty: 10 }] })
+        .expect(404); // the listing is not orderable, so it does not resolve
+
+      await prisma.business.update({
+        where: { id: sellerBusinessId },
+        data: { plan: 'active' },
+      });
+    });
+
     it('lets the buyer cancel while pending', async () => {
       const res = await api(app)
         .post('/api/v1/orders')

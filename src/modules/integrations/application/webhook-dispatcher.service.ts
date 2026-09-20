@@ -7,6 +7,7 @@ import {
   nextAttemptAt,
   signPayload,
 } from '../domain/webhook-signature';
+import { webhookUrlRefusalReason } from '../domain/webhook-url';
 
 /** Events a tenant can subscribe to. Kept flat and stable for consumers. */
 export const WEBHOOK_EVENTS = ['order.created', 'order.status_changed'] as const;
@@ -85,6 +86,15 @@ export class WebhookDispatcher {
     secret: string,
     envelope: Record<string, unknown>,
   ): Promise<boolean> {
+    // Re-check the target on every attempt: a name that was public at
+    // registration can be re-pointed at the internal network afterwards.
+    const refusal = await webhookUrlRefusalReason(url);
+    if (refusal) {
+      await this.bumpAttempts(id, refusal);
+      this.log.warn(`webhook ${id} ${refusal}`);
+      return false;
+    }
+
     const body = JSON.stringify(envelope);
     try {
       const res = await fetch(url, {

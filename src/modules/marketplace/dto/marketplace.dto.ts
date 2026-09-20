@@ -1,7 +1,5 @@
 import { z } from 'zod';
 
-export const UnitSchema = z.enum(['piece', 'kg', 'g', 'litre', 'ml', 'carton', 'pack']);
-
 // ─── Price groups ────────────────────────────────────────────────────────────
 
 export const PriceGroupSchema = z.object({
@@ -9,9 +7,6 @@ export const PriceGroupSchema = z.object({
   isDefault: z.boolean().default(false),
 });
 export type PriceGroupInput = z.infer<typeof PriceGroupSchema>;
-
-export const UpdatePriceGroupSchema = PriceGroupSchema.partial();
-export type UpdatePriceGroupInput = z.infer<typeof UpdatePriceGroupSchema>;
 
 // ─── Listings ────────────────────────────────────────────────────────────────
 

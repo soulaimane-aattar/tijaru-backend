@@ -5,6 +5,7 @@ import { Injectable } from '@nestjs/common';
 import { NotFoundError } from '../../../common/errors';
 import { PrismaService } from '../../../common/prisma.service';
 import { generateApiKey } from '../domain/webhook-signature';
+import { assertPublicWebhookUrl } from '../domain/webhook-url';
 import type { CreateApiKeyInput, CreateWebhookInput, UpdateWebhookInput } from '../dto/integrations.dto';
 
 export type WebhookView = {
@@ -33,6 +34,7 @@ export class IntegrationsService {
   }
 
   async createWebhook(businessId: string, input: CreateWebhookInput): Promise<WebhookView> {
+    assertPublicWebhookUrl(input.url);
     const secret = input.secret ?? randomBytes(24).toString('hex');
     const row = await this.prisma.webhook.create({
       data: { businessId, url: input.url, events: input.events, secret },
@@ -46,6 +48,7 @@ export class IntegrationsService {
     id: string,
     input: UpdateWebhookInput,
   ): Promise<WebhookView> {
+    if (input.url !== undefined) assertPublicWebhookUrl(input.url);
     const { count } = await this.prisma.webhook.updateMany({
       where: { id, businessId },
       data: {

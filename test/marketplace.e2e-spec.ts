@@ -160,10 +160,11 @@ describe('Marketplace — listings, price groups, catalog (e2e)', () => {
         .expect(422);
     });
 
-    it('404s on another tenant’s listing', async () => {
+    it('404s when another tenant tries to edit the listing', async () => {
       await api(app)
-        .get(`/api/v1/marketplace/listings/${listingId}`)
+        .patch(`/api/v1/marketplace/listings/${listingId}`)
         .set(bearer(buyerToken))
+        .send({ active: false })
         .expect(404);
     });
   });
@@ -247,6 +248,44 @@ describe('Marketplace — listings, price groups, catalog (e2e)', () => {
       expect(res.body).toEqual([
         expect.objectContaining({ id: sellerBusinessId, listings: 1 }),
       ]);
+    });
+
+    it('hides a seller whose subscription expired', async () => {
+      await prisma.business.update({
+        where: { id: sellerBusinessId },
+        data: { plan: 'expired' },
+      });
+      const res = await api(app)
+        .get('/api/v1/marketplace/catalog')
+        .set(bearer(buyerToken))
+        .expect(200);
+      expect(res.body.items).toEqual([]);
+
+      await prisma.business.update({
+        where: { id: sellerBusinessId },
+        data: { plan: 'active' },
+      });
+    });
+
+    it('hides a seller that switched the marketplace module off', async () => {
+      await prisma.businessModule.update({
+        where: {
+          businessId_moduleId: { businessId: sellerBusinessId, moduleId: 'marketplace' },
+        },
+        data: { active: false },
+      });
+      const res = await api(app)
+        .get('/api/v1/marketplace/catalog')
+        .set(bearer(buyerToken))
+        .expect(200);
+      expect(res.body.items).toEqual([]);
+
+      await prisma.businessModule.update({
+        where: {
+          businessId_moduleId: { businessId: sellerBusinessId, moduleId: 'marketplace' },
+        },
+        data: { active: true },
+      });
     });
 
     it('403s when the module is disabled for the tenant', async () => {

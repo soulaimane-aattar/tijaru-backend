@@ -101,10 +101,15 @@ export class JwtAuthGuard implements CanActivate {
     if (!key || key.revokedAt || !apiKeyMatches(token, key.hash)) {
       throw new UnauthorizedError('Invalid API key');
     }
-    await this.prisma.apiKey.update({
-      where: { id: key.id },
-      data: { lastUsedAt: new Date() },
-    });
+    // Throttled: this runs on every API-key request, and "last used" to the
+    // minute is enough for the UI.
+    const staleAfterMs = 60_000;
+    if (!key.lastUsedAt || Date.now() - key.lastUsedAt.getTime() > staleAfterMs) {
+      await this.prisma.apiKey.update({
+        where: { id: key.id },
+        data: { lastUsedAt: new Date() },
+      });
+    }
 
     return {
       id: `apikey:${key.id}`,

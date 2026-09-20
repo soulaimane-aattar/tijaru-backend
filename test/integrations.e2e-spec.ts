@@ -105,6 +105,29 @@ describe('Integrations — webhooks + API keys (e2e)', () => {
       expect(list.body[0].secret).toBeUndefined();
     });
 
+    it('rejects a non-https target in production mode', async () => {
+      // The guard relaxes under NODE_ENV=test so the local receiver works;
+      // flip it to prove the production rule (SSRF: no internal targets).
+      const previous = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'production';
+      try {
+        for (const url of [
+          'http://hooks.example.com/h',
+          'https://127.0.0.1/h',
+          'https://169.254.169.254/latest/meta-data',
+          'https://localhost/h',
+        ]) {
+          await api(app)
+            .post('/api/v1/integrations/webhooks')
+            .set(bearer(sellerToken))
+            .send({ url, events: ['order.created'] })
+            .expect(400);
+        }
+      } finally {
+        process.env.NODE_ENV = previous;
+      }
+    });
+
     it('rejects an unknown event name', async () => {
       await api(app)
         .post('/api/v1/integrations/webhooks')

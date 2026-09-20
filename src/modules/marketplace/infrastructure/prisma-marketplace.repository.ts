@@ -15,6 +15,8 @@ import type {
 import { MarketplaceRepository } from '../domain/marketplace.repository';
 import { resolveUnitPrice, type Tier } from '../domain/pricing';
 
+import { SELLABLE_SELLER } from './sellable-seller';
+
 const dec = (n: number | Prisma.Decimal): number =>
   typeof n === 'number' ? n : Number(n.toString());
 
@@ -109,25 +111,6 @@ export class PrismaMarketplaceRepository extends MarketplaceRepository {
       return tx.priceGroup.create({ data: { businessId, ...data } });
     });
     return { id: row.id, name: row.name, isDefault: row.isDefault, customerCount: 0 };
-  }
-
-  async updatePriceGroup(
-    businessId: string,
-    id: string,
-    data: { name?: string; isDefault?: boolean },
-  ): Promise<PriceGroupRow | null> {
-    const existing = await this.prisma.priceGroup.findFirst({ where: { id, businessId } });
-    if (!existing) return null;
-    await this.prisma.$transaction(async (tx) => {
-      if (data.isDefault) {
-        await tx.priceGroup.updateMany({ where: { businessId }, data: { isDefault: false } });
-      }
-      await tx.priceGroup.update({ where: { id }, data });
-    });
-    const [row] = await this.listPriceGroups(businessId).then((rows) =>
-      rows.filter((r) => r.id === id),
-    );
-    return row ?? null;
   }
 
   async deletePriceGroup(businessId: string, id: string): Promise<boolean> {
@@ -253,6 +236,9 @@ export class PrismaMarketplaceRepository extends MarketplaceRepository {
       businessId: params.sellerId
         ? { equals: params.sellerId, not: params.buyerBusinessId }
         : { not: params.buyerBusinessId },
+      // A seller who is suspended, expired or has switched the module off
+      // cannot act on an order, so its listings must not be orderable either.
+      business: SELLABLE_SELLER,
       ...(params.q
         ? {
             OR: [
@@ -287,21 +273,11 @@ export class PrismaMarketplaceRepository extends MarketplaceRepository {
     };
   }
 
-  async findCatalogListing(id: string, buyerBusinessId: string): Promise<CatalogRow | null> {
-    const row = await this.prisma.listing.findFirst({
-      where: { id, active: true, businessId: { not: buyerBusinessId } },
-      include: CATALOG_INCLUDE,
-    });
-    if (!row) return null;
-    const groups = await this.priceGroupsFor(buyerBusinessId, [row.businessId]);
-    return toCatalogRow(row, groups.get(row.businessId) ?? null, 1);
-  }
-
   async listSellers(
     buyerBusinessId: string,
   ): Promise<{ id: string; name: string; city: string | null; listings: number }[]> {
     const rows = await this.prisma.business.findMany({
-      where: { listings: { some: { active: true } }, id: { not: buyerBusinessId } },
+      where: { listings: { some: { active: true } }, id: { not: buyerBusinessId }, ...SELLABLE_SELLER },
       select: {
         id: true,
         name: true,

@@ -29,8 +29,6 @@ import {
   ReplaceTiersSchema,
   type UpdateListingInput,
   UpdateListingSchema,
-  type UpdatePriceGroupInput,
-  UpdatePriceGroupSchema,
 } from './dto/marketplace.dto';
 
 @ApiTags('marketplace')
@@ -65,15 +63,6 @@ export class MarketplaceController {
     return this.svc.createPriceGroup(this.bid(), body);
   }
 
-  @Patch('price-groups/:id')
-  @RequireCap('marketplace.manage')
-  updatePriceGroup(
-    @Param('id') id: string,
-    @Body(new ZodValidationPipe(UpdatePriceGroupSchema)) body: UpdatePriceGroupInput,
-  ): Promise<unknown> {
-    return this.svc.updatePriceGroup(this.bid(), id, body);
-  }
-
   @Delete('price-groups/:id')
   @RequireCap('marketplace.manage')
   @HttpCode(204)
@@ -92,12 +81,6 @@ export class MarketplaceController {
     return this.svc.catalog(this.bid(), query);
   }
 
-  @Get('catalog/:id')
-  @RequireCap('marketplace.buy')
-  catalogItem(@Param('id') id: string): Promise<unknown> {
-    return this.svc.catalogItem(this.bid(), id);
-  }
-
   @Get('sellers')
   @RequireCap('marketplace.buy')
   sellers(): Promise<unknown> {
@@ -110,12 +93,6 @@ export class MarketplaceController {
   @RequireCap('marketplace.manage')
   listListings(): Promise<unknown> {
     return this.svc.listListings(this.bid());
-  }
-
-  @Get('listings/:id')
-  @RequireCap('marketplace.manage')
-  getListing(@Param('id') id: string): Promise<unknown> {
-    return this.svc.getListing(this.bid(), id);
   }
 
   @Post('listings')
