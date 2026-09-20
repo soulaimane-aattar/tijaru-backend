@@ -2,6 +2,16 @@
 
 > One entry per significant decision. Newest on top. Format: date · decision · why · rejected alternatives.
 
+## D-032 — 2026-09-20 · Webhook targets must be public https, re-checked on every delivery attempt
+- **Decision:** `assertPublicWebhookUrl` rejects non-https schemes, `localhost`/`*.internal`, and literal loopback / RFC1918 / link-local (incl. `169.254.169.254`) / CGNAT / multicast addresses at registration; `webhookUrlRefusalReason` re-runs that check **and resolves the hostname** immediately before each delivery attempt. Private targets are permitted only under `NODE_ENV=test`, where the e2e suite runs a receiver on `127.0.0.1`.
+- **Why:** The API container sits on the compose network beside postgres and `ocr`. Without this, any `settings.manage` user could register `http://postgres:5432` or the cloud metadata endpoint and read the per-attempt outcome back from `GET /integrations/webhooks/:id/deliveries` (`lastError` distinguishes "responded 500" from a refused connection) — a blind SSRF and internal port scanner. Registration-time validation alone does not close it: DNS can be re-pointed after the hook is saved, so the authoritative check has to sit next to `fetch`.
+- **Rejected:** An allow-list of customer domains (unworkable for self-serve tenants). An egress proxy / network policy (right answer at the infra layer, but not available in the current compose setup and not a reason to ship the hole). Trusting registration-time validation only (loses to DNS rebinding).
+
+## D-033 — 2026-09-20 · Marketplace visibility follows the seller's own subscription and module state
+- **Decision:** `SELLABLE_SELLER` (`status: active`, `plan in (trial, active)`, marketplace module active) filters both the catalog query and the listing lookup used by order creation.
+- **Why:** Listing visibility was decided by `Listing.active` alone, so a suspended or expired tenant kept collecting orders that `SubscriptionGuard` then blocked it from confirming or shipping — the buyer's order strands in `pending` with nobody able to move it. The seller's ability to *fulfil* is part of whether the offer is real.
+- **Rejected:** Letting the orders through and failing at ship time (too late — stock and buyer expectations are already committed). A nightly job that deactivates listings of lapsed tenants (a cron lag during which orders keep arriving).
+
 ## D-031 — 2026-09-19 · Tier price = cheapest of the buyer's group ladder and the public ladder
 - **Decision:** `resolveUnitPrice` consults both the buyer's price-group tiers and the public (`priceGroupId = NULL`) tiers, and applies whichever matching step is cheaper. Odoo's "first matching item in the partner's pricelist wins" rule is kept *within* each ladder (highest `min_quantity <= qty`).
 - **Why:** With a single-ladder rule, a customer put into a discount group could be quoted *more* than a walk-in buyer at a quantity where only the public ladder has a deeper step (group 100→85 vs public 1000→80 at qty 1000). A group assignment must never raise a price.

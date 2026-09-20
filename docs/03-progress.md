@@ -23,6 +23,19 @@
 
 ## Log
 
+### 2026-09-20 — Marketplace audit follow-ups (all 3 repos)
+- **Step:** `/audit` over the session's changes, then fixed every finding.
+  - **SSRF (the one FAIL):** new `integrations/domain/webhook-url.ts` — scheme/host validation at registration plus DNS-resolving re-check before each delivery attempt (D-032). Wired into `createWebhook`/`updateWebhook` and `WebhookDispatcher.deliver`.
+  - **Seller state:** `infrastructure/sellable-seller.ts` `SELLABLE_SELLER` now filters the catalog, `findCatalogListing`'s successor and `OrdersRepository.findListings`, so a suspended/expired/module-off seller neither shows nor takes orders (D-033).
+  - **Numbering race:** `create()` retries (≤5×) on `P2002` with a freshly-read number instead of 500ing when two buyers order from one seller at once.
+  - **API-key writes:** `lastUsedAt` is updated at most once a minute rather than on every request.
+  - **Dead code:** dropped `GET marketplace/catalog/:id`, `GET marketplace/listings/:id`, `PATCH marketplace/price-groups/:id`, `UnitSchema` and their service/repo methods. `GET marketplace/sellers` was instead **wired** into the web catalog as a seller filter.
+  - **Web:** nav `Item.anyCap` so Commandes shows for `marketplace.manage` *or* `.buy`; `NotificationsPage` tone map was keyed snake_case against a camelCase Prisma enum (every badge fell through to gray) — corrected and given French labels incl. the two order types.
+  - **Mobile:** Commandes tile unlocks on either marketplace capability.
+- **Result:** ✅ backend `tsc` + `eslint src test --max-warnings=0` clean, unit **34 suites / 535 tests** (+13: private-address matrix, scheme rules, rebinding refusals), e2e **17 suites / 228 tests** (+4: production-mode SSRF rejections incl. `169.254.169.254`, expired seller hidden, module-off seller hidden, ordering from an expired seller → 404). Web: `tsc` · `svelte-check` 0/0 · `eslint` clean · vitest **146/146** · build ✓. Mobile: eslint clean on touched files, jest **66/66**. Commits `0dfed03` (backend), `d9570fc` (web), `172c13b` (mobile).
+- **Decisions:** D-032 (webhook URL guard), D-033 (seller-state visibility).
+- **Next:** Phase 6 (Expo push) still open; mobile screens still need a run on a simulator.
+
 ### 2026-09-19 — Marketplace phase 5: mobile screens (mobile repo)
 - **Step:** `app/marketplace/index.tsx` (buyer catalog, per-buyer tier price with a "Votre tarif" badge, stepper cart whose first tap jumps to the listing minimum, sticky total + checkout), `app/orders/index.tsx` (reçues/envoyées toggle, status badges), `app/orders/[id].tsx` (lines, totals, notes, actions rendered from the server's `allowedNext`). `src/features/marketplace/{api,keys,index}.ts` with a key factory (cache is persisted → keys must stay byte-identical). `marketplace.*` added to `CapabilityId`; two More-tab tiles gated on `hasModule('marketplace')` + `hasCap('marketplace.buy')`. Design-system only: `Card`/`Badge`/`Btn`/`Empty`/`Field`/`ScreenHeader`/`Icon`, `spacing.*` tokens, no raw emoji in `<Text>`.
 - **Result:** ✅ `npm test` **7 suites / 66 tests**; `eslint` clean on the new/changed files; `tsc --noEmit` reports only the **pre-existing** `tsconfig.json(12,5) TS5101 baseUrl deprecated` (no code type errors — the repo-wide `npm run lint` also has 30 pre-existing errors in untouched files, e.g. `src/ui/demo-banner.tsx` restricted imports). Commit `d17bf8d` (mobile repo).
