@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import sharp from 'sharp';
 
 import { NotFoundError, ValidationError } from '../../../common/errors';
@@ -60,6 +60,8 @@ type ReportRow = {
 
 @Injectable()
 export class ExpensesService {
+  private readonly log = new Logger(ExpensesService.name);
+
   constructor(
     private readonly expenses: ExpensesRepository,
     private readonly storage: LocalStorageService,
@@ -213,6 +215,12 @@ export class ExpensesService {
       })),
     );
 
+    const withPath = rows.filter((r) => r.receiptPath).length;
+    const loaded = lines.filter((l) => l.receipt).length;
+    if (loaded < withPath) {
+      this.log.warn(`Report ${period}: ${loaded}/${withPath} receipts loaded (${withPath - loaded} failed)`);
+    }
+
     return {
       period,
       title,
@@ -225,12 +233,14 @@ export class ExpensesService {
   private async loadReceipt(receiptPath: string | null): Promise<PdfReceipt | null> {
     if (!receiptPath) return null;
     try {
-      const buffer = await this.storage.read(receiptPath);
-      if (receiptPath.endsWith('.webp')) {
-        return { buffer: await sharp(buffer).png().toBuffer(), ext: 'png' };
-      }
-      return { buffer, ext: receiptPath.endsWith('.png') ? 'png' : 'jpg' };
-    } catch {
+      const raw = await this.storage.read(receiptPath);
+      const buffer = await sharp(raw)
+        .resize({ width: 1200, withoutEnlargement: true })
+        .jpeg({ quality: 75 })
+        .toBuffer();
+      return { buffer, ext: 'jpg' };
+    } catch (err) {
+      this.log.warn(`Failed to load receipt ${receiptPath}: ${err}`);
       return null;
     }
   }

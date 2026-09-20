@@ -1,17 +1,22 @@
+import { inflateSync } from 'node:zlib';
+
 import sharp from 'sharp';
 
 import { ExpenseReportPdfService, type PdfExpenseReport } from './expense-report-pdf.service';
 
-/**
- * pdfkit 0.19 always serializes glyph runs as hex strings inside `TJ` arrays
- * (even for standard/non-embedded fonts) — never as literal `(...)Tj` ASCII.
- * Decode those hex runs back to text so the assertions below check what a
- * PDF viewer would actually render, not the raw byte layout.
- */
 function extractText(buf: Buffer): string {
-  const s = buf.toString('latin1');
-  const hexRuns = [...s.matchAll(/<([0-9a-fA-F]+)>/g)];
-  return hexRuns.map((m) => Buffer.from(m[1] ?? '', 'hex').toString('latin1')).join('');
+  const raw = buf.toString('latin1');
+  const parts: string[] = [];
+  const streamRe = /stream\r?\n([\s\S]*?)endstream/g;
+  for (const m of raw.matchAll(streamRe)) {
+    let data = m[1] ?? '';
+    try {
+      data = inflateSync(Buffer.from(data, 'latin1')).toString('latin1');
+    } catch {}
+    const hexRuns = [...data.matchAll(/<([0-9a-fA-F]+)>/g)];
+    parts.push(hexRuns.map((h) => Buffer.from(h[1] ?? '', 'hex').toString('latin1')).join(''));
+  }
+  return parts.join('');
 }
 
 function countPages(buf: Buffer): number {

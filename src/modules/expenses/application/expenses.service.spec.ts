@@ -9,7 +9,12 @@ import type { OcrProvider } from '../domain/ocr.provider';
 
 import { ExpensesService } from './expenses.service';
 
-const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01]);
+let JPEG: Buffer;
+beforeAll(async () => {
+  JPEG = await sharp({ create: { width: 4, height: 4, channels: 3, background: '#888' } })
+    .jpeg()
+    .toBuffer();
+});
 
 const repo = (): jest.Mocked<ExpensesRepository> =>
   ({
@@ -242,7 +247,9 @@ describe('ExpensesService.monthlyReportData', () => {
 
     const report = await service(r).monthlyReportData('2026-08', 'biz1');
 
-    expect(report.lines[0]?.receipt).toEqual({ buffer: JPEG, ext: 'jpg' });
+    expect(report.lines[0]?.receipt?.ext).toBe('jpg');
+    expect(report.lines[0]?.receipt?.buffer[0]).toBe(0xff);
+    expect(report.lines[0]?.receipt?.buffer[1]).toBe(0xd8);
   });
 
   it('degrades to no receipt when the file is missing on disk', async () => {
@@ -257,7 +264,7 @@ describe('ExpensesService.monthlyReportData', () => {
     expect(report.lines[0]?.receipt).toBeNull();
   });
 
-  it('converts webp receipts to png so pdfkit can embed them', async () => {
+  it('converts webp receipts to jpeg so pdfkit can embed them', async () => {
     const webp = await sharp({
       create: { width: 4, height: 4, channels: 3, background: '#333' },
     })
@@ -271,8 +278,9 @@ describe('ExpensesService.monthlyReportData', () => {
 
     const report = await service(r, storage).monthlyReportData('2026-08', 'biz1');
 
-    expect(report.lines[0]?.receipt?.ext).toBe('png');
-    expect(report.lines[0]?.receipt?.buffer.subarray(1, 4).toString()).toBe('PNG');
+    expect(report.lines[0]?.receipt?.ext).toBe('jpg');
+    expect(report.lines[0]?.receipt?.buffer[0]).toBe(0xff);
+    expect(report.lines[0]?.receipt?.buffer[1]).toBe(0xd8);
   });
 });
 

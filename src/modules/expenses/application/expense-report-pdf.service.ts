@@ -55,7 +55,7 @@ const PAYMENT_LABEL: Record<string, string> = {
 export class ExpenseReportPdfService {
   render(report: PdfExpenseReport): Promise<Buffer> {
     return new Promise((resolve, reject) => {
-      const doc = new PDFDocument({ size: 'A4', margin: 40, compress: false });
+      const doc = new PDFDocument({ size: 'A4', margin: 40, compress: true });
       registerArabicFonts(doc);
       const chunks: Buffer[] = [];
       doc.on('data', (c) => chunks.push(c));
@@ -103,26 +103,25 @@ export class ExpenseReportPdfService {
     report: PdfExpenseReport,
     pieceNos: Map<PdfExpenseLine, number>,
   ): void {
-    // Widened right side for HT/TVA/TTC split; kept sums-friendly for A4 (40..555).
     const cols = {
       piece: 40,
-      date: 72,
-      merchant: 128,
-      category: 245,
-      payment: 328,
-      ht: 385,
-      tva: 440,
+      date: 68,
+      merchant: 125,
+      category: 260,
+      payment: 340,
+      ht: 395,
+      tva: 445,
       ttc: 495,
     };
     const y0 = doc.y;
-    doc.fontSize(9).fillColor('#000').font('Helvetica-Bold');
-    doc.text('Pièce', cols.piece, y0, { width: 30 });
+    doc.fontSize(8).fillColor('#000').font('Helvetica-Bold');
+    doc.text('Pièce', cols.piece, y0, { width: 26 });
     doc.text('Date', cols.date, y0, { width: 55 });
-    doc.text('Commerçant', cols.merchant, y0, { width: 115 });
-    doc.text('Catégorie', cols.category, y0, { width: 80 });
-    doc.text('Paiement', cols.payment, y0, { width: 55 });
-    doc.text('HT', cols.ht, y0, { width: 52, align: 'right' });
-    doc.text('TVA', cols.tva, y0, { width: 52, align: 'right' });
+    doc.text('Commerçant', cols.merchant, y0, { width: 133 });
+    doc.text('Catégorie', cols.category, y0, { width: 78 });
+    doc.text('Paiement', cols.payment, y0, { width: 53 });
+    doc.text('HT', cols.ht, y0, { width: 48, align: 'right' });
+    doc.text('TVA', cols.tva, y0, { width: 48, align: 'right' });
     doc.text('TTC', cols.ttc, y0, { width: 60, align: 'right' });
     doc.font('Helvetica');
     doc.moveTo(40, doc.y + 2).lineTo(555, doc.y + 2).stroke();
@@ -136,20 +135,21 @@ export class ExpenseReportPdfService {
       const ht = Math.max(0, ttc - tva);
       const piece = pieceNos.get(line);
       doc.font(piece ? 'Helvetica-Bold' : 'Helvetica').fillColor(piece ? '#0F766E' : '#999');
-      doc.text(piece ? `#${piece}` : '—', cols.piece, y, { width: 30 });
+      doc.text(piece ? `#${piece}` : '—', cols.piece, y, { width: 26 });
       doc.font('Helvetica').fillColor('#000');
       doc.text(line.date.toISOString().slice(0, 10), cols.date, y, { width: 55 });
+      const merchant = (line.merchantName ?? '—').slice(0, 30);
       doc
-        .font(fontFor(line.merchantName ?? '', 'Helvetica'))
-        .text(line.merchantName ?? '—', cols.merchant, y, { width: 115 });
+        .font(fontFor(merchant, 'Helvetica'))
+        .text(merchant, cols.merchant, y, { width: 133, ellipsis: true, lineBreak: false });
       doc.font('Helvetica');
-      doc.text(CATEGORY_LABEL[line.category] ?? line.category, cols.category, y, { width: 80 });
+      doc.text(CATEGORY_LABEL[line.category] ?? line.category, cols.category, y, { width: 78 });
       doc.text(PAYMENT_LABEL[line.paymentMethod] ?? line.paymentMethod, cols.payment, y, {
-        width: 55,
+        width: 53,
       });
-      doc.text(ht.toFixed(2), cols.ht, y, { width: 52, align: 'right' });
+      doc.text(ht.toFixed(2), cols.ht, y, { width: 48, align: 'right' });
       doc.text(line.taxAmount != null ? tva.toFixed(2) : '—', cols.tva, y, {
-        width: 52,
+        width: 48,
         align: 'right',
       });
       doc.font('Helvetica-Bold').text(ttc.toFixed(2), cols.ttc, y, { width: 60, align: 'right' });
