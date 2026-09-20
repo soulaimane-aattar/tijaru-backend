@@ -2,6 +2,32 @@
 
 > One entry per significant decision. Newest on top. Format: date · decision · why · rejected alternatives.
 
+## D-032 — 2026-09-20 · Webhook targets must be public https, re-checked on every delivery attempt
+- **Decision:** `assertPublicWebhookUrl` rejects non-https schemes, `localhost`/`*.internal`, and literal loopback / RFC1918 / link-local (incl. `169.254.169.254`) / CGNAT / multicast addresses at registration; `webhookUrlRefusalReason` re-runs that check **and resolves the hostname** immediately before each delivery attempt. Private targets are permitted only under `NODE_ENV=test`, where the e2e suite runs a receiver on `127.0.0.1`.
+- **Why:** The API container sits on the compose network beside postgres and `ocr`. Without this, any `settings.manage` user could register `http://postgres:5432` or the cloud metadata endpoint and read the per-attempt outcome back from `GET /integrations/webhooks/:id/deliveries` (`lastError` distinguishes "responded 500" from a refused connection) — a blind SSRF and internal port scanner. Registration-time validation alone does not close it: DNS can be re-pointed after the hook is saved, so the authoritative check has to sit next to `fetch`.
+- **Rejected:** An allow-list of customer domains (unworkable for self-serve tenants). An egress proxy / network policy (right answer at the infra layer, but not available in the current compose setup and not a reason to ship the hole). Trusting registration-time validation only (loses to DNS rebinding).
+
+## D-033 — 2026-09-20 · Marketplace visibility follows the seller's own subscription and module state
+- **Decision:** `SELLABLE_SELLER` (`status: active`, `plan in (trial, active)`, marketplace module active) filters both the catalog query and the listing lookup used by order creation.
+- **Why:** Listing visibility was decided by `Listing.active` alone, so a suspended or expired tenant kept collecting orders that `SubscriptionGuard` then blocked it from confirming or shipping — the buyer's order strands in `pending` with nobody able to move it. The seller's ability to *fulfil* is part of whether the offer is real.
+- **Rejected:** Letting the orders through and failing at ship time (too late — stock and buyer expectations are already committed). A nightly job that deactivates listings of lapsed tenants (a cron lag during which orders keep arriving).
+
+## D-031 — 2026-09-19 · Tier price = cheapest of the buyer's group ladder and the public ladder
+- **Decision:** `resolveUnitPrice` consults both the buyer's price-group tiers and the public (`priceGroupId = NULL`) tiers, and applies whichever matching step is cheaper. Odoo's "first matching item in the partner's pricelist wins" rule is kept *within* each ladder (highest `min_quantity <= qty`).
+- **Why:** With a single-ladder rule, a customer put into a discount group could be quoted *more* than a walk-in buyer at a quantity where only the public ladder has a deeper step (group 100→85 vs public 1000→80 at qty 1000). A group assignment must never raise a price.
+- **Rejected:** Pure Odoo semantics (partner pricelist only) — surfaces the inversion above, and forces sellers to duplicate every public step into every group. Medusa's `min_quantity`/`max_quantity` windows — ranges add a second failure mode (gaps) for no gain here.
+
+## D-030 — 2026-09-19 · Marketplace models stay out of `TENANT_MODELS`; cross-tenant reads use explicit scope switches
+- **Decision:** `Listing`, `ListingTier`, `PriceGroup`, `Order`, `OrderLine`, `Webhook`, `WebhookDelivery`, `ApiKey` are **not** registered in `TENANT_MODELS`; their repositories filter on `businessId` themselves. When a marketplace query must touch a *tenant-scoped* model belonging to the other party (e.g. the seller's `Customer` row read during a buyer's request), it runs inside `TenantContext.run(otherBusinessId, …)` or the new `TenantContext.runUnscoped(…)`.
+- **Why:** A marketplace request is inherently two-tenant (buyer reads seller inventory; seller notifies buyer). The auto-scoping middleware (D-021) would silently rewrite those queries to the caller's own `businessId` and return empty results. Keeping the new models out of the set makes the cross-tenant intent explicit at the query site instead of fighting the middleware.
+- **Caveat found while implementing:** Prisma promises are **lazy** — a query returned from the callback without being awaited dispatches *after* the scope is restored, so the middleware re-applies the caller's tenant. Both helpers must be used as `await ctx.run(bid, async () => prisma…)`.
+- **Rejected:** Adding the models to `TENANT_MODELS` and bypassing with `$queryRaw` — loses type safety on every catalog read. A second unscoped PrismaClient — two connection pools and two middleware stories.
+
+## D-029 — 2026-09-18 · Web HR team-dashboard nav item gated on `hr.manage`, not `hr.view`
+- **Decision:** Task 7 brief specified `cap: 'hr.view'` for the `/hr` sidebar item and page guard. Used `hr.manage` instead, matching the actual backend requirement (`GET /hr/attendance/team` is `@RequireCap('hr.manage')` in `backend/src/modules/hr/hr.controller.ts`).
+- **Why:** `hr.view` only grants access to check-in/check-out/own-history endpoints; the team dashboard calls the manage-scoped endpoint. Following the brief literally would show a nav item and page that 403s for any user who only has `hr.view`.
+- **Rejected:** Following the brief as written (`hr.view`) — would ship a broken/misleading nav entry for non-manager staff.
+
 ## D-028 — 2026-08-29 · Product `nameFr` field for French names on printed bons
 - **Decision:** Added optional `nameFr` (`name_fr`) column to `products` table. Mobile bon creation uses `product.nameFr ?? product.name` as the denormalized `label` snapshot. Product form gains "Nom (français)" optional field. Existing bons keep their stored labels unchanged.
 - **Why:** User rejected transliteration for product names — phonetic Arabic→Latin is unhelpful for inventory items. Actual French product names are needed for professional bons. Field is optional so products entered in Latin need no extra work.

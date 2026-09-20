@@ -53,8 +53,14 @@ export async function runSeed(opts: { silent?: boolean } = {}): Promise<void> {
     prisma.expense.deleteMany(),
     prisma.movement.deleteMany(),
     prisma.stockLevel.deleteMany(),
+    // Marketplace rows hold Restrict FKs on product/customer — clear first.
+    prisma.orderLine.deleteMany(),
+    prisma.order.deleteMany(),
+    prisma.listingTier.deleteMany(),
+    prisma.listing.deleteMany(),
     prisma.product.deleteMany(),
     prisma.customer.deleteMany(),
+    prisma.priceGroup.deleteMany(),
     prisma.supplier.deleteMany(),
     prisma.category.deleteMany(),
     prisma.userOverride.deleteMany(),
@@ -88,7 +94,7 @@ export async function runSeed(opts: { silent?: boolean } = {}): Promise<void> {
 
   // Module gates (ModuleGuard 403s any @RequiresModule route without a row).
   await prisma.businessModule.createMany({
-    data: ['stock', 'pos', 'expenses', 'purchase-orders', 'inventory', 'reports', 'invoices', 'delivery-notes'].map(
+    data: ['stock', 'pos', 'expenses', 'purchase-orders', 'inventory', 'reports', 'invoices', 'delivery-notes', 'marketplace'].map(
       (moduleId) => ({ businessId: business.id, moduleId, active: true }),
     ),
   });
@@ -546,6 +552,11 @@ export async function runSeed(opts: { silent?: boolean } = {}): Promise<void> {
   void cMounir;
   void cAicha;
   void cRachid;
+
+  // e2e suites import this module once per spec file; without an explicit
+  // disconnect each one leaks a connection pool and later suites hit
+  // "too many clients already".
+  await prisma.$disconnect();
 }
 
 if (require.main === module) {

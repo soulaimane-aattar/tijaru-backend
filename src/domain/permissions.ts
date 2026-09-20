@@ -51,6 +51,10 @@ export const CAPABILITY_IDS = [
   'activity.view',
   'billing.manage',
   'settings.manage',
+  'hr.view',
+  'hr.manage',
+  'marketplace.manage',
+  'marketplace.buy',
 ] as const;
 export type CapabilityId = (typeof CAPABILITY_IDS)[number];
 
@@ -69,7 +73,9 @@ export type CapabilityMeta = {
     | 'reports'
     | 'journal'
     | 'billing'
-    | 'settings';
+    | 'settings'
+    | 'hr'
+    | 'marketplace';
   labelFr: string;
 };
 
@@ -100,6 +106,18 @@ export const CAPABILITIES: Record<CapabilityId, CapabilityMeta> = {
   'activity.view': { id: 'activity.view', domain: 'journal', labelFr: "Journal d'activité" },
   'billing.manage': { id: 'billing.manage', domain: 'billing', labelFr: 'Facturation' },
   'settings.manage': { id: 'settings.manage', domain: 'settings', labelFr: 'Paramètres' },
+  'hr.view': { id: 'hr.view', domain: 'hr', labelFr: 'Voir pointage' },
+  'hr.manage': { id: 'hr.manage', domain: 'hr', labelFr: 'Gérer pointage' },
+  'marketplace.manage': {
+    id: 'marketplace.manage',
+    domain: 'marketplace',
+    labelFr: 'Gérer la vitrine et les commandes reçues',
+  },
+  'marketplace.buy': {
+    id: 'marketplace.buy',
+    domain: 'marketplace',
+    labelFr: 'Acheter sur la marketplace',
+  },
 };
 
 /**
@@ -130,6 +148,10 @@ export const ROLE_PERMS: Record<RoleId, ReadonlySet<CapabilityId>> = {
     'reports.view',
     'activity.view',
     'settings.manage',
+    'hr.view',
+    'hr.manage',
+    'marketplace.manage',
+    'marketplace.buy',
   ]),
   manager: new Set<CapabilityId>([
     'dashboard.view',
@@ -147,6 +169,10 @@ export const ROLE_PERMS: Record<RoleId, ReadonlySet<CapabilityId>> = {
     'expenses.create',
     'expenses.edit',
     'reports.view',
+    'hr.view',
+    'hr.manage',
+    'marketplace.manage',
+    'marketplace.buy',
   ]),
   stockkeeper: new Set<CapabilityId>([
     'dashboard.view',
@@ -155,13 +181,15 @@ export const ROLE_PERMS: Record<RoleId, ReadonlySet<CapabilityId>> = {
     'stock.out',
     'stock.transfer',
     'inventory.count',
+    'hr.view',
   ]),
-  cashier: new Set<CapabilityId>(['dashboard.view', 'products.view', 'stock.out']),
+  cashier: new Set<CapabilityId>(['dashboard.view', 'products.view', 'stock.out', 'hr.view']),
   viewer: new Set<CapabilityId>([
     'dashboard.view',
     'products.view',
     'expenses.view',
     'reports.view',
+    'hr.view',
   ]),
 };
 

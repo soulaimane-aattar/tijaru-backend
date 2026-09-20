@@ -21,11 +21,15 @@ import { AuthModule } from './modules/auth/auth.module';
 import { CategoriesModule } from './modules/categories/categories.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { DeliveryNotesModule } from './modules/delivery-notes/delivery-notes.module';
+import { EstimatesModule } from './modules/estimates/estimates.module';
 import { ExpenseCategoriesModule } from './modules/expense-categories/expense-categories.module';
 import { ExpensesModule } from './modules/expenses/expenses.module';
 import { HealthModule } from './modules/health/health.module';
+import { HrModule } from './modules/hr/hr.module';
+import { IntegrationsModule } from './modules/integrations/integrations.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { InvoicesModule } from './modules/invoices/invoices.module';
+import { MarketplaceModule } from './modules/marketplace/marketplace.module';
 import { MovementsModule } from './modules/movements/movements.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { PlatformAdminModule } from './modules/platform-admin/platform-admin.module';
@@ -56,6 +60,7 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module';
     PurchaseOrdersModule,
     InventoryModule,
     InvoicesModule,
+    EstimatesModule,
     DeliveryNotesModule,
     ReportsModule,
     ActivityModule,
@@ -65,6 +70,9 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module';
     HealthModule,
     PlatformAdminModule,
     StockLedgerModule,
+    HrModule,
+    MarketplaceModule,
+    IntegrationsModule,
     LoggerModule.forRootAsync({
       inject: [ENV_TOKEN],
       useFactory: (env: Env) => ({
