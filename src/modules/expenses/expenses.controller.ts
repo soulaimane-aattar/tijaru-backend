@@ -154,4 +154,44 @@ export class ExpensesController {
   async remove(@Param('id') id: string): Promise<void> {
     await this.svc.remove(id);
   }
+
+  // ── Expense photos (additional images) ──
+
+  @Post(':id/photos')
+  @RequireCap('expenses.edit')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_RECEIPT_BYTES } }))
+  addPhoto(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+  ): Promise<unknown> {
+    if (!file) throw new ValidationError('file is required');
+    const businessId = this.tenant.getBusinessId();
+    if (!businessId) throw new ValidationError('missing tenant context');
+    return this.svc.addPhoto(id, file.buffer, businessId);
+  }
+
+  @Get(':id/photos')
+  @RequireCap('expenses.view')
+  listPhotos(@Param('id') id: string): Promise<unknown> {
+    return this.svc.listPhotos(id);
+  }
+
+  @Get(':id/photos/:photoId')
+  @RequireCap('expenses.view')
+  async servePhoto(
+    @Param('photoId') photoId: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    const { buffer, ext } = await this.svc.readPhoto(photoId);
+    res.setHeader('content-type', MIME_BY_EXT[ext] ?? 'image/jpeg');
+    res.setHeader('cache-control', 'private, max-age=3600');
+    res.send(buffer);
+  }
+
+  @Delete(':id/photos/:photoId')
+  @HttpCode(204)
+  @RequireCap('expenses.delete')
+  async removePhoto(@Param('photoId') photoId: string): Promise<void> {
+    await this.svc.removePhoto(photoId);
+  }
 }

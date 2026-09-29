@@ -22,6 +22,11 @@ const LIST_INCLUDE = {
   createdBy: { select: { id: true, name: true } },
 } as const;
 
+const DETAIL_INCLUDE = {
+  ...LIST_INCLUDE,
+  photos: { select: { id: true, path: true, createdAt: true }, orderBy: { createdAt: 'asc' as const } },
+} as const;
+
 @Injectable()
 export class PrismaExpensesRepository extends ExpensesRepository {
   constructor(private readonly prisma: PrismaService) {
@@ -47,7 +52,7 @@ export class PrismaExpensesRepository extends ExpensesRepository {
   }
 
   findDetail(id: string): Promise<unknown | null> {
-    return this.prisma.expense.findUnique({ where: { id }, include: LIST_INCLUDE });
+    return this.prisma.expense.findUnique({ where: { id }, include: DETAIL_INCLUDE });
   }
 
   findById(id: string): Promise<ExpenseRef | null> {
@@ -98,6 +103,32 @@ export class PrismaExpensesRepository extends ExpensesRepository {
 
   async delete(id: string): Promise<number> {
     const r = await this.prisma.expense.deleteMany({ where: { id } });
+    return r.count;
+  }
+
+  // ── Expense photos ──
+
+  addPhoto(expenseId: string, path: string): Promise<{ id: string }> {
+    return this.prisma.expensePhoto.create({ data: { expenseId, path }, select: { id: true } });
+  }
+
+  listPhotos(expenseId: string): Promise<{ id: string; path: string; createdAt: Date }[]> {
+    return this.prisma.expensePhoto.findMany({
+      where: { expenseId },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, path: true, createdAt: true },
+    });
+  }
+
+  findPhoto(photoId: string): Promise<{ id: string; path: string; expenseId: string } | null> {
+    return this.prisma.expensePhoto.findUnique({
+      where: { id: photoId },
+      select: { id: true, path: true, expenseId: true },
+    });
+  }
+
+  async deletePhoto(photoId: string): Promise<number> {
+    const r = await this.prisma.expensePhoto.deleteMany({ where: { id: photoId } });
     return r.count;
   }
 }

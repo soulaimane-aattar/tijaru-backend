@@ -765,11 +765,24 @@ model Expense {
   warehouse Warehouse? @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
   supplier  Supplier?  @relation(fields: [supplierId], references: [id], onDelete: SetNull)
   createdBy User       @relation(fields: [createdById], references: [id])
+  photos    ExpensePhoto[]
 
   @@index([businessId, date])
   @@index([businessId, category])
   @@index([businessId, receiptHash])
   @@map("expenses")
+}
+
+model ExpensePhoto {
+  id        String   @id @default(cuid())
+  expenseId String   @map("expense_id")
+  path      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  expense Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+
+  @@index([expenseId])
+  @@map("expense_photos")
 }
 
 // ─── Invoices (customer billing — B2B) ───────────────────────────────────────

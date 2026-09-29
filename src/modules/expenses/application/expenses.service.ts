@@ -91,8 +91,13 @@ export class ExpensesService {
 
   async update(id: string, input: UpdateExpenseInput): Promise<unknown> {
     if (input.category !== undefined) await this.assertCategoryUsable(input.category);
+    // Replacing the receipt orphans the old file — drop it, best-effort.
+    const prior = input.receiptPath ? await this.expenses.findById(id) : null;
     const updated = await this.expenses.update(id, input);
     if (updated === 0) throw new NotFoundError('Expense', id);
+    if (prior?.receiptPath && prior.receiptPath !== input.receiptPath) {
+      await this.storage.remove(prior.receiptPath).catch(() => undefined);
+    }
     return this.expenses.findDetail(id);
   }
 
@@ -248,11 +253,47 @@ export class ExpensesService {
   /** Receipt bytes for an expense the caller's tenant owns. */
   async readReceipt(id: string): Promise<{ buffer: Buffer; ext: string }> {
     const expense = await this.expenses.findById(id);
-    // findById is tenant-filtered, so a cross-tenant id looks like a missing row.
     if (!expense?.receiptPath) throw new NotFoundError('Receipt', id);
     return {
       buffer: await this.storage.read(expense.receiptPath),
       ext: expense.receiptPath.split('.').pop() ?? 'jpg',
     };
+  }
+
+  // ── Expense photos (additional images, no OCR) ──
+
+  async addPhoto(expenseId: string, buffer: Buffer, businessId: string): Promise<{ id: string; path: string }> {
+    const expense = await this.expenses.findById(expenseId);
+    if (!expense) throw new NotFoundError('Expense', expenseId);
+    const ext = this.storage.sniffExtension(buffer);
+    if (!ext) throw new ValidationError('Unsupported image format');
+    const path = await this.storage.save('expense-photos', businessId, buffer, ext);
+    const { id } = await this.expenses.addPhoto(expenseId, path);
+    return { id, path };
+  }
+
+  listPhotos(expenseId: string) {
+    return this.expenses.listPhotos(expenseId);
+  }
+
+  async readPhoto(photoId: string): Promise<{ buffer: Buffer; ext: string }> {
+    const photo = await this.expenses.findPhoto(photoId);
+    if (!photo) throw new NotFoundError('ExpensePhoto', photoId);
+    // Tenant check: findById is tenant-filtered, so a cross-tenant photo → NotFound.
+    const expense = await this.expenses.findById(photo.expenseId);
+    if (!expense) throw new NotFoundError('ExpensePhoto', photoId);
+    return {
+      buffer: await this.storage.read(photo.path),
+      ext: photo.path.split('.').pop() ?? 'jpg',
+    };
+  }
+
+  async removePhoto(photoId: string): Promise<void> {
+    const photo = await this.expenses.findPhoto(photoId);
+    if (!photo) throw new NotFoundError('ExpensePhoto', photoId);
+    const expense = await this.expenses.findById(photo.expenseId);
+    if (!expense) throw new NotFoundError('ExpensePhoto', photoId);
+    await this.expenses.deletePhoto(photoId);
+    await this.storage.remove(photo.path).catch(() => undefined);
   }
 }

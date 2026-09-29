@@ -26,6 +26,10 @@ const repo = (): jest.Mocked<ExpensesRepository> =>
     create: jest.fn(),
     update: jest.fn(),
     delete: jest.fn(),
+    addPhoto: jest.fn(),
+    listPhotos: jest.fn(),
+    findPhoto: jest.fn(),
+    deletePhoto: jest.fn(),
   }) as never;
 
 const storageStub = (ext: 'jpg' | null = 'jpg') =>
@@ -94,6 +98,30 @@ describe('ExpensesService', () => {
     const r = repo();
     r.update.mockResolvedValue(0);
     await expect(service(r).update('nope', { amount: 5 })).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it('removes the old receipt file when a new one replaces it', async () => {
+    const r = repo();
+    const s = storageStub();
+    r.findById.mockResolvedValue({ id: 'e1', receiptPath: 'receipts/biz1/old.jpg', businessId: 'biz1' });
+    r.update.mockResolvedValue(1);
+    r.findDetail.mockResolvedValue({ id: 'e1' });
+
+    await service(r, s).update('e1', { receiptPath: 'receipts/biz1/new.jpg' });
+
+    expect(s.remove).toHaveBeenCalledWith('receipts/biz1/old.jpg');
+  });
+
+  it('keeps the receipt file when the update does not touch it', async () => {
+    const r = repo();
+    const s = storageStub();
+    r.update.mockResolvedValue(1);
+    r.findDetail.mockResolvedValue({ id: 'e1' });
+
+    await service(r, s).update('e1', { amount: 5 });
+
+    expect(r.findById).not.toHaveBeenCalled();
+    expect(s.remove).not.toHaveBeenCalled();
   });
 
   it('throws NotFound when deleting a missing expense', async () => {

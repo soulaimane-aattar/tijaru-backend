@@ -64,4 +64,14 @@ export abstract class ExpensesRepository {
 
   /** Rows deleted (0 when the expense does not exist). */
   abstract delete(id: string): Promise<number>;
+
+  // ── Expense photos ──
+
+  abstract addPhoto(expenseId: string, path: string): Promise<{ id: string }>;
+
+  abstract listPhotos(expenseId: string): Promise<{ id: string; path: string; createdAt: Date }[]>;
+
+  abstract findPhoto(photoId: string): Promise<{ id: string; path: string; expenseId: string } | null>;
+
+  abstract deletePhoto(photoId: string): Promise<number>;
 }
