@@ -136,6 +136,7 @@ export class PrismaAuthRepository extends AuthRepository {
           email: data.email,
           passwordHash: data.passwordHash,
           role: BuiltInRole.owner,
+          ...(data.phone !== undefined ? { phone: data.phone } : {}),
         },
       });
       const defaultModules = [
