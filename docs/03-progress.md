@@ -23,6 +23,32 @@
 
 ## Log
 
+### 2026-10-07 — Dépenses: receipt upload crash on Expo SDK 57 + signed-out flush noise (mobile repo)
+- **Step:** (1) `src/api/client.ts` `apiUpload` used the legacy `FileSystem.uploadAsync` / `FileSystemUploadType.MULTIPART`, which `expo-file-system` ~57 no longer provides → `TypeError: Cannot read property 'MULTIPART' of undefined` on every upload. Now `new File(uri).upload(url, { uploadType: UploadType.MULTIPART, … })`. (2) `flushPendingReceipts`: a 401 (no/expired session) is an expected state — flush now stops calling the API after the first 401, counts the rest as `pending`, keeps every photo, and no longer `console.error`s / `captureError`s per receipt. Stale mock in `pending-receipts.test.ts` fixed (`apiFetch` → `apiUpload`).
+- **Result:** ✅ `npx jest` → `Test Suites: 9 passed, Tests: 76 passed` (+4 `api-upload.test.ts`: multipart opts, 401 refresh-retry, non-2xx throws, fieldName; +1 `pending-receipts`: 401 stops after 1 call, keeps photos, no error report). Red run first: `Expected number of calls: 1, Received: 2`. Part (1) pushed as `f716fdc`; part (2) uncommitted at time of writing. `tsc` only pre-existing TS5101.
+- **Caveat:** not re-driven on a device. Log also showed `401 No credentials` — module-level tokens in `client.ts` reset to null on Metro hot reload of that file while the zustand auth store stays `authenticated`; likely dev-only (reload app), not confirmed.
+- **Decisions:** none.
+- **Next:** reload app, retry pending receipt on device; commit + push part (2).
+
+### 2026-09-26 — Dépenses: attach or replace the receipt photo from the edit screen
+- **Step:** Mobile `app/expenses/[id].tsx`: `allowScan={canEdit}` (was `!receiptSource`) — camera/gallery section always shown on edit, labelled "Reçu — ajouter ou remplacer"; on save with a new server `receiptPath`, `forgetPendingReceipt(id)` (new export in `pending-receipts.ts`) drops the phone copy. Backend `ExpensesService.update`: when `receiptPath` changes, removes the prior file via `storage.remove` (best-effort) so replaced receipts don't orphan blobs.
+- **Result:** ✅ backend `jest expenses.service.spec.ts` → `Tests: 23 passed` (+2: old file removed on replace, untouched when receipt not in payload); `tsc` clean. Mobile `jest pending-receipts` → `5 passed`; `tsc` clean (pre-existing TS5101 only).
+- **Decisions:** none.
+- **Next:** rebuild mobile from `main`; on device, open an old expense without photo → Prendre photo / Importer → Enregistrer → thumbnail shows server copy.
+
+### 2026-09-26 — Dépenses: pending-receipts branch merged into mobile `main` + error capture
+- **Step:** User reported old receipt photos invisible on the phone. Root cause: `fix/ios-build-and-pending-receipts` (D-034, entry 2026-09-20) was never merged — mobile `main` only carried a hand-copied subset of the form change (no `pending-receipts.ts`, no local render in `[id].tsx`), so any failed upload still dropped the photo. Merged the branch (`--no-ff`, clean), re-applied the uncommitted `NSMotionUsageDescription` + unsigned-BL `canPay` edits on top. Added `captureError` (PostHog) in `savePendingReceipt` catch, `flushPendingReceipts` non-404 catch, and `Image onError` on the detail screen so the next silent failure is visible. Test mocks `@/lib/analytics`.
+- **Result:** ✅ `npx jest __tests__/pending-receipts.test.ts` → `Tests: 5 passed, 5 total`; `tsc --noEmit` clean apart from pre-existing TS5101. ❌ Photos attached before this build with a failed upload were never persisted anywhere (only 3ddba6a introduced `Paths.document/receipts`) — unrecoverable; server files (`/srv/uploads`) could not be inspected (docker daemon down, prod needs login).
+- **Decisions:** none new (D-034 applies).
+- **Next:** rebuild + install mobile from `main`, re-attach lost photos via the detail screen's "attach receipt" flow, watch PostHog for `savePendingReceipt` / `receiptImage` errors.
+
+### 2026-09-20 — Dépenses: receipts survive a failed upload (mobile repo)
+- **Step:** New `src/features/expenses/pending-receipts.ts` — `savePendingReceipt` / `getPendingReceipt` / `flushPendingReceipts` (D-034). `ExpenseForm.onSubmit` now gets a second arg `localReceiptUri`, set only when the save-time scan upload failed; `app/expenses/new.tsx` and `[id].tsx` store it against the created/edited expense id. Detail screen renders the local photo in the same frame as the server one (`receiptSource`), with an amber "Photo gardée sur le téléphone — pas encore téléversée · Réessayer" row, and enables the scan/gallery flow when an expense has no receipt at all (lets the user attach an old phone photo). `app/expenses/index.tsx` flushes on mount; `useDownloadExpenseReport` flushes before downloading and returns `{ uri, pending }` — a non-zero `pending` raises an alert naming how many receipts are missing from the PDF.
+- **Result:** ✅ `npx jest` **8 suites / 70 tests** (+4 new: local read-back, flush→PATCH→delete, 503 keeps the photo, 404 drops the orphan). `tsc --noEmit` reports no error in any expense file (repo-wide pre-existing errors unchanged: `tsconfig` TS5101, `demo-data.ts` nameFr, printable components). `eslint` on `src/features/expenses app/expenses __tests__/pending-receipts.test.ts`: no new errors (the 5 reported are pre-existing in `crop-overlay.tsx` / `expense-form.tsx:146`).
+- **Caveat:** not yet driven on a device — airplane-mode save → reopen → reconnect → report not walked through by hand.
+- **Decisions:** D-034.
+- **Next:** device walk-through of the offline path; backend/PDF untouched, nothing to deploy.
+
 ### 2026-09-20 — Marketplace audit follow-ups (all 3 repos)
 - **Step:** `/audit` over the session's changes, then fixed every finding.
   - **SSRF (the one FAIL):** new `integrations/domain/webhook-url.ts` — scheme/host validation at registration plus DNS-resolving re-check before each delivery attempt (D-032). Wired into `createWebhook`/`updateWebhook` and `WebhookDispatcher.deliver`.
