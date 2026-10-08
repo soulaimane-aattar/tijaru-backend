@@ -7,6 +7,7 @@ import {
   Patch,
   Post,
   Query,
+  StreamableFile,
   UseGuards,
   UsePipes,
 } from '@nestjs/common';
@@ -17,6 +18,7 @@ import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 
 import { ExtendSubscriptionSchema, type ExtendSubscriptionInput } from './dto/extend-subscription.dto';
 import { PlatformAdminLoginSchema, type PlatformAdminLoginInput } from './dto/platform-admin-login.dto';
+import { UpdateBugReportStatusSchema } from './dto/update-bug-report-status.dto';
 import {
   UpdateBusinessSettingsSchema,
   type UpdateBusinessSettingsInput,
@@ -70,6 +72,46 @@ export class PlatformAdminController {
       page: page ? Math.max(1, parseInt(page, 10) || 1) : 1,
       pageSize: pageSize ? Math.min(100, Math.max(1, parseInt(pageSize, 10) || 25)) : 25,
     });
+  }
+
+  @Public()
+  @UseGuards(PlatformAdminGuard)
+  @Get('admin/platform/bug-reports')
+  @ApiOperation({ summary: 'List bug reports / suggestions across every business (platform admin only).' })
+  async listBugReports(
+    @Query('status') status?: string,
+    @Query('type') type?: string,
+    @Query('businessId') businessId?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ): Promise<unknown> {
+    return this.svc.listBugReports({
+      ...(status ? { status } : {}),
+      ...(type ? { type } : {}),
+      ...(businessId ? { businessId } : {}),
+      page: page ? Math.max(1, parseInt(page, 10) || 1) : 1,
+      pageSize: pageSize ? Math.min(100, Math.max(1, parseInt(pageSize, 10) || 25)) : 25,
+    });
+  }
+
+  @Public()
+  @UseGuards(PlatformAdminGuard)
+  @Patch('admin/platform/bug-reports/:id')
+  @ApiOperation({ summary: 'Set a bug report status: open | acknowledged | resolved (platform admin only).' })
+  async updateBugReport(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(UpdateBugReportStatusSchema)) body: { status: 'open' | 'acknowledged' | 'resolved' },
+  ): Promise<unknown> {
+    return this.svc.updateBugReportStatus(id, body.status);
+  }
+
+  @Public()
+  @UseGuards(PlatformAdminGuard)
+  @Get('admin/platform/bug-reports/:id/screenshot')
+  @ApiOperation({ summary: 'Screenshot image of a bug report (platform admin only).' })
+  async bugReportScreenshot(@Param('id') id: string): Promise<StreamableFile> {
+    const { data, mime } = await this.svc.getBugReportScreenshot(id);
+    return new StreamableFile(data, { type: mime });
   }
 
   @Public()

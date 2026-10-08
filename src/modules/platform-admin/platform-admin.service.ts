@@ -6,6 +6,7 @@ import * as bcrypt from 'bcrypt';
 
 import { ConflictError, NotFoundError, UnauthorizedError } from '../../common/errors';
 import { PrismaService } from '../../common/prisma.service';
+import { LocalStorageService } from '../../common/storage/local-storage.service';
 import { ENV_TOKEN } from '../../config/config.module';
 import type { Env } from '../../config/env';
 
@@ -24,6 +25,7 @@ export class PlatformAdminService {
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
     @Inject(ENV_TOKEN) private readonly env: Env,
+    private readonly storage: LocalStorageService,
   ) {}
 
   async login(email: string, password: string): Promise<{ accessToken: string }> {
@@ -138,6 +140,49 @@ export class PlatformAdminService {
       orderBy: { createdAt: 'desc' },
       take: limit,
     });
+  }
+
+  async listBugReports(params: {
+    status?: string;
+    type?: string;
+    businessId?: string;
+    page: number;
+    pageSize: number;
+  }): Promise<{ items: unknown[]; total: number; page: number; pageSize: number }> {
+    const { status, type, businessId, page, pageSize } = params;
+    const where = {
+      ...(status ? { status } : {}),
+      ...(type ? { type } : {}),
+      ...(businessId ? { businessId } : {}),
+    };
+    const [items, total] = await Promise.all([
+      this.prisma.bugReport.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        include: {
+          user: { select: { id: true, name: true, email: true } },
+          business: { select: { id: true, name: true } },
+        },
+      }),
+      this.prisma.bugReport.count({ where }),
+    ]);
+    return { items, total, page, pageSize };
+  }
+
+  async updateBugReportStatus(id: string, status: string): Promise<unknown> {
+    const found = await this.prisma.bugReport.findUnique({ where: { id } });
+    if (!found) throw new NotFoundError('BugReport', id);
+    return this.prisma.bugReport.update({ where: { id }, data: { status } });
+  }
+
+  async getBugReportScreenshot(id: string): Promise<{ data: Buffer; mime: string }> {
+    const found = await this.prisma.bugReport.findUnique({ where: { id } });
+    if (!found?.screenshot) throw new NotFoundError('BugReport screenshot', id);
+    const ext = found.screenshot.split('.').pop();
+    const mime = ext === 'jpg' ? 'image/jpeg' : ext === 'webp' ? 'image/webp' : 'image/png';
+    return { data: await this.storage.read(found.screenshot), mime };
   }
 
   async approveBusiness(id: string): Promise<void> {

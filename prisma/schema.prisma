@@ -114,6 +114,7 @@ model Business {
   buyerLinks          Customer[]           @relation("CustomerBuyerBusiness")
   webhooks            Webhook[]
   apiKeys             ApiKey[]
+  bugReports          BugReport[]
 
   @@map("businesses")
 }
@@ -188,6 +189,7 @@ model User {
   estimatesIssued   Estimate[]            @relation("EstimateIssuer")
   bonPayments       DeliveryNotePayment[] @relation("PaymentCreator")
   attendances       Attendance[]
+  bugReports        BugReport[]
 
   @@index([businessId])
   @@map("users")
@@ -1225,4 +1227,30 @@ model ApiKey {
 
   @@index([businessId])
   @@map("api_keys")
+}
+
+// ─── Feedback ────────────────────────────────────────────────────────────────
+
+model BugReport {
+  id          String   @id @default(cuid())
+  businessId  String   @map("business_id")
+  userId      String   @map("user_id")
+  type        String   @default("bug") // bug | suggestion
+  description String
+  screenshot  String?
+  pinX        Float?   @map("pin_x")
+  pinY        Float?   @map("pin_y")
+  screen      String?
+  deviceInfo  String?  @map("device_info")
+  appVersion  String?  @map("app_version")
+  note        String?
+  zone        Json?    // normalized {x,y,w,h} of the rectangle drawn on the screenshot
+  status      String   @default("open") // open | acknowledged | resolved
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@map("bug_reports")
 }

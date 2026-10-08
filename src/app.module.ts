@@ -16,6 +16,7 @@ import { TenantInterceptor } from './common/tenant/tenant.interceptor';
 import { ConfigModule, ENV_TOKEN } from './config/config.module';
 import type { Env } from './config/env';
 import { ActivityModule } from './modules/activity/activity.module';
+import { BugReportsModule } from './modules/bug-reports/bug-reports.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CategoriesModule } from './modules/categories/categories.module';
@@ -73,6 +74,7 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module';
     HrModule,
     MarketplaceModule,
     IntegrationsModule,
+    BugReportsModule,
     LoggerModule.forRootAsync({
       inject: [ENV_TOKEN],
       useFactory: (env: Env) => ({
