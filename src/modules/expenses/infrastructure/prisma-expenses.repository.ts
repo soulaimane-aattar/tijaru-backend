@@ -36,7 +36,15 @@ export class PrismaExpensesRepository extends ExpensesRepository {
   private where(query: ListExpensesQuery): Prisma.ExpenseWhereInput {
     const where: Prisma.ExpenseWhereInput = {};
     if (query.from || query.to) {
-      where.date = compact({ gte: query.from, lte: query.to });
+      const dateFilter: Record<string, Date> = {};
+      if (query.from) dateFilter.gte = query.from;
+      if (query.to) {
+        // Include the entire to-day regardless of time component on stored dates
+        const endOfDay = new Date(query.to);
+        endOfDay.setUTCHours(23, 59, 59, 999);
+        dateFilter.lte = endOfDay;
+      }
+      where.date = dateFilter;
     }
     if (query.category) where.category = query.category;
     if (query.createdById) where.createdById = query.createdById;
