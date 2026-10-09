@@ -128,8 +128,12 @@ export class ExpensesService {
    * to confirm, and saving it silently would put unverified numbers in the books.
    */
   async scan(buffer: Buffer, businessId: string, uploadOnly = false): Promise<ScanResult> {
-    const ext = this.storage.sniffExtension(buffer);
-    if (!ext) throw new ValidationError('Unsupported image format');
+    const ext = this.storage.sniffFileExtension(buffer);
+    if (!ext) throw new ValidationError('Unsupported file format');
+
+    if (ext === 'pdf' && !uploadOnly) {
+      throw new ValidationError('PDF receipts cannot be scanned — use uploadOnly=true');
+    }
 
     const receiptHash = createHash('sha256').update(buffer).digest('hex');
     const prior = await this.expenses.findByReceiptHash(receiptHash);

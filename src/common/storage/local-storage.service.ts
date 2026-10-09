@@ -8,6 +8,7 @@ import { ENV_TOKEN } from '../../config/config.module';
 import type { Env } from '../../config/env';
 
 export type ImageExt = 'jpg' | 'png' | 'webp';
+export type FileExt = ImageExt | 'pdf';
 
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
@@ -45,11 +46,18 @@ export class LocalStorageService {
     return null;
   }
 
+  sniffFileExtension(buffer: Buffer): FileExt | null {
+    const img = this.sniffExtension(buffer);
+    if (img) return img;
+    if (buffer.length >= 5 && buffer.subarray(0, 5).toString('latin1') === '%PDF-') return 'pdf';
+    return null;
+  }
+
   async save(
     subdir: string,
     businessId: string,
     buffer: Buffer,
-    ext: ImageExt,
+    ext: FileExt,
   ): Promise<string> {
     const relativePath = `${subdir}/${businessId}/${randomBytes(12).toString('hex')}.${ext}`;
     const absolute = this.resolveSafe(relativePath);

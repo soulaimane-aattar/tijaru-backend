@@ -42,6 +42,7 @@ const MIME_BY_EXT: Record<string, string> = {
   png: 'image/png',
   webp: 'image/webp',
   jpg: 'image/jpeg',
+  pdf: 'application/pdf',
 };
 
 @ApiTags('expenses')

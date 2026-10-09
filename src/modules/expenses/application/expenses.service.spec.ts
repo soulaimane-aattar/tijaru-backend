@@ -35,6 +35,7 @@ const repo = (): jest.Mocked<ExpensesRepository> =>
 const storageStub = (ext: 'jpg' | null = 'jpg') =>
   ({
     sniffExtension: jest.fn().mockReturnValue(ext),
+    sniffFileExtension: jest.fn().mockReturnValue(ext),
     save: jest.fn().mockResolvedValue('biz1/abc.jpg'),
     read: jest.fn().mockResolvedValue(JPEG),
     remove: jest.fn().mockResolvedValue(undefined),
