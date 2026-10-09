@@ -20,6 +20,7 @@ import type { AuthUser } from '../../common/auth/auth-user.type';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequireCap } from '../../common/decorators/require-cap.decorator';
 import { RequiresModule } from '../../common/decorators/require-module.decorator';
+import { hasPermission } from '../../domain/permissions';
 import { ValidationError } from '../../common/errors';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { TenantContext } from '../../common/tenant/tenant-context';
@@ -58,7 +59,9 @@ export class ExpensesController {
   @RequireCap('expenses.view')
   list(
     @Query(new ZodValidationPipe(ListExpensesSchema)) query: ListExpensesQuery,
+    @CurrentUser() user: AuthUser,
   ): Promise<unknown> {
+    if (!hasPermission(user, 'expenses.viewAll')) query.createdById = user.id;
     return this.svc.list(query);
   }
 
@@ -67,7 +70,9 @@ export class ExpensesController {
   @RequireCap('expenses.view')
   summary(
     @Query(new ZodValidationPipe(ListExpensesSchema)) query: ListExpensesQuery,
+    @CurrentUser() user: AuthUser,
   ): Promise<unknown> {
+    if (!hasPermission(user, 'expenses.viewAll')) query.createdById = user.id;
     return this.svc.summary(query);
   }
 
@@ -103,11 +108,14 @@ export class ExpensesController {
   @Post('scan')
   @RequireCap('expenses.create')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_RECEIPT_BYTES } }))
-  scan(@UploadedFile() file: Express.Multer.File | undefined): Promise<unknown> {
+  scan(
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Query('uploadOnly') uploadOnly?: string,
+  ): Promise<unknown> {
     if (!file) throw new ValidationError('file is required');
     const businessId = this.tenant.getBusinessId();
     if (!businessId) throw new ValidationError('missing tenant context');
-    return this.svc.scan(file.buffer, businessId);
+    return this.svc.scan(file.buffer, businessId, uploadOnly === 'true');
   }
 
   @Get(':id')

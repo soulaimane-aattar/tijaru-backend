@@ -39,6 +39,7 @@ export class PrismaExpensesRepository extends ExpensesRepository {
       where.date = compact({ gte: query.from, lte: query.to });
     }
     if (query.category) where.category = query.category;
+    if (query.createdById) where.createdById = query.createdById;
     return where;
   }
 

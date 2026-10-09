@@ -31,7 +31,7 @@ export type ScanDuplicate = {
 export type ScanResult = {
   receiptPath: string;
   receiptHash: string;
-  ocrStatus: 'done' | 'failed';
+  ocrStatus: 'done' | 'failed' | 'skipped';
   suggestion: OcrSuggestion | null;
   /** Set when a prior expense in this tenant stored the same receipt bytes. */
   duplicate: ScanDuplicate | null;
@@ -127,16 +127,24 @@ export class ExpensesService {
    * Deliberately does NOT create an Expense: OCR output is a draft the user has
    * to confirm, and saving it silently would put unverified numbers in the books.
    */
-  async scan(buffer: Buffer, businessId: string): Promise<ScanResult> {
+  async scan(buffer: Buffer, businessId: string, uploadOnly = false): Promise<ScanResult> {
     const ext = this.storage.sniffExtension(buffer);
     if (!ext) throw new ValidationError('Unsupported image format');
 
     const receiptHash = createHash('sha256').update(buffer).digest('hex');
-    // Look up duplicates BEFORE writing — a hit still stores the file (user may
-    // confirm the double-entry is intentional) but the UI needs the prior record
-    // to render the warning banner.
     const prior = await this.expenses.findByReceiptHash(receiptHash);
     const receiptPath = await this.storage.save('receipts', businessId, buffer, ext);
+
+    if (uploadOnly) {
+      return {
+        receiptPath,
+        receiptHash,
+        ocrStatus: 'skipped',
+        suggestion: null,
+        duplicate: prior ? this.toDuplicate(prior) : null,
+      };
+    }
+
     const result = await this.ocr.extract(buffer, `receipt.${ext}`);
     return {
       receiptPath,

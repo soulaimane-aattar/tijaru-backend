@@ -36,5 +36,6 @@ export const ListExpensesSchema = z.object({
   from: z.coerce.date().optional(),
   to: z.coerce.date().optional(),
   category: CategoryKey.optional(),
+  createdById: z.string().optional(),
 });
 export type ListExpensesQuery = z.infer<typeof ListExpensesSchema>;

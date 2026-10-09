@@ -32,6 +32,10 @@ import {
   type PatchSecurityPolicyInput,
   PatchSecurityPolicySchema,
 } from './dto/admin.dto';
+import {
+  type UpdateModulesInput,
+  UpdateModulesSchema,
+} from '../platform-admin/dto/update-modules.dto';
 
 @ApiTags('admin')
 @ApiBearerAuth()
@@ -43,6 +47,22 @@ export class AdminController {
     private readonly policy: AdminPolicyService,
     private readonly settings: BusinessSettingsService,
   ) {}
+
+  // ─── Modules ─────────────────────────────────────────────────────────────
+
+  @Get('modules')
+  @RequireCap('settings.manage')
+  listModules(): Promise<unknown> {
+    return this.settings.listModules();
+  }
+
+  @Patch('modules')
+  @RequireCap('settings.manage')
+  updateModules(
+    @Body(new ZodValidationPipe(UpdateModulesSchema)) body: UpdateModulesInput,
+  ): Promise<void> {
+    return this.settings.updateModules(body.modules);
+  }
 
   // ─── VAT rates / multi-stock (read-only; toggled by platform admin) ──────
 

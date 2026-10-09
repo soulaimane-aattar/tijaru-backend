@@ -32,6 +32,7 @@ const MATRIX: Record<CapabilityId, Record<RoleId, boolean>> = {
   'suppliers.manage':          { owner: true, admin: true, manager: true, stockkeeper: false, cashier: false, viewer: false },
   'po.manage':                 { owner: true, admin: true, manager: true, stockkeeper: false, cashier: false, viewer: false },
   'expenses.view':             { owner: true, admin: true, manager: true, stockkeeper: false, cashier: false, viewer: true },
+  'expenses.viewAll':          { owner: true, admin: true, manager: false, stockkeeper: false, cashier: false, viewer: false },
   'expenses.create':           { owner: true, admin: true, manager: true, stockkeeper: false, cashier: false, viewer: false },
   'expenses.edit':             { owner: true, admin: true, manager: true, stockkeeper: false, cashier: false, viewer: false },
   'expenses.delete':           { owner: true, admin: true, manager: false, stockkeeper: false, cashier: false, viewer: false },
@@ -110,6 +111,7 @@ describe('effectiveCapabilities', () => {
 describe('expenses capabilities', () => {
   const EXPENSE_CAPS = [
     'expenses.view',
+    'expenses.viewAll',
     'expenses.create',
     'expenses.edit',
     'expenses.delete',
