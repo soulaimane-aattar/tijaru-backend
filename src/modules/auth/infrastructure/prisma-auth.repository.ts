@@ -52,9 +52,9 @@ export class PrismaAuthRepository extends AuthRepository {
     return { ...user, warehouseIds: user.warehouses.map((w) => w.warehouseId) };
   }
 
-  async emailInUse(email: string): Promise<boolean> {
+  async emailInUseForBusiness(email: string, businessName: string): Promise<boolean> {
     const user = await this.prisma.user.findFirst({
-      where: { email, deletedAt: null },
+      where: { email, deletedAt: null, business: { name: businessName } },
       select: { id: true },
     });
     return user !== null;

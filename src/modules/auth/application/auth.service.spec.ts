@@ -10,7 +10,7 @@ const mockRepo = (): jest.Mocked<AuthRepository> =>
     findUserByEmail: jest.fn(),
     findPlatformAdminByEmail: jest.fn(),
     findProfile: jest.fn(),
-    emailInUse: jest.fn(),
+    emailInUseForBusiness: jest.fn(),
     recordLogin: jest.fn(),
     findSessionByTokenHash: jest.fn(),
     createSession: jest.fn(),
@@ -164,9 +164,9 @@ describe('AuthService', () => {
   });
 
   describe('register', () => {
-    it('throws ConflictError when email already in use', async () => {
+    it('throws ConflictError when email already in use for same business name', async () => {
       const repo = mockRepo();
-      repo.emailInUse.mockResolvedValue(true);
+      repo.emailInUseForBusiness.mockResolvedValue(true);
       const svc = new AuthService(repo, mockJwt(), mockPerms(), mockEnv);
       await expect(
         svc.register({
@@ -180,7 +180,7 @@ describe('AuthService', () => {
 
     it('throws ConflictError when email belongs to a platform admin', async () => {
       const repo = mockRepo();
-      repo.emailInUse.mockResolvedValue(false);
+      repo.emailInUseForBusiness.mockResolvedValue(false);
       repo.findPlatformAdminByEmail.mockResolvedValue({
         id: 'pa1',
         email: 'admin@tijaru.com',
@@ -202,7 +202,7 @@ describe('AuthService', () => {
 
     it('creates business with pending status and owner user', async () => {
       const repo = mockRepo();
-      repo.emailInUse.mockResolvedValue(false);
+      repo.emailInUseForBusiness.mockResolvedValue(false);
       repo.createBusinessWithOwner = jest.fn().mockResolvedValue({ businessId: 'b1', userId: 'u1' });
       const svc = new AuthService(repo, mockJwt(), mockPerms(), mockEnv);
       const result = await svc.register({
@@ -226,7 +226,7 @@ describe('AuthService', () => {
   describe('full signup → approve → login flow', () => {
     it('register creates pending business, login blocked, approve unblocks', async () => {
       const repo = mockRepo();
-      repo.emailInUse.mockResolvedValue(false);
+      repo.emailInUseForBusiness.mockResolvedValue(false);
       repo.createBusinessWithOwner = jest.fn().mockResolvedValue({ businessId: 'b1', userId: 'u1' });
       const svc = new AuthService(repo, mockJwt(), mockPerms(), mockEnv);
 

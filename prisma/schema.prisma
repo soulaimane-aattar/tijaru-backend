@@ -164,7 +164,7 @@ model User {
   id           String      @id @default(cuid())
   businessId   String      @map("business_id")
   name         String
-  email        String      @unique
+  email        String
   phone        String?
   passwordHash String
   role         BuiltInRole
@@ -191,6 +191,7 @@ model User {
   attendances       Attendance[]
   bugReports        BugReport[]
 
+  @@unique([email, businessId])
   @@index([businessId])
   @@map("users")
 }

@@ -95,8 +95,8 @@ export abstract class AuthRepository {
   /** Current profile of the user (id, contact, role, assigned warehouses), or null. */
   abstract findProfile(userId: string): Promise<UserProfileView | null>;
 
-  /** True when a non-deleted user already uses this (normalized) email. */
-  abstract emailInUse(email: string): Promise<boolean>;
+  /** True when a non-deleted user already uses this email for a business with this name. */
+  abstract emailInUseForBusiness(email: string, businessName: string): Promise<boolean>;
 
   /** Stamp the user's last successful login. */
   abstract recordLogin(userId: string): Promise<void>;

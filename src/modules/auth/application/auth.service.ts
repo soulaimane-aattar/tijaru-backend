@@ -260,10 +260,10 @@ export class AuthService {
     };
   }
 
-  async ensureNoConflict(email: string): Promise<void> {
+  async ensureNoConflict(email: string, businessName: string): Promise<void> {
     const lower = email.toLowerCase();
-    if (await this.authRepo.emailInUse(lower)) {
-      throw new ConflictError('Email already in use');
+    if (await this.authRepo.emailInUseForBusiness(lower, businessName)) {
+      throw new ConflictError('Email already in use for this business');
     }
     if (await this.authRepo.findPlatformAdminByEmail(lower)) {
       throw new ConflictError('Email already in use');
@@ -278,7 +278,7 @@ export class AuthService {
     phone?: string | undefined;
     password: string;
   }): Promise<{ status: string }> {
-    await this.ensureNoConflict(input.email);
+    await this.ensureNoConflict(input.email, input.businessName);
     const passwordHash = await bcrypt.hash(input.password, this.env.BCRYPT_COST);
     await this.authRepo.createBusinessWithOwner({
       businessName: input.businessName,
