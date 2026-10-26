@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import type { AuthUser } from '../../../common/auth/auth-user.type';
+import { DocumentAuditService } from '../../../common/audit/document-audit.service';
 import { DomainError, NotFoundError, ValidationError } from '../../../common/errors';
 import { PrismaService } from '../../../common/prisma.service';
 import { StockLedgerService } from '../../stock-ledger/application/stock-ledger.service';
@@ -21,6 +22,7 @@ import type {
   DeliveryNoteStatus,
   DeliveryNoteType,
   ListDeliveryNotesQuery,
+  UpdateDeliveryNoteInput,
 } from '../dto/delivery-notes.dto';
 
 /** Response line shape: adds the computed `subtotal` on top of the persisted row. */
@@ -66,6 +68,7 @@ export class DeliveryNotesService {
     private readonly products: ProductPriceLookup,
     private readonly ledger: StockLedgerService,
     private readonly prisma: PrismaService,
+    private readonly audit: DocumentAuditService,
   ) {}
 
   async list(businessId: string, query: ListDeliveryNotesQuery) {
@@ -123,6 +126,90 @@ export class DeliveryNotesService {
       lines,
     });
     return this.toResponse(created);
+  }
+
+  async update(
+    businessId: string,
+    id: string,
+    input: UpdateDeliveryNoteInput,
+    actor: AuthUser,
+  ): Promise<DeliveryNoteDto> {
+    const existing = await this.repo.findDetail(businessId, id);
+    if (!existing) throw new NotFoundError('DeliveryNote', id);
+    if (existing.signed) {
+      throw new DomainError('cannot_edit_signed', 'Signed notes cannot be edited', 422);
+    }
+    if (existing.status !== 'prepared') {
+      throw new DomainError('cannot_edit_status', 'Only prepared notes can be edited', 422);
+    }
+
+    const changes: Record<string, { old: unknown; new: unknown }> = {};
+    const updateData: Parameters<typeof this.repo.update>[1] = {};
+
+    if (input.customerId !== undefined) {
+      updateData.customerId = input.customerId ?? null;
+      if (input.customerId !== existing.customerId) {
+        changes.customerId = { old: existing.customerId, new: input.customerId };
+      }
+    }
+    if (input.supplierId !== undefined) {
+      updateData.supplierId = input.supplierId ?? null;
+      if (input.supplierId !== existing.supplierId) {
+        changes.supplierId = { old: existing.supplierId, new: input.supplierId };
+      }
+    }
+    if (input.sourceRef !== undefined) updateData.sourceRef = input.sourceRef ?? null;
+    if (input.carrier !== undefined) updateData.carrier = input.carrier ?? null;
+    if (input.notes !== undefined) updateData.notes = input.notes ?? null;
+
+    if (input.lines) {
+      const lines: DeliveryLineData[] = await Promise.all(
+        input.lines.map(async (l) => ({
+          productId: l.productId,
+          label: l.label,
+          ordered: l.ordered,
+          sent: l.sent,
+          unitPrice: await this.resolveUnitPrice(businessId, l.productId, l.unitPrice),
+        })),
+      );
+      updateData.lines = lines;
+      changes.lines = { old: existing.lines.length, new: lines.length };
+    }
+
+    const updated = await this.repo.update(id, updateData);
+    await this.audit.log({
+      businessId,
+      docType: 'delivery_note',
+      docId: id,
+      docNumber: existing.number,
+      action: 'update',
+      changes: Object.keys(changes).length > 0 ? changes : null,
+      userId: actor.id,
+      userName: updated.issuedByName,
+    });
+    return this.toResponse(updated);
+  }
+
+  async cancel(businessId: string, id: string, actor: AuthUser): Promise<void> {
+    const note = await this.repo.findDetail(businessId, id);
+    if (!note) throw new NotFoundError('DeliveryNote', id);
+    if (note.signed) {
+      throw new DomainError('cannot_cancel_signed', 'Signed notes cannot be cancelled', 422);
+    }
+    if (note.status === 'cancelled') {
+      throw new DomainError('already_cancelled', 'Note is already cancelled', 422);
+    }
+    await this.repo.updateStatus(id, 'cancelled');
+    await this.audit.log({
+      businessId,
+      docType: 'delivery_note',
+      docId: id,
+      docNumber: note.number,
+      action: 'cancel',
+      changes: { status: { old: note.status, new: 'cancelled' } },
+      userId: actor.id,
+      userName: note.issuedByName,
+    });
   }
 
   /** Explicit unitPrice wins; otherwise prefill from the product's current price. */

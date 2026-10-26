@@ -8,6 +8,7 @@ import {
   type DeliveryCreateData,
   type DeliveryDetail,
   type DeliveryRow,
+  type DeliveryUpdateData,
   type ListParams,
   type ListResult,
   type PaymentCreateData,
@@ -64,6 +65,47 @@ export class PrismaDeliveryNotesRepository extends DeliveryNotesRepository {
         issuedBy: { select: { name: true } },
         lines: true,
       },
+    });
+    return this.toDetail(row);
+  }
+
+  async update(id: string, data: DeliveryUpdateData): Promise<DeliveryDetail> {
+    const row = await this.prisma.$transaction(async (tx) => {
+      if (data.lines) {
+        await tx.deliveryNoteLine.deleteMany({ where: { deliveryNoteId: id } });
+      }
+      await tx.deliveryNote.update({
+        where: { id },
+        data: {
+          ...(data.customerId !== undefined ? { customerId: data.customerId } : {}),
+          ...(data.supplierId !== undefined ? { supplierId: data.supplierId } : {}),
+          ...(data.sourceRef !== undefined ? { sourceRef: data.sourceRef } : {}),
+          ...(data.carrier !== undefined ? { carrier: data.carrier } : {}),
+          ...(data.notes !== undefined ? { notes: data.notes } : {}),
+          ...(data.lines
+            ? {
+                lines: {
+                  create: data.lines.map((l) => ({
+                    productId: l.productId,
+                    label: l.label,
+                    ordered: l.ordered,
+                    sent: l.sent,
+                    unitPrice: l.unitPrice,
+                  })),
+                },
+              }
+            : {}),
+        },
+      });
+      return tx.deliveryNote.findUniqueOrThrow({
+        where: { id },
+        include: {
+          customer: { select: { name: true } },
+          supplier: { select: { name: true } },
+          issuedBy: { select: { name: true } },
+          lines: true,
+        },
+      });
     });
     return this.toDetail(row);
   }

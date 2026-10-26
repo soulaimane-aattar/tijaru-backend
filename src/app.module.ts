@@ -5,6 +5,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { LoggerModule } from 'nestjs-pino';
 
+import { DocumentAuditController } from './common/audit/document-audit.controller';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { CapsGuard } from './common/guards/caps.guard';
 import { JwtAuthGuard } from './common/guards/jwt.guard';
@@ -89,6 +90,7 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module';
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]),
     JwtModule.register({ global: true }),
   ],
+  controllers: [DocumentAuditController],
   providers: [
     // PrismaService + TenantContext come from the global ConfigModule — a single
     // instance each, so the tenant ALS store is shared between the HTTP

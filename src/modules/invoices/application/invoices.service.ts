@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import type { AuthUser } from '../../../common/auth/auth-user.type';
+import { DocumentAuditService } from '../../../common/audit/document-audit.service';
 import { DomainError, NotFoundError } from '../../../common/errors';
 import {
   InvoicesRepository,
@@ -14,6 +15,7 @@ import type {
   InvoiceStatus,
   ListInvoicesQuery,
   RecordPaymentInput,
+  UpdateInvoiceInput,
 } from '../dto/invoices.dto';
 
 const round2 = (n: number): number => Math.round(n * 100) / 100;
@@ -37,7 +39,10 @@ export function computeLineTotals(l: InvoiceLineData): {
 
 @Injectable()
 export class InvoicesService {
-  constructor(private readonly repo: InvoicesRepository) {}
+  constructor(
+    private readonly repo: InvoicesRepository,
+    private readonly audit: DocumentAuditService,
+  ) {}
 
   async list(businessId: string, query: ListInvoicesQuery): Promise<{
     items: InvoiceRow[];
@@ -103,7 +108,90 @@ export class InvoicesService {
       terms: input.terms ?? null,
       lines,
     };
-    return this.repo.create(data);
+    const result = await this.repo.create(data);
+    await this.audit.log({
+      businessId: actor.businessId,
+      docType: 'invoice',
+      docId: result.id,
+      docNumber: result.number,
+      action: 'create',
+      userId: actor.id,
+      userName: result.issuedByName,
+    });
+    return result;
+  }
+
+  async update(
+    businessId: string,
+    id: string,
+    input: UpdateInvoiceInput,
+    actor: AuthUser,
+  ): Promise<InvoiceDetail> {
+    const existing = await this.repo.findDetail(businessId, id);
+    if (!existing) throw new NotFoundError('Invoice', id);
+    if (existing.status !== 'draft') {
+      throw new DomainError('cannot_edit', 'Only draft invoices can be edited', 422);
+    }
+
+    const updateData: Parameters<typeof this.repo.update>[1] = {};
+    const changes: Record<string, { old: unknown; new: unknown }> = {};
+
+    if (input.customerId !== undefined && input.customerId !== existing.customerId) {
+      updateData.customerId = input.customerId;
+      changes.customerId = { old: existing.customerId, new: input.customerId };
+    }
+    if (input.date !== undefined) updateData.date = input.date;
+    if (input.dueDate !== undefined) updateData.dueDate = input.dueDate;
+    if (input.notes !== undefined) updateData.notes = input.notes ?? null;
+    if (input.terms !== undefined) updateData.terms = input.terms ?? null;
+    if (input.status !== undefined) updateData.status = input.status;
+
+    if (input.lines) {
+      let ht = 0;
+      let tva = 0;
+      const lines: InvoiceLineData[] = input.lines.map((l) => {
+        const t = computeLineTotals(l);
+        ht += t.lineHt;
+        tva += t.lineTva;
+        return { ...l, discount: round2(l.discount) };
+      });
+      ht = round2(ht);
+      tva = round2(tva);
+      const discount = round2(input.discount ?? existing.discount);
+      const gross = round2(ht + tva);
+      if (discount > gross) {
+        throw new DomainError('invalid_discount', 'Discount exceeds invoice total', 422);
+      }
+      updateData.ht = ht;
+      updateData.tva = tva;
+      updateData.discount = discount;
+      updateData.total = round2(gross - discount);
+      updateData.lines = lines;
+      changes.lines = { old: existing.lines.length, new: lines.length };
+      changes.total = { old: existing.total, new: updateData.total };
+    } else if (input.discount !== undefined) {
+      const discount = round2(input.discount);
+      const gross = round2(existing.ht + existing.tva);
+      if (discount > gross) {
+        throw new DomainError('invalid_discount', 'Discount exceeds invoice total', 422);
+      }
+      updateData.discount = discount;
+      updateData.total = round2(gross - discount);
+      changes.discount = { old: existing.discount, new: discount };
+    }
+
+    const result = await this.repo.update(id, updateData);
+    await this.audit.log({
+      businessId,
+      docType: 'invoice',
+      docId: id,
+      docNumber: existing.number,
+      action: 'update',
+      changes: Object.keys(changes).length > 0 ? changes : null,
+      userId: actor.id,
+      userName: result.issuedByName,
+    });
+    return result;
   }
 
   /** Sequential per-business, per-year: FA-2026-0001, FA-2026-0002, … */
@@ -139,7 +227,7 @@ export class InvoicesService {
     return { ...updated, status: newStatus };
   }
 
-  async cancel(businessId: string, id: string): Promise<void> {
+  async cancel(businessId: string, id: string, actor: AuthUser): Promise<void> {
     const inv = await this.repo.findDetail(businessId, id);
     if (!inv) throw new NotFoundError('Invoice', id);
     if (inv.status === 'paid') {
@@ -153,6 +241,16 @@ export class InvoicesService {
       );
     }
     await this.repo.updateStatus(id, 'cancelled');
+    await this.audit.log({
+      businessId,
+      docType: 'invoice',
+      docId: id,
+      docNumber: inv.number,
+      action: 'cancel',
+      changes: { status: { old: inv.status, new: 'cancelled' } },
+      userId: actor.id,
+      userName: inv.issuedByName,
+    });
   }
 
   async setStatus(businessId: string, id: string, status: InvoiceStatus): Promise<void> {

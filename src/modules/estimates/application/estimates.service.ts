@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import type { AuthUser } from '../../../common/auth/auth-user.type';
+import { DocumentAuditService } from '../../../common/audit/document-audit.service';
 import { DomainError, NotFoundError } from '../../../common/errors';
 import {
   EstimatesRepository,
@@ -32,7 +33,10 @@ export function computeLineTotals(l: EstimateLineData): {
 
 @Injectable()
 export class EstimatesService {
-  constructor(private readonly repo: EstimatesRepository) {}
+  constructor(
+    private readonly repo: EstimatesRepository,
+    private readonly audit: DocumentAuditService,
+  ) {}
 
   async list(businessId: string, query: ListEstimatesQuery): Promise<{
     items: EstimateRow[];
@@ -94,7 +98,17 @@ export class EstimatesService {
       terms: input.terms ?? null,
       lines,
     };
-    return this.repo.create(data);
+    const result = await this.repo.create(data);
+    await this.audit.log({
+      businessId: actor.businessId,
+      docType: 'estimate',
+      docId: result.id,
+      docNumber: result.number,
+      action: 'create',
+      userId: actor.id,
+      userName: result.issuedByName,
+    });
+    return result;
   }
 
   async update(
@@ -146,7 +160,41 @@ export class EstimatesService {
       updateData.total = round2(gross - discount);
     }
 
-    return this.repo.update(id, updateData);
+    const result = await this.repo.update(id, updateData);
+    await this.audit.log({
+      businessId,
+      docType: 'estimate',
+      docId: id,
+      docNumber: existing.number,
+      action: 'update',
+      changes: Object.keys(updateData).length > 0
+        ? Object.fromEntries(
+            Object.keys(updateData).map((k) => [k, { old: (existing as unknown as Record<string, unknown>)[k], new: (updateData as unknown as Record<string, unknown>)[k] }]),
+          )
+        : null,
+      userId: _actor.id,
+      userName: result.issuedByName,
+    });
+    return result;
+  }
+
+  async cancel(businessId: string, id: string, actor: AuthUser): Promise<void> {
+    const existing = await this.repo.findDetail(businessId, id);
+    if (!existing) throw new NotFoundError('Estimate', id);
+    if (existing.status === 'cancelled') {
+      throw new DomainError('already_cancelled', 'Estimate is already cancelled', 422);
+    }
+    await this.repo.update(id, { status: 'cancelled' });
+    await this.audit.log({
+      businessId,
+      docType: 'estimate',
+      docId: id,
+      docNumber: existing.number,
+      action: 'cancel',
+      changes: { status: { old: existing.status, new: 'cancelled' } },
+      userId: actor.id,
+      userName: existing.issuedByName,
+    });
   }
 
   async remove(businessId: string, id: string): Promise<void> {

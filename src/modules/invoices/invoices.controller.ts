@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   UsePipes,
 } from '@nestjs/common';
@@ -28,6 +29,8 @@ import {
   ListInvoicesQuerySchema,
   type RecordPaymentInput,
   RecordPaymentSchema,
+  type UpdateInvoiceInput,
+  UpdateInvoiceSchema,
 } from './dto/invoices.dto';
 
 @ApiTags('invoices')
@@ -67,6 +70,16 @@ export class InvoicesController {
     return this.svc.create(body, user);
   }
 
+  @Patch(':id')
+  @RequireCap('billing.manage')
+  update(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(UpdateInvoiceSchema)) body: UpdateInvoiceInput,
+    @CurrentUser() user: AuthUser,
+  ): Promise<unknown> {
+    return this.svc.update(this.bid(), id, body, user);
+  }
+
   @Post(':id/payments')
   @RequireCap('billing.manage')
   @UsePipes(new ZodValidationPipe(RecordPaymentSchema))
@@ -87,7 +100,7 @@ export class InvoicesController {
   @Post(':id/cancel')
   @RequireCap('billing.manage')
   @HttpCode(204)
-  async cancel(@Param('id') id: string): Promise<void> {
-    await this.svc.cancel(this.bid(), id);
+  async cancel(@Param('id') id: string, @CurrentUser() user: AuthUser): Promise<void> {
+    await this.svc.cancel(this.bid(), id, user);
   }
 }

@@ -6,6 +6,7 @@ import type {
   InvoiceCreateData,
   InvoiceDetail,
   InvoiceRow,
+  InvoiceUpdateData,
   ListParams,
   ListResult,
 } from '../domain/invoices.repository';
@@ -56,6 +57,47 @@ export class PrismaInvoicesRepository extends InvoicesRepository {
             discount: l.discount,
           })),
         },
+      },
+      include: {
+        customer: { select: { name: true } },
+        issuedBy: { select: { name: true } },
+        lines: true,
+      },
+    });
+    return this.toDetail(inv);
+  }
+
+  async update(id: string, data: InvoiceUpdateData): Promise<InvoiceDetail> {
+    if (data.lines) {
+      await this.prisma.invoiceLine.deleteMany({ where: { invoiceId: id } });
+    }
+    const inv = await this.prisma.invoice.update({
+      where: { id },
+      data: {
+        ...(data.date !== undefined ? { date: data.date } : {}),
+        ...(data.dueDate !== undefined ? { dueDate: data.dueDate } : {}),
+        ...(data.customerId !== undefined ? { customerId: data.customerId } : {}),
+        ...(data.status !== undefined ? { status: data.status } : {}),
+        ...(data.ht !== undefined ? { ht: data.ht } : {}),
+        ...(data.tva !== undefined ? { tva: data.tva } : {}),
+        ...(data.discount !== undefined ? { discount: data.discount } : {}),
+        ...(data.total !== undefined ? { total: data.total } : {}),
+        ...(data.notes !== undefined ? { notes: data.notes } : {}),
+        ...(data.terms !== undefined ? { terms: data.terms } : {}),
+        ...(data.lines
+          ? {
+              lines: {
+                create: data.lines.map((l) => ({
+                  productId: l.productId,
+                  label: l.label,
+                  qty: l.qty,
+                  priceHt: l.priceHt,
+                  vat: l.vat,
+                  discount: l.discount,
+                })),
+              },
+            }
+          : {}),
       },
       include: {
         customer: { select: { name: true } },

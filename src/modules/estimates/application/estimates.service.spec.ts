@@ -1,4 +1,5 @@
 import type { AuthUser } from '../../../common/auth/auth-user.type';
+import type { DocumentAuditService } from '../../../common/audit/document-audit.service';
 import { DomainError, NotFoundError } from '../../../common/errors';
 import type {
   EstimateDetail,
@@ -7,6 +8,8 @@ import type {
 import type { CreateEstimateInput } from '../dto/estimates.dto';
 
 import { EstimatesService, computeLineTotals } from './estimates.service';
+
+const mockAudit = () => ({ log: jest.fn() }) as unknown as DocumentAuditService;
 
 const cuid = (i: number) => `c${'l'.repeat(23)}${i}`;
 const BID = 'biz1';
@@ -75,7 +78,7 @@ describe('EstimatesService', () => {
   describe('create', () => {
     it('creates an estimate with computed totals', async () => {
       const r = repo();
-      const svc = new EstimatesService(r);
+      const svc = new EstimatesService(r, mockAudit());
       await svc.create(baseInput(), actor);
       expect(r.create).toHaveBeenCalledWith(
         expect.objectContaining({ ht: 100, tva: 20, total: 120, number: 'DV-2026-0001' }),
@@ -85,14 +88,14 @@ describe('EstimatesService', () => {
     it('generates sequential numbers', async () => {
       const r = repo();
       r.findLastNumber.mockResolvedValue('DV-2026-0003');
-      const svc = new EstimatesService(r);
+      const svc = new EstimatesService(r, mockAudit());
       await svc.create(baseInput(), actor);
       expect(r.create).toHaveBeenCalledWith(expect.objectContaining({ number: 'DV-2026-0004' }));
     });
 
     it('rejects discount exceeding total', async () => {
       const r = repo();
-      const svc = new EstimatesService(r);
+      const svc = new EstimatesService(r, mockAudit());
       await expect(svc.create({ ...baseInput(), discount: 9999 }, actor)).rejects.toThrow(DomainError);
     });
   });
@@ -101,7 +104,7 @@ describe('EstimatesService', () => {
     it('returns detail when found', async () => {
       const r = repo();
       r.findDetail.mockResolvedValue(detail());
-      const svc = new EstimatesService(r);
+      const svc = new EstimatesService(r, mockAudit());
       const result = await svc.get(BID, 'est1');
       expect(result.id).toBe('est1');
     });
@@ -109,7 +112,7 @@ describe('EstimatesService', () => {
     it('throws NotFoundError when missing', async () => {
       const r = repo();
       r.findDetail.mockResolvedValue(null);
-      const svc = new EstimatesService(r);
+      const svc = new EstimatesService(r, mockAudit());
       await expect(svc.get(BID, 'nope')).rejects.toThrow(NotFoundError);
     });
   });
@@ -118,7 +121,7 @@ describe('EstimatesService', () => {
     it('delegates to repo with params', async () => {
       const r = repo();
       r.list.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 25 });
-      const svc = new EstimatesService(r);
+      const svc = new EstimatesService(r, mockAudit());
       await svc.list(BID, { page: 1, pageSize: 25 });
       expect(r.list).toHaveBeenCalledWith(expect.objectContaining({ businessId: BID, page: 1 }));
     });
@@ -128,7 +131,7 @@ describe('EstimatesService', () => {
     it('deletes a draft estimate', async () => {
       const r = repo();
       r.findDetail.mockResolvedValue(detail({ status: 'draft' }));
-      const svc = new EstimatesService(r);
+      const svc = new EstimatesService(r, mockAudit());
       await svc.remove(BID, 'est1');
       expect(r.remove).toHaveBeenCalledWith('est1');
     });
@@ -136,14 +139,14 @@ describe('EstimatesService', () => {
     it('rejects deletion of non-draft estimate', async () => {
       const r = repo();
       r.findDetail.mockResolvedValue(detail({ status: 'sent' }));
-      const svc = new EstimatesService(r);
+      const svc = new EstimatesService(r, mockAudit());
       await expect(svc.remove(BID, 'est1')).rejects.toThrow(DomainError);
     });
 
     it('throws NotFoundError for missing estimate', async () => {
       const r = repo();
       r.findDetail.mockResolvedValue(null);
-      const svc = new EstimatesService(r);
+      const svc = new EstimatesService(r, mockAudit());
       await expect(svc.remove(BID, 'nope')).rejects.toThrow(NotFoundError);
     });
   });
@@ -152,7 +155,7 @@ describe('EstimatesService', () => {
     it('updates status without recomputing totals', async () => {
       const r = repo();
       r.findDetail.mockResolvedValue(detail());
-      const svc = new EstimatesService(r);
+      const svc = new EstimatesService(r, mockAudit());
       await svc.update(BID, 'est1', { status: 'sent' }, actor);
       expect(r.update).toHaveBeenCalledWith('est1', expect.objectContaining({ status: 'sent' }));
     });
@@ -160,7 +163,7 @@ describe('EstimatesService', () => {
     it('recomputes totals when lines are provided', async () => {
       const r = repo();
       r.findDetail.mockResolvedValue(detail());
-      const svc = new EstimatesService(r);
+      const svc = new EstimatesService(r, mockAudit());
       await svc.update(
         BID,
         'est1',

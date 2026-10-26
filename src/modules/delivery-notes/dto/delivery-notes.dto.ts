@@ -13,6 +13,7 @@ export const DeliveryNoteStatusSchema = z.enum([
   'partial',
   'delivered',
   'closed',
+  'cancelled',
 ]);
 export type DeliveryNoteStatus = z.infer<typeof DeliveryNoteStatusSchema>;
 
@@ -92,6 +93,16 @@ export const CreateReturnSchema = z.object({
   notes: z.string().max(2000).optional(),
 });
 export type CreateReturnInput = z.infer<typeof CreateReturnSchema>;
+
+export const UpdateDeliveryNoteSchema = z.object({
+  customerId: z.string().cuid().optional(),
+  supplierId: z.string().cuid().optional(),
+  sourceRef: z.string().max(60).optional(),
+  carrier: z.string().max(120).optional(),
+  notes: z.string().max(2000).optional(),
+  lines: z.array(DeliveryNoteLineInputSchema).min(1).optional(),
+});
+export type UpdateDeliveryNoteInput = z.infer<typeof UpdateDeliveryNoteSchema>;
 
 export const ListDeliveryNotesQuerySchema = z.object({
   type: DeliveryNoteTypeSchema.optional(),

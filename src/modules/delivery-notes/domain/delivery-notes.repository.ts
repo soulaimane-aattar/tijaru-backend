@@ -103,9 +103,19 @@ export interface ListResult {
   pageSize: number;
 }
 
+export interface DeliveryUpdateData {
+  customerId?: string | null;
+  supplierId?: string | null;
+  sourceRef?: string | null;
+  carrier?: string | null;
+  notes?: string | null;
+  lines?: DeliveryLineData[];
+}
+
 export abstract class DeliveryNotesRepository {
   abstract findLastNumber(businessId: string, prefix: string): Promise<string | null>;
   abstract create(data: DeliveryCreateData): Promise<DeliveryDetail>;
+  abstract update(id: string, data: DeliveryUpdateData): Promise<DeliveryDetail>;
   abstract findDetail(businessId: string, id: string): Promise<DeliveryDetail | null>;
   abstract list(params: ListParams): Promise<ListResult>;
   abstract updateStatus(id: string, status: DeliveryNoteStatus): Promise<void>;

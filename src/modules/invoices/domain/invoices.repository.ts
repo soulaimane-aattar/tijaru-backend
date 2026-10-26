@@ -65,9 +65,14 @@ export interface ListResult {
   pageSize: number;
 }
 
+export type InvoiceUpdateData = Partial<Omit<InvoiceCreateData, 'businessId' | 'number' | 'issuedById'>> & {
+  status?: InvoiceStatus;
+};
+
 export abstract class InvoicesRepository {
   abstract findLastNumber(businessId: string, prefix: string): Promise<string | null>;
   abstract create(data: InvoiceCreateData): Promise<InvoiceDetail>;
+  abstract update(id: string, data: InvoiceUpdateData): Promise<InvoiceDetail>;
   abstract findDetail(businessId: string, id: string): Promise<InvoiceDetail | null>;
   abstract list(params: ListParams): Promise<ListResult>;
   abstract updateStatus(id: string, status: InvoiceStatus): Promise<void>;

@@ -1,4 +1,5 @@
 import type { AuthUser } from '../../../common/auth/auth-user.type';
+import type { DocumentAuditService } from '../../../common/audit/document-audit.service';
 import { DomainError, NotFoundError } from '../../../common/errors';
 import type { PrismaService } from '../../../common/prisma.service';
 import type { StockLedgerService } from '../../stock-ledger/application/stock-ledger.service';
@@ -93,12 +94,14 @@ const prisma = (): jest.Mocked<PrismaService> =>
     },
   }) as unknown as jest.Mocked<PrismaService>;
 
+const mockAudit = () => ({ log: jest.fn() }) as unknown as DocumentAuditService;
+
 const makeSvc = (
   r: jest.Mocked<DeliveryNotesRepository>,
   p: jest.Mocked<ProductPriceLookup>,
   l: jest.Mocked<StockLedgerService> = ledger(),
   tx: jest.Mocked<PrismaService> = prisma(),
-) => new DeliveryNotesService(r, p, l, tx);
+) => new DeliveryNotesService(r, p, l, tx, mockAudit());
 
 const baseInput = (over: Partial<CreateDeliveryNoteInput> = {}): CreateDeliveryNoteInput =>
   ({

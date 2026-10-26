@@ -35,6 +35,8 @@ import {
   type SetStatusInput,
   type ListDeliveryNotesQuery,
   ListDeliveryNotesQuerySchema,
+  type UpdateDeliveryNoteInput,
+  UpdateDeliveryNoteSchema,
   type UpdateSentInput,
   UpdateSentSchema,
 } from './dto/delivery-notes.dto';
@@ -95,6 +97,23 @@ export class DeliveryNotesController {
   @UsePipes(new ZodValidationPipe(CreateDeliveryNoteSchema))
   create(@Body() body: CreateDeliveryNoteInput, @CurrentUser() user: AuthUser): Promise<unknown> {
     return this.svc.create(body, user);
+  }
+
+  @Patch(':id')
+  @RequireCap('po.manage')
+  update(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(UpdateDeliveryNoteSchema)) body: UpdateDeliveryNoteInput,
+    @CurrentUser() user: AuthUser,
+  ): Promise<unknown> {
+    return this.svc.update(this.bid(), id, body, user);
+  }
+
+  @Post(':id/cancel')
+  @RequireCap('po.manage')
+  @HttpCode(204)
+  async cancel(@Param('id') id: string, @CurrentUser() user: AuthUser): Promise<void> {
+    await this.svc.cancel(this.bid(), id, user);
   }
 
   @Patch(':id/lines')

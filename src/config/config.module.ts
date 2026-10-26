@@ -1,5 +1,6 @@
 import { Global, Module } from '@nestjs/common';
 
+import { DocumentAuditService } from '../common/audit/document-audit.service';
 import { PermissionsResolver } from '../common/permissions-resolver.service';
 import { PrismaService } from '../common/prisma.service';
 import { TenantContext } from '../common/tenant/tenant-context';
@@ -18,7 +19,8 @@ export const ENV_TOKEN = 'ENV';
     PrismaService,
     PermissionsResolver,
     TenantContext,
+    DocumentAuditService,
   ],
-  exports: [ENV_TOKEN, PrismaService, PermissionsResolver, TenantContext],
+  exports: [ENV_TOKEN, PrismaService, PermissionsResolver, TenantContext, DocumentAuditService],
 })
 export class ConfigModule {}

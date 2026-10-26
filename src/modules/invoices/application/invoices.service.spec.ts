@@ -1,4 +1,5 @@
 import type { AuthUser } from '../../../common/auth/auth-user.type';
+import type { DocumentAuditService } from '../../../common/audit/document-audit.service';
 import { DomainError, NotFoundError } from '../../../common/errors';
 import type {
   InvoiceDetail,
@@ -7,6 +8,8 @@ import type {
 import type { CreateInvoiceInput } from '../dto/invoices.dto';
 
 import { InvoicesService, computeLineTotals } from './invoices.service';
+
+const mockAudit = () => ({ log: jest.fn() }) as unknown as DocumentAuditService;
 
 const cuid = (i: number) => `c${'l'.repeat(23)}${i}`;
 const BID = 'biz1';
@@ -82,7 +85,7 @@ describe('InvoicesService.create', () => {
   it('computes HT + TVA + total from lines and assigns sequential number', async () => {
     const r = repo();
     r.findLastNumber.mockResolvedValue('FA-2026-0007');
-    await new InvoicesService(r).create(baseInput(), actor);
+    await new InvoicesService(r, mockAudit()).create(baseInput(), actor);
 
     const [data] = r.create.mock.calls[0]!;
     // 2 × 100 = 200 HT, 20% VAT = 40 TVA, total 240.
@@ -94,21 +97,21 @@ describe('InvoicesService.create', () => {
 
   it('subtracts global discount from total', async () => {
     const r = repo();
-    await new InvoicesService(r).create(baseInput({ discount: 40 }), actor);
+    await new InvoicesService(r, mockAudit()).create(baseInput({ discount: 40 }), actor);
     expect(r.create.mock.calls[0]![0].total).toBe(200);
   });
 
   it('rejects when global discount exceeds gross total', async () => {
     const r = repo();
     await expect(
-      new InvoicesService(r).create(baseInput({ discount: 9999 }), actor),
+      new InvoicesService(r, mockAudit()).create(baseInput({ discount: 9999 }), actor),
     ).rejects.toMatchObject({ response: { code: 'invalid_discount' } });
   });
 
   it('rejects when dueDate is before invoice date', async () => {
     const r = repo();
     await expect(
-      new InvoicesService(r).create(
+      new InvoicesService(r, mockAudit()).create(
         baseInput({ date: new Date('2026-09-10'), dueDate: new Date('2026-08-10') }),
         actor,
       ),
@@ -118,13 +121,13 @@ describe('InvoicesService.create', () => {
   it('formats first-of-year number as FA-YYYY-0001', async () => {
     const r = repo();
     r.findLastNumber.mockResolvedValue(null);
-    await new InvoicesService(r).create(baseInput(), actor);
+    await new InvoicesService(r, mockAudit()).create(baseInput(), actor);
     expect(r.create.mock.calls[0]![0].number).toMatch(/^FA-\d{4}-0001$/);
   });
 
   it('stamps issuedById from the acting user', async () => {
     const r = repo();
-    await new InvoicesService(r).create(baseInput(), actor);
+    await new InvoicesService(r, mockAudit()).create(baseInput(), actor);
     expect(r.create.mock.calls[0]![0].issuedById).toBe(actor.id);
   });
 });
@@ -133,13 +136,13 @@ describe('InvoicesService.get', () => {
   it('throws NotFoundError when the invoice does not exist', async () => {
     const r = repo();
     r.findDetail.mockResolvedValue(null);
-    await expect(new InvoicesService(r).get(BID, 'nope')).rejects.toBeInstanceOf(NotFoundError);
+    await expect(new InvoicesService(r, mockAudit()).get(BID, 'nope')).rejects.toBeInstanceOf(NotFoundError);
   });
 
   it('returns the detail when found', async () => {
     const r = repo();
     r.findDetail.mockResolvedValue(detail());
-    await expect(new InvoicesService(r).get(BID, 'inv1')).resolves.toMatchObject({ id: 'inv1' });
+    await expect(new InvoicesService(r, mockAudit()).get(BID, 'inv1')).resolves.toMatchObject({ id: 'inv1' });
   });
 });
 
@@ -148,7 +151,7 @@ describe('InvoicesService.recordPayment', () => {
     const r = repo();
     r.findDetail.mockResolvedValue(detail({ total: 120, paid: 0 }));
     r.addPayment.mockResolvedValue(detail({ total: 120, paid: 50, status: 'draft' }));
-    const out = await new InvoicesService(r).recordPayment(BID, 'inv1', { amount: 50 });
+    const out = await new InvoicesService(r, mockAudit()).recordPayment(BID, 'inv1', { amount: 50 });
     expect(r.updateStatus).toHaveBeenCalledWith('inv1', 'partial');
     expect(out.status).toBe('partial');
   });
@@ -157,7 +160,7 @@ describe('InvoicesService.recordPayment', () => {
     const r = repo();
     r.findDetail.mockResolvedValue(detail({ total: 120, paid: 50 }));
     r.addPayment.mockResolvedValue(detail({ total: 120, paid: 120, status: 'partial' }));
-    const out = await new InvoicesService(r).recordPayment(BID, 'inv1', { amount: 70 });
+    const out = await new InvoicesService(r, mockAudit()).recordPayment(BID, 'inv1', { amount: 70 });
     expect(r.updateStatus).toHaveBeenCalledWith('inv1', 'paid');
     expect(out.status).toBe('paid');
   });
@@ -166,7 +169,7 @@ describe('InvoicesService.recordPayment', () => {
     const r = repo();
     r.findDetail.mockResolvedValue(detail({ total: 120, paid: 100 }));
     await expect(
-      new InvoicesService(r).recordPayment(BID, 'inv1', { amount: 999 }),
+      new InvoicesService(r, mockAudit()).recordPayment(BID, 'inv1', { amount: 999 }),
     ).rejects.toMatchObject({ response: { code: 'overpayment' } });
   });
 
@@ -174,7 +177,7 @@ describe('InvoicesService.recordPayment', () => {
     const r = repo();
     r.findDetail.mockResolvedValue(detail({ status: 'cancelled' }));
     await expect(
-      new InvoicesService(r).recordPayment(BID, 'inv1', { amount: 10 }),
+      new InvoicesService(r, mockAudit()).recordPayment(BID, 'inv1', { amount: 10 }),
     ).rejects.toMatchObject({ response: { code: 'cancelled_invoice' } });
   });
 
@@ -182,7 +185,7 @@ describe('InvoicesService.recordPayment', () => {
     const r = repo();
     r.findDetail.mockResolvedValue(null);
     await expect(
-      new InvoicesService(r).recordPayment(BID, 'x', { amount: 1 }),
+      new InvoicesService(r, mockAudit()).recordPayment(BID, 'x', { amount: 1 }),
     ).rejects.toBeInstanceOf(NotFoundError);
   });
 });
@@ -191,20 +194,20 @@ describe('InvoicesService.cancel', () => {
   it('cancels a draft invoice', async () => {
     const r = repo();
     r.findDetail.mockResolvedValue(detail({ status: 'draft', paid: 0 }));
-    await new InvoicesService(r).cancel(BID, 'inv1');
+    await new InvoicesService(r, mockAudit()).cancel(BID, 'inv1', actor);
     expect(r.updateStatus).toHaveBeenCalledWith('inv1', 'cancelled');
   });
 
   it('refuses to cancel a paid invoice', async () => {
     const r = repo();
     r.findDetail.mockResolvedValue(detail({ status: 'paid' }));
-    await expect(new InvoicesService(r).cancel(BID, 'inv1')).rejects.toBeInstanceOf(DomainError);
+    await expect(new InvoicesService(r, mockAudit()).cancel(BID, 'inv1', actor)).rejects.toBeInstanceOf(DomainError);
   });
 
   it('refuses to cancel when a partial payment exists', async () => {
     const r = repo();
     r.findDetail.mockResolvedValue(detail({ status: 'partial', paid: 10 }));
-    await expect(new InvoicesService(r).cancel(BID, 'inv1')).rejects.toMatchObject({
+    await expect(new InvoicesService(r, mockAudit()).cancel(BID, 'inv1', actor)).rejects.toMatchObject({
       response: { code: 'cannot_cancel_with_payments' },
     });
   });
@@ -212,6 +215,6 @@ describe('InvoicesService.cancel', () => {
   it('throws NotFoundError when invoice is missing', async () => {
     const r = repo();
     r.findDetail.mockResolvedValue(null);
-    await expect(new InvoicesService(r).cancel(BID, 'x')).rejects.toBeInstanceOf(NotFoundError);
+    await expect(new InvoicesService(r, mockAudit()).cancel(BID, 'x', actor)).rejects.toBeInstanceOf(NotFoundError);
   });
 });

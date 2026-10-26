@@ -76,6 +76,13 @@ export class EstimatesController {
     return this.svc.update(this.bid(), id, body, user);
   }
 
+  @Post(':id/cancel')
+  @RequireCap('billing.manage')
+  @HttpCode(204)
+  async cancel(@Param('id') id: string, @CurrentUser() user: AuthUser): Promise<void> {
+    await this.svc.cancel(this.bid(), id, user);
+  }
+
   @Delete(':id')
   @RequireCap('billing.manage')
   @HttpCode(204)

@@ -53,6 +53,24 @@ model PlatformAuditLog {
   @@map("platform_audit_logs")
 }
 
+/// Modification history for business documents (invoices, bons, estimates, POs).
+model DocumentAudit {
+  id        String   @id @default(cuid())
+  businessId String  @map("business_id")
+  docType   String   @map("doc_type") // invoice | delivery_note | estimate | purchase_order
+  docId     String   @map("doc_id")
+  docNumber String   @map("doc_number")
+  action    String   // create | update | cancel | status_change | sign | payment
+  changes   Json?    // { field: { old, new } } — null for create/sign
+  userId    String   @map("user_id")
+  userName  String   @map("user_name")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([businessId, docType, docId])
+  @@index([businessId, createdAt])
+  @@map("document_audits")
+}
+
 model Business {
   id                String           @id @default(cuid())
   name              String
@@ -863,6 +881,7 @@ enum DeliveryNoteStatus {
   partial
   delivered
   closed
+  cancelled
 }
 
 enum BonPaymentMethod {
