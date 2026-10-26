@@ -20,6 +20,9 @@ export type PatchOverridesInput = z.infer<typeof PatchOverridesSchema>;
 
 export { RoleEnum, CapEnum };
 
+export const SetMultiWarehouseSchema = z.object({ multiWarehouse: z.boolean() });
+export type SetMultiWarehouseInput = z.infer<typeof SetMultiWarehouseSchema>;
+
 export const PatchSecurityPolicySchema = z
   .object({
     passwordMinLen: z.number().int().min(4).max(64),

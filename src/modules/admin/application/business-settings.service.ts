@@ -58,6 +58,16 @@ export class BusinessSettingsService {
     return { multiWarehouse: b.multiWarehouse };
   }
 
+  async setMultiWarehouse(enabled: boolean): Promise<{ multiWarehouse: boolean }> {
+    const bid = this.businessId();
+    const b = await this.prisma.business.update({
+      where: { id: bid },
+      data: { multiWarehouse: enabled },
+      select: { multiWarehouse: true },
+    });
+    return { multiWarehouse: b.multiWarehouse };
+  }
+
   async uploadLogo(buffer: Buffer): Promise<{ logoPath: string }> {
     const ext = this.storage.sniffExtension(buffer);
     if (!ext) throw new ValidationError('Unsupported image format');

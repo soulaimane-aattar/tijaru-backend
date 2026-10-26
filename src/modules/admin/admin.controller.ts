@@ -31,6 +31,8 @@ import {
   PatchRoleSchema,
   type PatchSecurityPolicyInput,
   PatchSecurityPolicySchema,
+  type SetMultiWarehouseInput,
+  SetMultiWarehouseSchema,
 } from './dto/admin.dto';
 import {
   type UpdateModulesInput,
@@ -76,6 +78,14 @@ export class AdminController {
   @RequireCap('settings.manage')
   getMultiWarehouse(): Promise<unknown> {
     return this.settings.getMultiWarehouse();
+  }
+
+  @Patch('multi-warehouse')
+  @RequireCap('settings.manage')
+  setMultiWarehouse(
+    @Body(new ZodValidationPipe(SetMultiWarehouseSchema)) body: SetMultiWarehouseInput,
+  ): Promise<unknown> {
+    return this.settings.setMultiWarehouse(body.multiWarehouse);
   }
 
   // ─── Roles ───────────────────────────────────────────────────────────────
