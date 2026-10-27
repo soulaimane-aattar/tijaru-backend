@@ -141,6 +141,7 @@ export class PrismaAuthRepository extends AuthRepository {
       });
       const defaultModules = [
         'stock',
+        'multi-stock',
         'pos',
         'expenses',
         'purchase-orders',

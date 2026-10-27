@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
 import { EnforceLimit } from '../../common/decorators/enforce-limit.decorator';
 import { RequireCap } from '../../common/decorators/require-cap.decorator';
+import { RequiresModule } from '../../common/decorators/require-module.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 
 import { WarehousesService } from './application/warehouses.service';
@@ -33,6 +34,7 @@ export class WarehousesController {
   }
 
   @Post()
+  @RequiresModule('multi-stock')
   @RequireCap('warehouses.manage')
   @EnforceLimit('warehouses')
   @UsePipes(new ZodValidationPipe(CreateWarehouseSchema))
