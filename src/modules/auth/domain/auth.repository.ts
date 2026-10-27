@@ -125,6 +125,9 @@ export abstract class AuthRepository {
   /** Plan + subscription end date of the business, or null when not found. */
   abstract findBusinessById(businessId: string): Promise<BusinessSubscriptionView | null>;
 
+  /** Per-user module allow-list (`null` = unrestricted). */
+  abstract findModuleAccess(userId: string): Promise<string[] | null>;
+
   /** Module activation flags for the business. */
   abstract findBusinessModules(businessId: string): Promise<BusinessModuleView[]>;
 

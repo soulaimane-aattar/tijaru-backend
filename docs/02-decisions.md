@@ -2,6 +2,13 @@
 
 > One entry per significant decision. Newest on top. Format: date · decision · why · rejected alternatives.
 
+## D-036 — 2026-10-27 · Module access is two-level: platform admin enables modules per business, owner assigns them per employee
+
+- **Decision:** `BusinessModule.active` (global allowance) is changed only by the platform admin (`PATCH /admin/platform/businesses/:id/modules`); the owner-facing `PATCH /admin/modules` was removed. The owner narrows access per employee with `User.restrictModules` + `User.moduleAccess[]` (set via `modules` on `POST/PATCH /users`, **owner only**, only modules active for the business, never on an owner). `ModuleGuard` re-reads the user row on every `@RequiresModule` request (no JWT staleness) → `403 module_forbidden:<id>`. `/auth/me.modules` = business-active ∩ user allow-list so the apps hide what the API would refuse.
+- **Why:** an employee must handle one module without seeing/using the others; enforcement has to live in the API, not just the UI. Owner-only assignment stops a restricted manager lifting their own limit.
+- **Rejected:** encoding modules in the JWT (stale until refresh); per-role module lists (owner wants per-account control); new capability ids per module (duplicates `@RequiresModule`).
+- **Reference:** Frappe per-user "Block Modules" (frappe/frappe `user.json`) — same allow/deny-per-user shape, enforced server-side.
+
 ## D-035 — 2026-10-08 · Bug-report zone is picked directly on the live app (in-app overlay), not on a screenshot in a modal
 - **Decision:** `@souldev/bug-reporter` step 1 renders a transparent overlay over the running app (RN `PanResponder`, no `<Modal>`, no RNGH/reanimated); the zone is editable (move/resize/redraw) and only a draggable footer is shown. The screenshot is still captured before the overlay opens and attached to the report with the normalized `zone` rect. Super admin triages in web `/bug-reports`.
 - **Why:** Users must point at the real UI, not a copy in a separate sheet; a Modal hides the app and felt like a separate page. PanResponder is the same JS responder system as any `Pressable`, so it works beside native navigators with zero native-gesture dependencies.

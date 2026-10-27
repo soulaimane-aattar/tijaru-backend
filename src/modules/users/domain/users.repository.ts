@@ -13,6 +13,8 @@ export interface CreateUserData {
   passwordHash: string;
   role: string;
   warehouseIds: string[];
+  restrictModules: boolean;
+  moduleAccess: string[];
 }
 
 export interface UpdateUserData {
@@ -22,6 +24,8 @@ export interface UpdateUserData {
   passwordHash?: string | undefined;
   role?: string | undefined;
   active?: boolean | undefined;
+  restrictModules?: boolean | undefined;
+  moduleAccess?: string[] | undefined;
 }
 
 export abstract class UsersRepository {
@@ -36,6 +40,12 @@ export abstract class UsersRepository {
 
   /** True when a non-deleted user already uses this (normalized) email. */
   abstract emailInUse(email: string): Promise<boolean>;
+
+  /** Role of a non-deleted user, or null. */
+  abstract findRole(id: string): Promise<string | null>;
+
+  /** Module ids currently active for the caller's business. */
+  abstract activeModuleIds(): Promise<string[]>;
 
   /** Create the user and its warehouse assignments; returns safe fields only. */
   abstract create(data: CreateUserData): Promise<unknown>;

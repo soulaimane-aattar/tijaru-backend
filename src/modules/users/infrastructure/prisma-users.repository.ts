@@ -28,6 +28,8 @@ export class PrismaUsersRepository extends UsersRepository {
     phone: true,
     role: true,
     active: true,
+    restrictModules: true,
+    moduleAccess: true,
     lastLogin: true,
     createdAt: true,
     updatedAt: true,
@@ -55,6 +57,22 @@ export class PrismaUsersRepository extends UsersRepository {
       select: { id: true },
     });
     return user !== null;
+  }
+
+  async findRole(id: string): Promise<string | null> {
+    const u = await this.prisma.user.findFirst({
+      where: { id, deletedAt: null },
+      select: { role: true },
+    });
+    return u?.role ?? null;
+  }
+
+  async activeModuleIds(): Promise<string[]> {
+    const rows = await this.prisma.businessModule.findMany({
+      where: { active: true },
+      select: { moduleId: true },
+    });
+    return rows.map((r) => r.moduleId);
   }
 
   async emailInUse(email: string): Promise<boolean> {

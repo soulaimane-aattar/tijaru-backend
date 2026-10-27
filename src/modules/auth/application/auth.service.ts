@@ -243,15 +243,19 @@ export class AuthService {
       };
     }
 
-    const [business, modules] = await Promise.all([
+    const [business, modules, access] = await Promise.all([
       this.authRepo.findBusinessById(businessId),
       this.authRepo.findBusinessModules(businessId),
+      role === 'owner' ? Promise.resolve(null) : this.authRepo.findModuleAccess(userId),
     ]);
 
     return {
       ...profile,
       capabilities: [...effective],
-      modules: modules.filter((m) => m.active).map((m) => m.moduleId),
+      // Business-active modules, narrowed to the user's allow-list when one is set.
+      modules: modules
+        .filter((m) => m.active && (access === null || access.includes(m.moduleId)))
+        .map((m) => m.moduleId),
       subscription: business ? { plan: business.plan, end: business.subscriptionEnd } : null,
       enabledVatRates: business?.enabledVatRates ?? [0, 7, 10, 14, 20],
       multiWarehouse: business?.multiWarehouse ?? true,

@@ -37,18 +37,6 @@ export class BusinessSettingsService {
     });
   }
 
-  async updateModules(modules: Record<string, boolean>): Promise<void> {
-    const bid = this.businessId();
-    const upserts = Object.entries(modules).map(([moduleId, active]) =>
-      this.prisma.businessModule.upsert({
-        where: { businessId_moduleId: { businessId: bid, moduleId } },
-        update: { active },
-        create: { businessId: bid, moduleId, active },
-      }),
-    );
-    await this.prisma.$transaction(upserts);
-  }
-
   async getMultiWarehouse(): Promise<{ multiWarehouse: boolean }> {
     const b = await this.prisma.business.findUnique({
       where: { id: this.businessId() },

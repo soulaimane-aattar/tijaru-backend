@@ -31,6 +31,18 @@ export class ModuleGuard implements CanActivate {
       throw new ForbiddenError(`module_disabled:${moduleId}`);
     }
 
+    // Per-employee allow-list. Read from the DB (not the JWT) so a change by the
+    // owner takes effect on the very next request. Owners are never restricted.
+    if (user.role !== 'owner') {
+      const row = await this.prisma.user.findUnique({
+        where: { id: user.id },
+        select: { restrictModules: true, moduleAccess: true },
+      });
+      if (row?.restrictModules && !row.moduleAccess.includes(moduleId)) {
+        throw new ForbiddenError(`module_forbidden:${moduleId}`);
+      }
+    }
+
     return true;
   }
 }

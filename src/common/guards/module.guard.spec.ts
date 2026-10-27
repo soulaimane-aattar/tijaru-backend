@@ -31,7 +31,7 @@ function makeUser(overrides: Partial<AuthUser> = {}): AuthUser {
 
 describe('ModuleGuard', () => {
   let reflector: { getAllAndOverride: jest.Mock };
-  let prisma: { businessModule: { findUnique: jest.Mock } };
+  let prisma: { businessModule: { findUnique: jest.Mock }; user: { findUnique: jest.Mock } };
   let guard: ModuleGuard;
 
   beforeEach(() => {
@@ -40,6 +40,7 @@ describe('ModuleGuard', () => {
       businessModule: {
         findUnique: jest.fn(),
       },
+      user: { findUnique: jest.fn().mockResolvedValue({ restrictModules: false, moduleAccess: [] }) },
     };
     guard = new ModuleGuard(reflector as unknown as Reflector, prisma as unknown as PrismaService);
   });
@@ -107,5 +108,47 @@ describe('ModuleGuard', () => {
     });
 
     await expect(guard.canActivate(makeContext(makeUser()))).rejects.toThrow(ForbiddenError);
+  });
+
+  describe('per-employee module access', () => {
+    const employee = () => makeUser({ role: 'cashier' as AuthUser['role'] });
+    beforeEach(() => {
+      reflector.getAllAndOverride.mockReturnValue('pos');
+      prisma.businessModule.findUnique.mockResolvedValue({ active: true });
+    });
+
+    it('lets an unrestricted employee through', async () => {
+      await expect(guard.canActivate(makeContext(employee()))).resolves.toBe(true);
+    });
+
+    it('lets a restricted employee use a module on their list', async () => {
+      prisma.user.findUnique.mockResolvedValue({ restrictModules: true, moduleAccess: ['pos'] });
+      await expect(guard.canActivate(makeContext(employee()))).resolves.toBe(true);
+    });
+
+    it('blocks a restricted employee from a module not on their list', async () => {
+      prisma.user.findUnique.mockResolvedValue({ restrictModules: true, moduleAccess: ['expenses'] });
+      await expect(guard.canActivate(makeContext(employee()))).rejects.toMatchObject({
+        response: expect.objectContaining({ title: 'module_forbidden:pos' }),
+      });
+    });
+
+    it('blocks a restricted employee with an empty list from everything', async () => {
+      prisma.user.findUnique.mockResolvedValue({ restrictModules: true, moduleAccess: [] });
+      await expect(guard.canActivate(makeContext(employee()))).rejects.toThrow(ForbiddenError);
+    });
+
+    it('never restricts owners (and skips the lookup)', async () => {
+      await guard.canActivate(makeContext(makeUser()));
+      expect(prisma.user.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('still enforces the business-level switch first', async () => {
+      prisma.businessModule.findUnique.mockResolvedValue({ active: false });
+      prisma.user.findUnique.mockResolvedValue({ restrictModules: true, moduleAccess: ['pos'] });
+      await expect(guard.canActivate(makeContext(employee()))).rejects.toMatchObject({
+        response: expect.objectContaining({ title: 'module_disabled:pos' }),
+      });
+    });
   });
 });

@@ -55,16 +55,16 @@ model PlatformAuditLog {
 
 /// Modification history for business documents (invoices, bons, estimates, POs).
 model DocumentAudit {
-  id        String   @id @default(cuid())
-  businessId String  @map("business_id")
-  docType   String   @map("doc_type") // invoice | delivery_note | estimate | purchase_order
-  docId     String   @map("doc_id")
-  docNumber String   @map("doc_number")
-  action    String   // create | update | cancel | status_change | sign | payment
-  changes   Json?    // { field: { old, new } } — null for create/sign
-  userId    String   @map("user_id")
-  userName  String   @map("user_name")
-  createdAt DateTime @default(now()) @map("created_at")
+  id         String   @id @default(cuid())
+  businessId String   @map("business_id")
+  docType    String   @map("doc_type") // invoice | delivery_note | estimate | purchase_order
+  docId      String   @map("doc_id")
+  docNumber  String   @map("doc_number")
+  action     String // create | update | cancel | status_change | sign | payment
+  changes    Json? // { field: { old, new } } — null for create/sign
+  userId     String   @map("user_id")
+  userName   String   @map("user_name")
+  createdAt  DateTime @default(now()) @map("created_at")
 
   @@index([businessId, docType, docId])
   @@index([businessId, createdAt])
@@ -179,19 +179,23 @@ enum BuiltInRole {
 }
 
 model User {
-  id           String      @id @default(cuid())
-  businessId   String      @map("business_id")
-  name         String
-  email        String
-  phone        String?
-  passwordHash String
-  role         BuiltInRole
-  tokenVersion Int         @default(0)
-  active       Boolean     @default(true)
-  lastLogin    DateTime?
-  deletedAt    DateTime?
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
+  id              String      @id @default(cuid())
+  businessId      String      @map("business_id")
+  name            String
+  email           String
+  phone           String?
+  passwordHash    String
+  role            BuiltInRole
+  tokenVersion    Int         @default(0)
+  active          Boolean     @default(true)
+  /// When true the user may only use the modules listed in `moduleAccess`
+  /// (always a subset of the business's active modules). Owners are never restricted.
+  restrictModules Boolean     @default(false) @map("restrict_modules")
+  moduleAccess    String[]    @default([]) @map("module_access")
+  lastLogin       DateTime?
+  deletedAt       DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
 
   business          Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
   warehouses        UserWarehouse[]
@@ -782,10 +786,10 @@ model Expense {
   createdAt     DateTime      @default(now()) @map("created_at")
   updatedAt     DateTime      @updatedAt @map("updated_at")
 
-  business  Business   @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  warehouse Warehouse? @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
-  supplier  Supplier?  @relation(fields: [supplierId], references: [id], onDelete: SetNull)
-  createdBy User       @relation(fields: [createdById], references: [id])
+  business  Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  warehouse Warehouse?     @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  supplier  Supplier?      @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  createdBy User           @relation(fields: [createdById], references: [id])
   photos    ExpensePhoto[]
 
   @@index([businessId, date])
@@ -1264,7 +1268,7 @@ model BugReport {
   deviceInfo  String?  @map("device_info")
   appVersion  String?  @map("app_version")
   note        String?
-  zone        Json?    // normalized {x,y,w,h} of the rectangle drawn on the screenshot
+  zone        Json? // normalized {x,y,w,h} of the rectangle drawn on the screenshot
   status      String   @default("open") // open | acknowledged | resolved
   createdAt   DateTime @default(now()) @map("created_at")
 

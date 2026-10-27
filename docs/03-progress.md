@@ -23,6 +23,13 @@
 
 ## Log
 
+### 2026-10-27 — Per-employee module access (owner assigns, platform admin enables) + empty-body fix
+
+- **Step:** (1) `src/api/client.ts` (mobile): void endpoints answering 2xx with an empty body no longer throw `JSON Parse error: Unexpected end of input` (read text, parse only if non-empty). (2) Backend: migration `20261027120000_user_module_access` (`users.restrict_modules`, `users.module_access[]`); `ModuleGuard` enforces the per-user allow-list; `/users` accepts `modules` (owner only, validated against the business's active modules, never for owners); `/auth/me.modules` narrowed; owner `PATCH /admin/modules` removed. (3) Mobile: Users screen — owner taps an employee → "Modules accessibles" sheet; new-user form has the picker; Settings modules card is read-only (platform-managed); home tiles / Mouvements tab hidden without the `stock` module.
+- **Result:** ✅ backend `jest` 565/565 (new: 6 guard cases, 8 users-service cases), `tsc` clean, `eslint` clean on touched files; mobile `tsc` clean on touched files. ⚠️ Not run: migration against a live DB (local Postgres :5433 was down), sim check of the new Users sheet.
+- **Decisions:** D-036
+- **Next:** deploy backend (migration runs on boot), then sim-verify: owner restricts a cashier to `pos` → cashier's app shows only POS and the API returns 403 `module_forbidden` for others.
+
 ### 2026-10-08 — Bug reports end-to-end: in-app zone picker → super-admin "Signalements" (backend + web + mobile + @souldev/bug-reporter)
 - **Step:** (1) `@souldev/bug-reporter` step 1 is now a transparent in-app overlay (no Modal/screenshot): draw a zone on the live app, move/resize it via corner handles, aiming-crosshair indicator, draggable footer; step 3 "Envoyer" was permanently disabled (`canNext`) — fixed. (2) Backend: `bug_reports` had no migration → `20261008120000_add_bug_reports` (idempotent; +`note`, `zone` JSONB); `POST /bug-reports` accepts `note` + `zone`; screenshots via shared `LocalStorageService` (`UPLOADS_DIR`, tenant folder, magic-byte validated). (3) Super admin: `GET/PATCH admin/platform/bug-reports`, `GET …/:id/screenshot`; web page `/bug-reports` (filters, detail modal with screenshot + zone overlay, status Ouvert/Pris en compte/Résolu).
 - **Result:** ✅ backend `tsc` + eslint clean, jest 54/54 (new `bug-reports.spec.ts`); `prisma migrate reset` clean, `migrate diff` → no difference, migration re-run on existing table → 0 errors; local API e2e via curl (tenant POST multipart+zone → super-admin list/PATCH/screenshot 200; no token / tenant token on admin routes → 401); web `tsc` 0 errors; bug-reporter `tsc` + build clean against RN 0.86; sim: overlay draw/move/resize + aiming indicator verified.

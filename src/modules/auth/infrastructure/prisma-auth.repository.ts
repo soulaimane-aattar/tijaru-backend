@@ -183,6 +183,14 @@ export class PrismaAuthRepository extends AuthRepository {
     });
   }
 
+  async findModuleAccess(userId: string): Promise<string[] | null> {
+    const u = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { restrictModules: true, moduleAccess: true },
+    });
+    return u?.restrictModules ? u.moduleAccess : null;
+  }
+
   async findBusinessModules(businessId: string): Promise<BusinessModuleView[]> {
     return this.prisma.businessModule.findMany({
       where: { businessId },
