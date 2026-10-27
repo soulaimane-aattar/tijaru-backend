@@ -52,6 +52,7 @@ const repo = (): jest.Mocked<DeliveryNotesRepository> =>
     findLastNumber: jest.fn().mockResolvedValue(null),
     create: jest.fn().mockImplementation((d) => Promise.resolve(detail({ ...d, id: 'dn1' }))),
     findDetail: jest.fn(),
+    update: jest.fn(),
     list: jest.fn(),
     updateStatus: jest.fn().mockResolvedValue(undefined),
     updateLineSent: jest.fn().mockResolvedValue(undefined),
@@ -256,6 +257,28 @@ describe('DeliveryNotesService.updateLineSent', () => {
     await expect(
       makeSvc(r, products()).updateLineSent(BID, 'dn1', 'nope', 1),
     ).rejects.toBeInstanceOf(NotFoundError);
+  });
+});
+
+describe('DeliveryNotesService.update', () => {
+  const edit = { lines: [{ productId: PROD, label: 'x', ordered: 10, sent: 4 }] };
+
+  it('rejects signed and cancelled notes', async () => {
+    for (const over of [{ signed: true }, { status: 'cancelled' as const }]) {
+      const r = repo();
+      r.findDetail.mockResolvedValue(detail(over));
+      await expect(makeSvc(r, products()).update(BID, 'dn1', edit, actor)).rejects.toBeInstanceOf(
+        DomainError,
+      );
+    }
+  });
+
+  it('allows an unsigned delivered note and recomputes status from the new lines', async () => {
+    const r = repo();
+    r.findDetail.mockResolvedValue(detail({ status: 'delivered' }));
+    r.update.mockResolvedValue(detail({ status: 'delivered' }));
+    await makeSvc(r, products()).update(BID, 'dn1', edit, actor);
+    expect(r.updateStatus).toHaveBeenCalledWith('dn1', 'partial');
   });
 });
 

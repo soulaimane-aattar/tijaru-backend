@@ -139,8 +139,9 @@ export class DeliveryNotesService {
     if (existing.signed) {
       throw new DomainError('cannot_edit_signed', 'Signed notes cannot be edited', 422);
     }
-    if (existing.status !== 'prepared') {
-      throw new DomainError('cannot_edit_status', 'Only prepared notes can be edited', 422);
+    // Unsigned = no stock posted yet, so any live note stays editable.
+    if (existing.status === 'cancelled' || existing.status === 'closed') {
+      throw new DomainError('cannot_edit_status', 'Cancelled or closed notes cannot be edited', 422);
     }
 
     const changes: Record<string, { old: unknown; new: unknown }> = {};
@@ -176,7 +177,15 @@ export class DeliveryNotesService {
       changes.lines = { old: existing.lines.length, new: lines.length };
     }
 
-    const updated = await this.repo.update(id, updateData);
+    let updated = await this.repo.update(id, updateData);
+    if (updateData.lines) {
+      const status = statusFromLines(updateData.lines, existing.status);
+      if (status !== existing.status) {
+        await this.repo.updateStatus(id, status);
+        changes.status = { old: existing.status, new: status };
+        updated = { ...updated, status };
+      }
+    }
     await this.audit.log({
       businessId,
       docType: 'delivery_note',
