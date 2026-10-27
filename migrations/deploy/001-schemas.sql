@@ -1,6 +1,5 @@
--- Deploy 001-schemas: Create schemas, roles, extensions
--- Existing tables stay in public (Prisma baseline).
--- New DB objects go into app/app_auth/api/tests schemas.
+-- Deploy 001-schemas: Create schemas, roles, extensions, search_path
+-- Tables live in app/app_auth schemas, not public. Public keeps platform tables only.
 
 BEGIN;
 
@@ -17,8 +16,31 @@ DO $$ BEGIN
     END IF;
 END $$;
 
--- Grant access to all schemas + public tables
+-- Search path: unqualified names resolve app → app_auth → public
+ALTER ROLE tijaru_app SET search_path = app, app_auth, public;
+-- Dev superuser also gets the search_path for convenience
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'stock') THEN
+        EXECUTE 'ALTER ROLE stock SET search_path = app, app_auth, public';
+    END IF;
+END $$;
+
+-- Grant schema access
 GRANT USAGE ON SCHEMA public, app, app_auth, api, tests TO tijaru_app;
+
+-- Grants on app schema (business tables)
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA app TO tijaru_app;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA app TO tijaru_app;
+ALTER DEFAULT PRIVILEGES IN SCHEMA app GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO tijaru_app;
+ALTER DEFAULT PRIVILEGES IN SCHEMA app GRANT USAGE, SELECT ON SEQUENCES TO tijaru_app;
+
+-- Grants on app_auth schema (auth tables)
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA app_auth TO tijaru_app;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA app_auth TO tijaru_app;
+ALTER DEFAULT PRIVILEGES IN SCHEMA app_auth GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO tijaru_app;
+ALTER DEFAULT PRIVILEGES IN SCHEMA app_auth GRANT USAGE, SELECT ON SEQUENCES TO tijaru_app;
+
+-- Grants on public (platform tables)
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO tijaru_app;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO tijaru_app;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO tijaru_app;
@@ -28,10 +50,7 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO ti
 CREATE EXTENSION IF NOT EXISTS citext;
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
--- pgTAP: installed separately via custom postgres image (see docker/postgres/)
--- CREATE EXTENSION IF NOT EXISTS pgtap; -- done in 005-test-framework when available
-
--- Utility: auto-update updated_at timestamp
+-- Utility: auto-update updatedAt timestamp
 CREATE OR REPLACE FUNCTION app.set_updated_at()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
 BEGIN

@@ -12,9 +12,17 @@ DO $$ BEGIN
         EXECUTE 'ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON SEQUENCES FROM tijaru_app';
         EXECUTE 'REVOKE USAGE ON SCHEMA public FROM tijaru_app';
         IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'app') THEN
+            EXECUTE 'REVOKE ALL ON ALL TABLES IN SCHEMA app FROM tijaru_app';
+            EXECUTE 'REVOKE ALL ON ALL SEQUENCES IN SCHEMA app FROM tijaru_app';
+            EXECUTE 'ALTER DEFAULT PRIVILEGES IN SCHEMA app REVOKE ALL ON TABLES FROM tijaru_app';
+            EXECUTE 'ALTER DEFAULT PRIVILEGES IN SCHEMA app REVOKE ALL ON SEQUENCES FROM tijaru_app';
             EXECUTE 'REVOKE USAGE ON SCHEMA app FROM tijaru_app';
         END IF;
         IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'app_auth') THEN
+            EXECUTE 'REVOKE ALL ON ALL TABLES IN SCHEMA app_auth FROM tijaru_app';
+            EXECUTE 'REVOKE ALL ON ALL SEQUENCES IN SCHEMA app_auth FROM tijaru_app';
+            EXECUTE 'ALTER DEFAULT PRIVILEGES IN SCHEMA app_auth REVOKE ALL ON TABLES FROM tijaru_app';
+            EXECUTE 'ALTER DEFAULT PRIVILEGES IN SCHEMA app_auth REVOKE ALL ON SEQUENCES FROM tijaru_app';
             EXECUTE 'REVOKE USAGE ON SCHEMA app_auth FROM tijaru_app';
         END IF;
         IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'api') THEN

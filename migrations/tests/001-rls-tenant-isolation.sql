@@ -28,27 +28,23 @@ SELECT set_config('test.prod_b', tests.create_product(
 -- Impersonate business A (switches to tijaru_app role, RLS active)
 SELECT tests.impersonate(current_setting('test.biz_a'), current_setting('test.user_a'));
 
--- Business A sees own product
 SELECT ok(
-    (SELECT count(*) = 1 FROM public.products WHERE id = current_setting('test.prod_a')),
+    (SELECT count(*) = 1 FROM app.products WHERE id = current_setting('test.prod_a')),
     'Business A sees own product'
 );
 
--- Business A cannot see business B product
 SELECT ok(
-    (SELECT count(*) = 0 FROM public.products WHERE id = current_setting('test.prod_b')),
+    (SELECT count(*) = 0 FROM app.products WHERE id = current_setting('test.prod_b')),
     'Business A cannot see Business B product'
 );
 
--- Business A sees own user
 SELECT ok(
-    (SELECT count(*) = 1 FROM public.users WHERE id = current_setting('test.user_a')),
+    (SELECT count(*) = 1 FROM app_auth.users WHERE id = current_setting('test.user_a')),
     'Business A sees own user'
 );
 
--- Business A cannot see business B user
 SELECT ok(
-    (SELECT count(*) = 0 FROM public.users WHERE id = current_setting('test.user_b')),
+    (SELECT count(*) = 0 FROM app_auth.users WHERE id = current_setting('test.user_b')),
     'Business A cannot see Business B user'
 );
 
@@ -56,15 +52,13 @@ SELECT ok(
 SELECT tests.reset_impersonation();
 SELECT tests.impersonate(current_setting('test.biz_b'), current_setting('test.user_b'));
 
--- Business B sees own product
 SELECT ok(
-    (SELECT count(*) = 1 FROM public.products WHERE id = current_setting('test.prod_b')),
+    (SELECT count(*) = 1 FROM app.products WHERE id = current_setting('test.prod_b')),
     'Business B sees own product'
 );
 
--- Business B cannot see business A product
 SELECT ok(
-    (SELECT count(*) = 0 FROM public.products WHERE id = current_setting('test.prod_a')),
+    (SELECT count(*) = 0 FROM app.products WHERE id = current_setting('test.prod_a')),
     'Business B cannot see Business A product'
 );
 
