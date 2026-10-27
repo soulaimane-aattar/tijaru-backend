@@ -6,6 +6,8 @@ import type { Request } from 'express';
 import type { AuthUser } from '../../common/auth/auth-user.type';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/guards/jwt.guard';
+import { MailService } from '../../common/mail/mail.service';
+import { registrationReceived } from '../../common/mail/mail.templates';
 import { PermissionsResolver } from '../../common/permissions-resolver.service';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { CAPABILITIES, CAPABILITY_IDS, ROLES, ROLE_IDS } from '../../domain/permissions';
@@ -28,6 +30,7 @@ export class AuthController {
   constructor(
     private readonly auth: AuthService,
     private readonly mfa: PlatformAdminMfaService,
+    private readonly mail: MailService,
     private readonly permissions: PermissionsResolver,
   ) {}
 
@@ -73,7 +76,12 @@ export class AuthController {
   @UsePipes(new ZodValidationPipe(RegisterSchema))
   @ApiOperation({ summary: 'Self-serve signup. Creates a pending Business + owner User.' })
   async register(@Body() body: RegisterInput): Promise<{ status: string }> {
-    return this.auth.register(body);
+    const result = await this.auth.register(body);
+    void this.mail.send(
+      body.email,
+      registrationReceived({ ownerName: body.ownerName, businessName: body.businessName }),
+    );
+    return result;
   }
 
   @Public()

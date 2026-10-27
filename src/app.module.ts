@@ -13,6 +13,7 @@ import { JwtAuthGuard } from './common/guards/jwt.guard';
 import { LimitGuard } from './common/guards/limit.guard';
 import { ModuleGuard } from './common/guards/module.guard';
 import { SubscriptionGuard } from './common/guards/subscription.guard';
+import { MailModule } from './common/mail/mail.module';
 import { StorageModule } from './common/storage/storage.module';
 import { TenantInterceptor } from './common/tenant/tenant.interceptor';
 import { ConfigModule, ENV_TOKEN } from './config/config.module';
@@ -49,6 +50,7 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module';
   imports: [
     ConfigModule,
     StorageModule,
+    MailModule,
     ScheduleModule.forRoot(),
     AuthModule,
     UsersModule,

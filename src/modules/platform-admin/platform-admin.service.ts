@@ -5,6 +5,8 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 
 import { ConflictError, NotFoundError } from '../../common/errors';
+import { MailService } from '../../common/mail/mail.service';
+import { type Mail, businessApproved, businessRejected } from '../../common/mail/mail.templates';
 import { PermissionsResolver } from '../../common/permissions-resolver.service';
 import { PrismaService } from '../../common/prisma.service';
 import { LocalStorageService } from '../../common/storage/local-storage.service';
@@ -31,6 +33,7 @@ export class PlatformAdminService {
     @Inject(ENV_TOKEN) private readonly env: Env,
     private readonly storage: LocalStorageService,
     private readonly permissions: PermissionsResolver,
+    private readonly mail: MailService,
   ) {}
 
   async listBusinesses(status?: string, plan?: string): Promise<unknown[]> {
@@ -180,6 +183,7 @@ export class PlatformAdminService {
     if (biz.status !== 'pending') throw new ConflictError('Business is not pending');
     await this.prisma.business.update({ where: { id }, data: { status: 'active' } });
     await this.audit({ action: 'approve', targetId: id, targetName: biz.name });
+    await this.mailOwner(id, biz.name, (who) => businessApproved(who, this.env.APP_URL));
   }
 
   async rejectBusiness(id: string): Promise<void> {
@@ -188,6 +192,20 @@ export class PlatformAdminService {
     if (biz.status !== 'pending') throw new ConflictError('Business is not pending');
     await this.prisma.business.update({ where: { id }, data: { status: 'rejected' } });
     await this.audit({ action: 'reject', tone: 'warn', targetId: id, targetName: biz.name });
+    await this.mailOwner(id, biz.name, businessRejected);
+  }
+
+  private async mailOwner(
+    businessId: string,
+    businessName: string,
+    build: (who: { ownerName: string; businessName: string }) => Mail,
+  ): Promise<void> {
+    const owner = await this.prisma.user.findFirst({
+      where: { businessId, role: 'owner', deletedAt: null },
+      orderBy: { createdAt: 'asc' },
+      select: { name: true, email: true },
+    });
+    if (owner) await this.mail.send(owner.email, build({ ownerName: owner.name, businessName }));
   }
 
   async getBusinessDetail(id: string) {

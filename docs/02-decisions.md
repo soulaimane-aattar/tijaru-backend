@@ -2,6 +2,13 @@
 
 > One entry per significant decision. Newest on top. Format: date · decision · why · rejected alternatives.
 
+## D-039 — 2026-10-27 · Transactional email: nodemailer over SMTP, best-effort, French templates, daily reminder cron
+
+- **Decision:** `MailService` (global `MailModule`, nodemailer) sends from `MAIL_FROM` (default `Tijaru <no-reply@tijaru.com>`) via `SMTP_HOST/PORT/SECURE/USER/PASS`; with no `SMTP_HOST` it is a no-op and `send` never throws, so a mail outage can't fail the triggering action. One table-based inline-CSS layout (`mail.templates.ts`) with a plain-text twin; every user-supplied value is HTML-escaped. Triggers: registration received (`POST /auth/register`), business approved / rejected (`PlatformAdminService`), and `EmailRemindersService` (`@Cron('0 8 * * *')`): subscription ends in 7/3/1 days, owner not logged in for 14/30 days. Each reminder fires when the day count falls in one 24h window, so the daily cron is the dedupe (no sent-flag column).
+- **Why:** owners had no feedback after signing up (approval was silent) and no nudge before a subscription lapses. A window-based cron avoids a migration and a sent-log for a few mails a day.
+- **Known limits:** French only (no per-user locale yet); a missed 08:00 run skips that day's reminders; only owners are mailed, not employees; no unsubscribe link (transactional/account mail only); nodemailer resolves the SMTP host itself — use a real hostname or IP (a bare `localhost` timed out in dev).
+- **Rejected:** a queue/outbox table (overkill at this volume, add when mail volume or retries matter); MJML/handlebars templating (a dependency for one layout); a third-party mail API (SMTP keeps the provider swappable via env).
+
 ## D-038 — 2026-10-27 · Super-admin impersonation acts as a real business user, short-lived, audited, and never reaches platform endpoints
 
 - **Decision:** `POST /admin/platform/businesses/:id/impersonate {userId?}` (platform-admin guard only) signs a 2h access token for a real active user of the business (owner by default; any user = role switcher) with `type: 'platform-admin-impersonate'`. `JwtAuthGuard` treats it exactly like that user's token (real role caps + overrides, so FK writes and role limits are genuine); `PlatformAdminGuard` still requires `type: 'platform-admin'`, so the impersonation token can never call platform endpoints. Every issue writes a `platformAuditLog` row (`impersonate`), and every non-GET request on the token writes `impersonated-write` (method + route, admin id, acting user) via `ImpersonationAuditInterceptor`. Web keeps the platform token aside in `localStorage` (`stock.impersonation`) so "Quitter"/switching restores it; the TanStack cache and active warehouse are cleared on every switch.

@@ -23,6 +23,13 @@
 
 ## Log
 
+### 2026-10-27 — Transactional email (SMTP): registration received, approval/rejection, expiry + inactivity reminders
+
+- **Step:** env `SMTP_HOST/PORT/SECURE/USER/PASS`, `MAIL_FROM` (default `Tijaru <no-reply@tijaru.com>`), `APP_URL` (+ `.env.example`, `.env.prod.example`); `common/mail` (`MailService`, `MailModule`, `mail.templates.ts`); triggers in `AuthController.register`, `PlatformAdminService.approve/rejectBusiness`; `EmailRemindersService` daily 08:00 cron (subscription ends in 7/3/1 days, owner inactive 14/30 days). Dependency: `nodemailer` (+ `@types/nodemailer`).
+- **Result:** ✅ jest 592/592 (new: templates incl. HTML-escaping, `MailService` with mocked nodemailer — no-op without host / `from` is no-reply@tijaru.com / errors swallowed, reminder windows + counts, approve/reject mail the owner), `tsc` + eslint clean. One real delivery check against a throwaway Mailpit before the "mock only" instruction: register → "reçue", approve → "acceptée", `From: Tijaru <no-reply@tijaru.com>`, HTML escapes `Café <Atlas> & Fils`. ⚠️ Not run live: the reminder cron against a real DB (my test SQL used the wrong column name; stopped on request) and a real SMTP provider.
+- **Decisions:** D-039.
+- **Next:** set `SMTP_*` in `.env.prod` (provider + SPF/DKIM/DMARC for tijaru.com so `no-reply@tijaru.com` isn't spam-filtered), deploy, approve a test business and watch the owner's inbox.
+
 ### 2026-10-27 — Super admin: enter any business (owner/role switcher) + mandatory 2FA (TOTP)
 
 - **Step:** (1) Backend `POST /admin/platform/businesses/:id/impersonate` + `JwtAuthGuard` branch (see D-038). (2) Web: auth-store `impersonation` / `startImpersonation` / `stopImpersonation` (one `tenantState` helper replaces 3 duplicated blocks), `ImpersonationBar` in `AdminShell` (business switcher, user/role switcher, Quitter), "Ouvrir" button on `/businesses` list + detail. While inside a business `isSuperAdmin` is false, so the full tenant sidebar/pages render. (3) Platform-admin 2FA (D-037): migration `20261027140000_platform_admin_mfa`, `auth/domain/totp.ts` + `secret-box.ts`, `PlatformAdminMfaService`, `POST /auth/platform-admin/mfa`, web `MfaStep` (QR via `qrcode.react`), legacy no-2FA login route removed.
