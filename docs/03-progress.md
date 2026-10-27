@@ -23,6 +23,29 @@
 
 ## Log
 
+### 2026-10-27 — Claude Code agents + skills + hooks (macompta-inspired)
+
+- **Step:** Created `.claude/agents/`, `.claude/skills/`, `.claude/hooks/`, and `.claude/settings.json` adapted from macompta project patterns for Tijaru's stack (NestJS + Kysely + Sqitch backend, React web, Expo mobile).
+  1. **6 agents:** `db-schema-engineer` (Sqitch + pgTAP + Kysely, TDD test-first), `code-reviewer` (mandatory post-implementation review, cross-stack checklist), `backend-engineer` (NestJS modules, Prisma→Kysely migration), `web-engineer` (React+Vite), `mobile-engineer` (Expo + design system enforcement), `qa-chrome-tester` (Chrome browser automation QA).
+  2. **4 skills:** `commit` (grouped logical commits, never `git add .`), `audit` (dispatch code-reviewer on uncommitted changes), plus existing `document-step`, `qa-coverage`, `translator`.
+  3. **Hook:** `enforce-make-targets.sh` blocks direct sqitch/pg_prove/jest calls — forces `make` targets.
+  4. **settings.json:** hook wiring + permission allowlist for common read-only commands.
+- **Result:** ✅ All files created. Hook executable. Settings wired.
+- **Next:** Wire `KyselyModule` + `TenantMiddleware` into `AppModule`; migrate first module from Prisma → Kysely.
+
+### 2026-10-27 — Sqitch + RLS + pgTAP + Kysely foundation migration
+
+- **Step:** Migrated DB tooling from Prisma-only to Sqitch-based migrations with schema separation, RLS, pgTAP tests, and Kysely query layer. Inspired by macompta migration patterns.
+  1. **Sqitch infra** — `backend/migrations/` (deploy/verify/revert/tests), `backend/sqitch` Docker wrapper (runs `sqitch/sqitch:latest` on `backend_default` network), `sqitch.conf` + `sqitch.plan`.
+  2. **5 migrations deployed:** `001-schemas` (CREATE SCHEMA app/app_auth/api/tests + `tijaru_app` non-superuser role + extensions), `002-auth-context` (`app.current_business_id()` / `current_user_id()` / `current_user_role()` — read `SET LOCAL` session vars), `003-rls-helper` (`app.enable_tenant_rls(regclass, col)` — one-liner enables RLS + creates policy), `004-enable-rls` (RLS on 31 tenant tables — 29 `business_id` + 2 `"businessId"` camelCase), `005-test-framework` (pgTAP + `tests.impersonate/create_business/create_user/create_product/create_customer/create_category/gen_id/reset_impersonation`).
+  3. **pgTAP** — built from source in container; `docker/postgres/Dockerfile` (postgres:16-alpine + pgTAP 1.3.3); first test `001-rls-tenant-isolation.sql` (6 assertions: own data visible, cross-tenant blocked, both directions).
+  4. **Kysely** — `kysely` + `pg` + `kysely-codegen` installed; `src/database/` (KyselyModule global provider, TenantMiddleware sets PG session vars, generated types from 59 tables); `npm run db:types` script.
+  5. **Makefile** — `db-up`, `db-down`, `db-verify`, `db-status`, `db-new`, `tap`, `tap-full`.
+  6. **docker-compose.yml** — postgres service switched from `image: postgres:16-alpine` to `build: ./docker/postgres` (includes pgTAP).
+- **Result:** ✅ `./sqitch deploy tijaru` 5/5 ok, `./sqitch verify tijaru` 5/5 ok, pgTAP `001-rls-tenant-isolation.sql` 6/6 ok (tenant A can't see tenant B data under `tijaru_app` role), `tsc --noEmit` clean, jest 592/592 pass (existing tests unbroken).
+- **Decisions:** D-040, D-041.
+- **Next:** Wire `KyselyModule` + `TenantMiddleware` into `AppModule`; add `DATABASE_URL_APP` env var pointing at `tijaru_app` role; migrate first module (products) from Prisma → Kysely; `make deploy` to rebuild postgres with pgTAP in prod.
+
 ### 2026-10-27 — Transactional email (SMTP): registration received, approval/rejection, expiry + inactivity reminders
 
 - **Step:** env `SMTP_HOST/PORT/SECURE/USER/PASS`, `MAIL_FROM` (default `Tijaru <no-reply@tijaru.com>`), `APP_URL` (+ `.env.example`, `.env.prod.example`); `common/mail` (`MailService`, `MailModule`, `mail.templates.ts`); triggers in `AuthController.register`, `PlatformAdminService.approve/rejectBusiness`; `EmailRemindersService` daily 08:00 cron (subscription ends in 7/3/1 days, owner inactive 14/30 days). Dependency: `nodemailer` (+ `@types/nodemailer`).

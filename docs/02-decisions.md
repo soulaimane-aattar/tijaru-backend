@@ -2,6 +2,19 @@
 
 > One entry per significant decision. Newest on top. Format: date · decision · why · rejected alternatives.
 
+## D-041 — 2026-10-27 · Kysely replaces Prisma as query layer (gradual migration)
+
+- **Decision:** Install Kysely + pg driver alongside Prisma. `KyselyModule` (global, `DATABASE_URL_APP` → `tijaru_app` role). `TenantMiddleware` sets `app.current_business_id` / `current_user_id` / `current_user_role` via `SET LOCAL` before each request. Types generated from live DB via `kysely-codegen`. Prisma stays for now; modules migrate one-by-one.
+- **Why:** Prisma can't see multiple schemas, can't call DB functions, introspection loses RLS/policies/grants. Kysely is multi-schema native, sees everything Sqitch creates, no ORM magic. Gradual migration avoids big-bang rewrite risk.
+- **Rejected:** keeping Prisma long-term (fights DB-level security patterns); Knex (less type-safe); Drizzle (newer, less proven); raw pg (no type safety); PostgREST (NestJS stays as API layer).
+
+## D-040 — 2026-10-27 · Sqitch + schema separation + RLS + pgTAP for DB foundation
+
+- **Decision:** Migrate from Prisma Migrate (forward-only, single `public` schema) to Sqitch (deploy/verify/revert). Four schemas: `app` (business logic), `app_auth` (auth), `api` (views/reporting), `tests` (pgTAP helpers). RLS on all 31 tenant tables via `app.enable_tenant_rls()` helper. `tijaru_app` non-superuser role (RLS enforced). Sqitch runs via Docker wrapper (`sqitch/sqitch:latest`), not host-installed. pgTAP 1.3.3 built from source in custom postgres Dockerfile. Makefile targets: `db-up/db-down/db-verify/db-status/db-new/tap`.
+- **Why:** (1) testability — pgTAP for DB-level tests, verify/revert for safety; (2) security — schema isolation + RLS = DB-level tenant wall (second wall behind NestJS guards); (3) reversibility — revert scripts for every migration; (4) build solid foundation before user/feature growth makes migration painful.
+- **Inspired by:** macompta Sqitch patterns (6+ schemas, `enable_tenant_rls()`, pgTAP test framework, Docker sqitch wrapper, Makefile workflow).
+- **Rejected:** staying on Prisma Migrate (no revert, no DB tests, single schema); Flyway (Java dependency); manual SQL files without Sqitch (no verify/revert tracking).
+
 ## D-039 — 2026-10-27 · Transactional email: nodemailer over SMTP, best-effort, French templates, daily reminder cron
 
 - **Decision:** `MailService` (global `MailModule`, nodemailer) sends from `MAIL_FROM` (default `Tijaru <no-reply@tijaru.com>`) via `SMTP_HOST/PORT/SECURE/USER/PASS`; with no `SMTP_HOST` it is a no-op and `send` never throws, so a mail outage can't fail the triggering action. One table-based inline-CSS layout (`mail.templates.ts`) with a plain-text twin; every user-supplied value is HTML-escaped. Triggers: registration received (`POST /auth/register`), business approved / rejected (`PlatformAdminService`), and `EmailRemindersService` (`@Cron('0 8 * * *')`): subscription ends in 7/3/1 days, owner not logged in for 14/30 days. Each reminder fires when the day count falls in one 24h window, so the daily cron is the dedupe (no sent-flag column).
