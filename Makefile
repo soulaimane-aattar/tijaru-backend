@@ -10,8 +10,10 @@ ENVPROD := .env.prod
 .DEFAULT_GOAL := help
 .PHONY: help up down logs ps seed dev-migrate \
         deploy prod-build prod-up prod-down prod-restart prod-logs prod-ps \
-        prod-migrate prod-psql prod-backup prod-config check-env-prod \
-        db-up db-down db-verify db-status db-new tap
+        prod-migrate prod-db-up prod-db-verify prod-db-status \
+        prod-psql prod-backup prod-config check-env-prod \
+        db-up db-down db-verify db-status db-new tap db-backup \
+        db-dump-tenants db-load-tenants prod-dump-tenants prod-load-tenants
 
 help: ## List targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -65,6 +67,24 @@ tap: ## Run pgTAP tests
 			psql -U stock -d stock -f "$$f"; \
 		done'
 
+TENANT_DUMP := tenants-backup.sql
+
+db-backup: ## Full dev DB backup to backup-dev-<timestamp>.sql
+	@f=backup-dev-$$(date -u +%Y%m%d-%H%M%S).sql; \
+	docker exec stock-postgres pg_dump -U stock -d stock > $$f; \
+	echo "wrote $$f ($$(wc -l < $$f) lines)"
+
+db-dump-tenants: ## Dump businesses + users to tenants-backup.sql (dev)
+	@docker exec stock-postgres pg_dump -U stock -d stock \
+		--data-only --no-owner --no-privileges \
+		--table='app.businesses' --table='app_auth.users' \
+		> $(TENANT_DUMP) && echo "wrote $(TENANT_DUMP) ($$(wc -l < $(TENANT_DUMP)) lines)"
+
+db-load-tenants: ## Load tenants-backup.sql into dev DB (new schema)
+	@test -f $(TENANT_DUMP) || { echo "$(TENANT_DUMP) not found. Run: make db-dump-tenants first"; exit 1; }
+	@docker exec -i stock-postgres psql -U stock -d stock < $(TENANT_DUMP) \
+		&& echo "loaded $(TENANT_DUMP) into dev DB"
+
 tap-full: ## Deploy + verify + run pgTAP tests
 	@$(MAKE) db-up
 	@$(MAKE) tap
@@ -100,8 +120,20 @@ prod-ps: check-env-prod ## Prod stack status
 prod-config: check-env-prod ## Render the resolved prod compose config
 	$(PROD) config
 
-prod-migrate: check-env-prod ## Apply pending migrations in the prod container
-	$(PROD) exec backend npx prisma migrate deploy
+prod-db-up: check-env-prod ## Deploy sqitch migrations to prod DB
+	@. $(ENVPROD) && SQITCH_NETWORK=backend_internal \
+		./sqitch deploy "db:pg://$$POSTGRES_USER:$$POSTGRES_PASSWORD@tijaru-postgres:5432/$$POSTGRES_DB"
+
+prod-db-verify: check-env-prod ## Verify sqitch migrations on prod DB
+	@. $(ENVPROD) && SQITCH_NETWORK=backend_internal \
+		./sqitch verify "db:pg://$$POSTGRES_USER:$$POSTGRES_PASSWORD@tijaru-postgres:5432/$$POSTGRES_DB"
+
+prod-db-status: check-env-prod ## Show sqitch migration status on prod
+	@. $(ENVPROD) && SQITCH_NETWORK=backend_internal \
+		./sqitch status "db:pg://$$POSTGRES_USER:$$POSTGRES_PASSWORD@tijaru-postgres:5432/$$POSTGRES_DB"
+
+prod-migrate: check-env-prod ## Apply sqitch migrations to prod DB (alias for prod-db-up)
+	@$(MAKE) prod-db-up
 
 prod-psql: check-env-prod ## psql shell on the prod database
 	$(PROD) exec postgres sh -c 'psql -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"'
@@ -110,3 +142,15 @@ prod-backup: check-env-prod ## Dump prod DB to backup-<utc-timestamp>.sql
 	@f=backup-$$(date -u +%Y%m%d-%H%M%S).sql; \
 	$(PROD) exec -T postgres sh -c 'pg_dump -U "$$POSTGRES_USER" "$$POSTGRES_DB"' > $$f; \
 	echo "wrote $$f"
+
+prod-dump-tenants: check-env-prod ## Dump prod businesses + users to tenants-backup.sql
+	@$(PROD) exec -T postgres sh -c \
+		'pg_dump -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" --data-only --no-owner --no-privileges \
+		--table="app.businesses" --table="app_auth.users"' \
+		> $(TENANT_DUMP) && echo "wrote $(TENANT_DUMP) ($$(wc -l < $(TENANT_DUMP)) lines)"
+
+prod-load-tenants: check-env-prod ## Load tenants-backup.sql into prod DB
+	@test -f $(TENANT_DUMP) || { echo "$(TENANT_DUMP) not found. Run: make prod-dump-tenants first"; exit 1; }
+	@$(PROD) exec -T postgres sh -c \
+		'psql -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"' < $(TENANT_DUMP) \
+		&& echo "loaded $(TENANT_DUMP) into prod DB"

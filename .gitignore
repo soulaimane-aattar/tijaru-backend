@@ -13,6 +13,8 @@ coverage/
 .idea/
 prisma/migrations/dev.db*
 backup-*.sql
+tenants-backup.sql
+migrations/.baseline-dump.sql
 uploads/
 
 # ocr-service (Python) lives in this repo
