@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    build: ./docker/postgres
     container_name: stock-postgres
     restart: unless-stopped
     environment:

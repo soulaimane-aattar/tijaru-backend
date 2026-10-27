@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# Sqitch wrapper — runs sqitch via Docker against the Tijaru compose network.
+# Usage: ./sqitch deploy tijaru
+#        ./sqitch add 008-new-thing -n "Add new thing"
+
+SQITCH_IMAGE=${SQITCH_IMAGE:=sqitch/sqitch:latest}
+
+user=${USER-$(whoami)}
+passopt=(
+    -e "SQITCH_ORIG_SYSUSER=$user"
+    -e "SQITCH_ORIG_EMAIL=$user@$(hostname)"
+    -e "TZ=$(date +%Z)"
+    -e "LESS=${LESS:--R}"
+)
+
+case "$(uname -s)" in
+    Linux*)
+        passopt+=(-e "SQITCH_ORIG_FULLNAME=$(getent passwd $user | cut -d: -f5 | cut -d, -f1)")
+        passopt+=(-u $(id -u ${user}):$(id -g ${user}))
+        ;;
+    Darwin*)
+        passopt+=(-e "SQITCH_ORIG_FULLNAME=$(/usr/bin/id -P $user | awk -F '[:]' '{print $8}')")
+        ;;
+    *)
+        echo "Unknown OS: $(uname -s)"
+        exit 2
+        ;;
+esac
+
+for var in \
+    SQITCH_CONFIG SQITCH_USERNAME SQITCH_PASSWORD SQITCH_FULLNAME SQITCH_EMAIL SQITCH_TARGET \
+    PGUSER PGPASSWORD PGHOST PGPORT PGDATABASE PGOPTIONS PGSSLMODE
+do
+    if [ -n "${!var}" ]; then
+       passopt+=(-e $var)
+    fi
+done
+
+homedst=/home
+if [ $(id -u ${user}) -eq 0 ]; then
+    homedst=/root
+fi
+passopt+=(-e "HOME=${homedst}")
+
+if [ -t 0 ] && [ -t 1 ]; then
+    passopt+=(--interactive --tty)
+elif [ ! -t 0 ]; then
+    passopt+=(--interactive)
+fi
+
+# Network: docker compose in backend/ creates "backend_default"
+NETWORK_NAME="backend_default"
+
+docker run --rm --network "$NETWORK_NAME" \
+    --mount "type=bind,src=$(pwd)/migrations,dst=/repo" \
+    "${passopt[@]}" "$SQITCH_IMAGE" "$@"

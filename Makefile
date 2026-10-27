@@ -10,7 +10,8 @@ ENVPROD := .env.prod
 .DEFAULT_GOAL := help
 .PHONY: help up down logs ps seed dev-migrate \
         deploy prod-build prod-up prod-down prod-restart prod-logs prod-ps \
-        prod-migrate prod-psql prod-backup prod-config check-env-prod
+        prod-migrate prod-psql prod-backup prod-config check-env-prod \
+        db-up db-down db-verify db-status db-new tap
 
 help: ## List targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -34,6 +35,39 @@ seed: ## Recreate dev backend with demo data
 
 dev-migrate: ## Apply pending migrations in the dev container
 	$(DEV) exec backend npx prisma migrate deploy
+
+# ─── sqitch ────────────────────────────────────────────────────────────────
+SQITCH := ./sqitch
+
+db-up: ## Deploy all sqitch migrations + verify
+	$(SQITCH) deploy tijaru && $(SQITCH) verify tijaru
+
+db-down: ## Revert all sqitch migrations
+	$(SQITCH) revert -y tijaru
+
+db-verify: ## Verify sqitch migrations
+	$(SQITCH) verify tijaru
+
+db-status: ## Show sqitch migration status
+	$(SQITCH) status tijaru
+
+db-new: ## Add new migration: make db-new CHANGE=name DESC="description"
+	$(SQITCH) add $(CHANGE) -n "$(DESC)"
+
+tap: ## Run pgTAP tests
+	@docker exec stock-postgres rm -rf /tmp/tijaru-tests && docker exec stock-postgres mkdir -p /tmp/tijaru-tests
+	@for f in migrations/tests/*.sql; do \
+		docker cp "$$f" stock-postgres:/tmp/tijaru-tests/$$(basename "$$f"); \
+	done
+	@docker exec stock-postgres sh -c '\
+		for f in /tmp/tijaru-tests/*.sql; do \
+			echo "=== $$f ==="; \
+			psql -U stock -d stock -f "$$f"; \
+		done'
+
+tap-full: ## Deploy + verify + run pgTAP tests
+	@$(MAKE) db-up
+	@$(MAKE) tap
 
 # ─── prod ──────────────────────────────────────────────────────────────────
 check-env-prod:
