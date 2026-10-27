@@ -11,4 +11,6 @@ export type AuthUser = {
   overrides: Partial<Record<CapabilityId, boolean>>;
   device?: string | undefined;
   isSuperAdmin?: boolean;
+  /** Platform admin id when this request runs on an impersonation token. */
+  impersonatedBy?: string | undefined;
 };

@@ -7,17 +7,19 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   StreamableFile,
   UseGuards,
   UsePipes,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import type { Request } from 'express';
 
 import { Public } from '../../common/guards/jwt.guard';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 
 import { ExtendSubscriptionSchema, type ExtendSubscriptionInput } from './dto/extend-subscription.dto';
-import { PlatformAdminLoginSchema, type PlatformAdminLoginInput } from './dto/platform-admin-login.dto';
+import { ImpersonateSchema, type ImpersonateInput } from './dto/impersonate.dto';
 import { UpdateBugReportStatusSchema } from './dto/update-bug-report-status.dto';
 import {
   UpdateBusinessSettingsSchema,
@@ -33,15 +35,6 @@ import { PlatformAdminService } from './platform-admin.service';
 @Controller({ version: '1' })
 export class PlatformAdminController {
   constructor(private readonly svc: PlatformAdminService) {}
-
-  @Public()
-  @Post('auth/platform-admin/login')
-  @HttpCode(200)
-  @UsePipes(new ZodValidationPipe(PlatformAdminLoginSchema))
-  @ApiOperation({ summary: 'Platform admin login. Returns access token.' })
-  async login(@Body() body: PlatformAdminLoginInput): Promise<{ accessToken: string }> {
-    return this.svc.login(body.email, body.password);
-  }
 
   @Public()
   @UseGuards(PlatformAdminGuard)
@@ -181,6 +174,19 @@ export class PlatformAdminController {
     @Body() body: ExtendSubscriptionInput,
   ): Promise<unknown> {
     return this.svc.extendSubscription(id, body.duration);
+  }
+
+  @Public()
+  @UseGuards(PlatformAdminGuard)
+  @Post('admin/platform/businesses/:id/impersonate')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Get a business-scoped token to browse as that business (platform admin only).' })
+  async impersonate(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(ImpersonateSchema)) body: ImpersonateInput,
+    @Req() req: Request & { platformAdminId: string },
+  ): ReturnType<PlatformAdminService['impersonate']> {
+    return this.svc.impersonate(id, req.platformAdminId, body.userId);
   }
 
   @Public()

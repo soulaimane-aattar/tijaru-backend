@@ -26,7 +26,7 @@ describe('CreateBugReportSchema', () => {
 
 describe('PlatformAdminService bug reports', () => {
   const bugReport = { findMany: jest.fn(), count: jest.fn(), findUnique: jest.fn(), update: jest.fn() };
-  const svc = new PlatformAdminService({ bugReport } as never, {} as never, {} as never, {} as never);
+  const svc = new PlatformAdminService({ bugReport } as never, {} as never, {} as never, {} as never, {} as never);
 
   beforeEach(() => jest.clearAllMocks());
 

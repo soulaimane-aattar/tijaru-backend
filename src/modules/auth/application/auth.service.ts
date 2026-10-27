@@ -33,24 +33,16 @@ export class AuthService {
   ) {}
 
   /**
-   * Platform-admin login. Returns null when the admin isn't found or the
-   * password doesn't match, so the caller can fall through to business-user
-   * login without leaking whether the email belongs to a platform admin.
+   * First factor for platform admins: password only. Returns null when the admin isn't
+   * found or the password doesn't match, so the caller can fall through to business-user
+   * login without leaking whether the email belongs to a platform admin. The access token
+   * is issued by `PlatformAdminMfaService` after the second factor.
    */
-  async loginPlatformAdmin(
-    email: string,
-    password: string,
-  ): Promise<{ accessToken: string; type: 'platform-admin' } | null> {
+  async loginPlatformAdmin(email: string, password: string): Promise<{ id: string; email: string } | null> {
     const admin = await this.authRepo.findPlatformAdminByEmail(email.toLowerCase());
     if (!admin) return null;
     const ok = await bcrypt.compare(password, admin.passwordHash);
-    if (!ok) return null;
-
-    const accessToken = await this.jwt.signAsync(
-      { sub: admin.id, type: 'platform-admin', ver: admin.tokenVersion },
-      { secret: this.env.JWT_ACCESS_SECRET, expiresIn: this.env.JWT_ACCESS_TTL },
-    );
-    return { accessToken, type: 'platform-admin' };
+    return ok ? { id: admin.id, email: admin.email } : null;
   }
 
   async login(email: string, password: string, meta: SessionMeta): Promise<{

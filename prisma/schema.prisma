@@ -32,6 +32,14 @@ model PlatformAdmin {
   name         String
   passwordHash String
   tokenVersion Int      @default(0)
+  /// TOTP secret sealed with AES-GCM (see auth/domain/secret-box). Null until first login enrols.
+  totpSecret     String?
+  /// Set once the first code is verified; login requires a code only after that, enrolment before.
+  totpEnabledAt  DateTime?
+  /// Last accepted 30s time step — rejects replay of a code already used.
+  totpLastStep   Int?
+  mfaFailures    Int       @default(0)
+  mfaLockedUntil DateTime?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

@@ -87,7 +87,7 @@ describe('AuthService', () => {
   });
 
   describe('loginPlatformAdmin', () => {
-    it('returns platform-admin token when credentials match', async () => {
+    it('returns the admin identity (no token — that needs the second factor) when credentials match', async () => {
       const repo = mockRepo();
       const passwordHash = await bcrypt.hash('adminpass1', 4);
       repo.findPlatformAdminByEmail.mockResolvedValue({
@@ -99,7 +99,7 @@ describe('AuthService', () => {
       });
       const svc = new AuthService(repo, mockJwt(), mockPerms(), mockEnv);
       const result = await svc.loginPlatformAdmin('admin@tijaru.com', 'adminpass1');
-      expect(result).toEqual({ accessToken: 'tok', type: 'platform-admin' });
+      expect(result).toEqual({ id: 'pa1', email: 'admin@tijaru.com' });
     });
 
     it('returns null when no platform admin matches the email', async () => {

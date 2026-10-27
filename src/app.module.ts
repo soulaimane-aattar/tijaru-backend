@@ -6,6 +6,7 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { LoggerModule } from 'nestjs-pino';
 
 import { DocumentAuditController } from './common/audit/document-audit.controller';
+import { ImpersonationAuditInterceptor } from './common/audit/impersonation-audit.interceptor';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { CapsGuard } from './common/guards/caps.guard';
 import { JwtAuthGuard } from './common/guards/jwt.guard';
@@ -17,9 +18,9 @@ import { TenantInterceptor } from './common/tenant/tenant.interceptor';
 import { ConfigModule, ENV_TOKEN } from './config/config.module';
 import type { Env } from './config/env';
 import { ActivityModule } from './modules/activity/activity.module';
-import { BugReportsModule } from './modules/bug-reports/bug-reports.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { BugReportsModule } from './modules/bug-reports/bug-reports.module';
 import { CategoriesModule } from './modules/categories/categories.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { DeliveryNotesModule } from './modules/delivery-notes/delivery-notes.module';
@@ -103,6 +104,7 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module';
     { provide: APP_GUARD, useClass: LimitGuard },
     { provide: APP_GUARD, useClass: CapsGuard },
     { provide: APP_INTERCEPTOR, useClass: TenantInterceptor },
+    { provide: APP_INTERCEPTOR, useClass: ImpersonationAuditInterceptor },
   ],
 })
 export class AppModule {}

@@ -1,5 +1,6 @@
 import { Body, Controller, Get, HttpCode, Post, Req, UsePipes } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 
 import type { AuthUser } from '../../common/auth/auth-user.type';
@@ -10,6 +11,7 @@ import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { CAPABILITIES, CAPABILITY_IDS, ROLES, ROLE_IDS } from '../../domain/permissions';
 
 import { AuthService } from './application/auth.service';
+import { PlatformAdminMfaService } from './application/platform-admin-mfa.service';
 import { type ChangePasswordInput, ChangePasswordSchema } from './dto/change-password.dto';
 import {
   type LoginInput,
@@ -17,6 +19,7 @@ import {
   type RefreshInput,
   RefreshSchema,
 } from './dto/login.dto';
+import { type PlatformAdminMfaInput, PlatformAdminMfaSchema } from './dto/platform-admin-mfa.dto';
 import { type RegisterInput, RegisterSchema } from './dto/register.dto';
 
 @ApiTags('auth')
@@ -24,6 +27,7 @@ import { type RegisterInput, RegisterSchema } from './dto/register.dto';
 export class AuthController {
   constructor(
     private readonly auth: AuthService,
+    private readonly mfa: PlatformAdminMfaService,
     private readonly permissions: PermissionsResolver,
   ) {}
 
@@ -35,9 +39,7 @@ export class AuthController {
   async login(@Body() body: LoginInput, @Req() req: Request): Promise<unknown> {
     // Try platform admin first; falls through silently on no-match/wrong-password.
     const pa = await this.auth.loginPlatformAdmin(body.email, body.password);
-    if (pa) {
-      return { accessToken: pa.accessToken, type: 'platform-admin' };
-    }
+    if (pa) return this.mfa.challenge(pa);
 
     // Fall through to business user login
     const result = await this.auth.login(body.email, body.password, {
@@ -53,6 +55,16 @@ export class AuthController {
       capabilities: result.capabilities,
       type: 'user',
     };
+  }
+
+  @Public()
+  @Post('platform-admin/mfa')
+  @HttpCode(200)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @UsePipes(new ZodValidationPipe(PlatformAdminMfaSchema))
+  @ApiOperation({ summary: 'Second factor for platform admins: exchange mfaToken + TOTP code for the access token.' })
+  platformAdminMfa(@Body() body: PlatformAdminMfaInput): Promise<unknown> {
+    return this.mfa.verify(body.mfaToken, body.code);
   }
 
   @Public()

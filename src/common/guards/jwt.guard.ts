@@ -20,12 +20,14 @@ export const Public = (): MethodDecorator & ClassDecorator => SetMetadata(IS_PUB
 
 type AccessJwtPayload = {
   sub: string;
-  type?: 'platform-admin' | 'user';
+  type?: 'platform-admin' | 'platform-admin-impersonate' | 'platform-admin-mfa' | 'user';
   role?: RoleId;
   ver: number;
   caps?: CapabilityId[];
   overrides?: Partial<Record<CapabilityId, boolean>>;
   bid?: string;
+  /** Platform admin who issued an impersonation token. */
+  pa?: string;
 };
 
 @Injectable()
@@ -67,6 +69,9 @@ export class JwtAuthGuard implements CanActivate {
       throw new UnauthorizedError('Invalid or expired token');
     }
 
+    // Half-authenticated: password verified, second factor pending. Never valid as an API credential.
+    if (payload.type === 'platform-admin-mfa') throw new UnauthorizedError('Invalid or expired token');
+
     if (payload.type === 'platform-admin') {
       request.user = {
         id: payload.sub,
@@ -86,6 +91,7 @@ export class JwtAuthGuard implements CanActivate {
         tokenVersion: payload.ver,
         roleCaps: payload.caps ?? [],
         overrides: payload.overrides ?? {},
+        impersonatedBy: payload.type === 'platform-admin-impersonate' ? payload.pa : undefined,
         device: request.headers['user-agent'],
       };
     }

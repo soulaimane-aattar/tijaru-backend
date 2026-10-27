@@ -4,11 +4,13 @@ import { Inject, Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 
-import { ConflictError, NotFoundError, UnauthorizedError } from '../../common/errors';
+import { ConflictError, NotFoundError } from '../../common/errors';
+import { PermissionsResolver } from '../../common/permissions-resolver.service';
 import { PrismaService } from '../../common/prisma.service';
 import { LocalStorageService } from '../../common/storage/local-storage.service';
 import { ENV_TOKEN } from '../../config/config.module';
 import type { Env } from '../../config/env';
+import type { RoleId } from '../../domain/permissions';
 
 // Unambiguous alphabet: no O/0, I/1/l to avoid transcription errors when read aloud or copied.
 const TEMP_PW_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
@@ -19,6 +21,8 @@ function generateTempPassword(length: number): string {
   return out;
 }
 
+const IMPERSONATION_TTL = '2h';
+
 @Injectable()
 export class PlatformAdminService {
   constructor(
@@ -26,23 +30,8 @@ export class PlatformAdminService {
     private readonly jwt: JwtService,
     @Inject(ENV_TOKEN) private readonly env: Env,
     private readonly storage: LocalStorageService,
+    private readonly permissions: PermissionsResolver,
   ) {}
-
-  async login(email: string, password: string): Promise<{ accessToken: string }> {
-    const admin = await this.prisma.platformAdmin.findUnique({
-      where: { email: email.toLowerCase() },
-    });
-    if (!admin) throw new UnauthorizedError('Invalid credentials');
-
-    const ok = await bcrypt.compare(password, admin.passwordHash);
-    if (!ok) throw new UnauthorizedError('Invalid credentials');
-
-    const accessToken = await this.jwt.signAsync(
-      { sub: admin.id, type: 'platform-admin', ver: admin.tokenVersion },
-      { secret: this.env.JWT_ACCESS_SECRET, expiresIn: this.env.JWT_ACCESS_TTL },
-    );
-    return { accessToken };
-  }
 
   async listBusinesses(status?: string, plan?: string): Promise<unknown[]> {
     const where = {
@@ -518,6 +507,62 @@ export class PlatformAdminService {
       detail: user.business?.name ?? '',
     });
     return { tempPassword };
+  }
+
+  /**
+   * Short-lived business-scoped token for the super admin. Acts as a real user of the
+   * business (owner by default, or `userId` for the role switcher) so FK writes stay
+   * valid and caps match that role. Every issue is audited.
+   */
+  async impersonate(
+    businessId: string,
+    adminId: string,
+    userId?: string,
+  ): Promise<{ accessToken: string; business: { id: string; name: string }; user: { id: string; name: string; role: string } }> {
+    const biz = await this.prisma.business.findUnique({
+      where: { id: businessId },
+      select: { id: true, name: true },
+    });
+    if (!biz) throw new NotFoundError('Business', businessId);
+
+    const user = await this.prisma.user.findFirst({
+      where: {
+        businessId,
+        deletedAt: null,
+        active: true,
+        ...(userId ? { id: userId } : { role: 'owner' }),
+      },
+      orderBy: { createdAt: 'asc' },
+      include: { overrides: true },
+    });
+    if (!user) throw new NotFoundError('User', userId ?? 'owner');
+
+    const role = user.role as RoleId;
+    const overrides = Object.fromEntries(user.overrides.map((o) => [o.capId, o.granted]));
+    const accessToken = await this.jwt.signAsync(
+      {
+        sub: user.id,
+        type: 'platform-admin-impersonate',
+        pa: adminId,
+        bid: businessId,
+        role,
+        ver: user.tokenVersion,
+        caps: await this.permissions.effectiveCapsForRole(role),
+        overrides,
+      },
+      { secret: this.env.JWT_ACCESS_SECRET, expiresIn: IMPERSONATION_TTL },
+    );
+
+    await this.audit({
+      action: 'impersonate',
+      tone: 'warn',
+      targetType: 'user',
+      targetId: user.id,
+      targetName: user.name,
+      detail: `${biz.name} · ${role}`,
+    });
+
+    return { accessToken, business: biz, user: { id: user.id, name: user.name, role } };
   }
 
   async getStats() {

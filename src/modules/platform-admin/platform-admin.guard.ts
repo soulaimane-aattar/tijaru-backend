@@ -20,7 +20,7 @@ export class PlatformAdminGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const req = context.switchToHttp().getRequest<Request>();
+    const req = context.switchToHttp().getRequest<Request & { platformAdminId?: string }>();
     const header = req.headers.authorization;
     if (!header?.startsWith('Bearer ')) {
       throw new UnauthorizedError('Missing bearer token');
@@ -39,6 +39,7 @@ export class PlatformAdminGuard implements CanActivate {
       throw new UnauthorizedError('Not a platform admin token');
     }
 
+    req.platformAdminId = payload.sub;
     return true;
   }
 }

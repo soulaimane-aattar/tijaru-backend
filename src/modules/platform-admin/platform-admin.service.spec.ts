@@ -1,6 +1,6 @@
 import * as bcrypt from 'bcrypt';
 
-import { ConflictError, NotFoundError, UnauthorizedError } from '../../common/errors';
+import { ConflictError, NotFoundError } from '../../common/errors';
 
 import { PlatformAdminService } from './platform-admin.service';
 
@@ -69,49 +69,63 @@ const mockEnv = {
 } as never;
 
 describe('PlatformAdminService', () => {
-  it('returns accessToken on valid credentials', async () => {
-    const prisma = mockPrisma();
-    const hash = await bcrypt.hash('admin123', 4);
-    prisma.platformAdmin.findUnique.mockResolvedValue({
-      id: 'pa1',
-      email: 'admin@tijaru.com',
-      passwordHash: hash,
-      tokenVersion: 0,
-    });
-    const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never);
-    const result = await svc.login('admin@tijaru.com', 'admin123');
-    expect(result.accessToken).toBe('pa-token');
-  });
+  describe('impersonate', () => {
+    const perms = { effectiveCapsForRole: jest.fn().mockResolvedValue(['dashboard.view']) } as never;
+    const setup = () => {
+      const prisma = mockPrisma();
+      prisma.business.findUnique.mockResolvedValue({ id: 'b1', name: 'ISSA' });
+      prisma.user.findFirst.mockResolvedValue({
+        id: 'u1',
+        name: 'Omar',
+        role: 'owner',
+        tokenVersion: 2,
+        overrides: [{ capId: 'products.view', granted: false }],
+      });
+      const jwt = { signAsync: jest.fn().mockResolvedValue('imp-token') };
+      const svc = new PlatformAdminService(prisma as never, jwt as never, mockEnv, {} as never, perms);
+      return { prisma, jwt, svc };
+    };
 
-  it('throws UnauthorizedError on wrong password', async () => {
-    const prisma = mockPrisma();
-    const hash = await bcrypt.hash('admin123', 4);
-    prisma.platformAdmin.findUnique.mockResolvedValue({
-      id: 'pa1',
-      email: 'admin@tijaru.com',
-      passwordHash: hash,
-      tokenVersion: 0,
+    it('acts as the business owner by default, with that role\'s caps and overrides', async () => {
+      const { prisma, jwt, svc } = setup();
+      const res = await svc.impersonate('b1', 'pa1');
+      expect(prisma.user.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ businessId: 'b1', role: 'owner' }) }),
+      );
+      expect(jwt.signAsync.mock.calls[0][0]).toMatchObject({
+        sub: 'u1',
+        type: 'platform-admin-impersonate',
+        pa: 'pa1',
+        bid: 'b1',
+        role: 'owner',
+        caps: ['dashboard.view'],
+        overrides: { 'products.view': false },
+      });
+      expect(res).toMatchObject({ accessToken: 'imp-token', business: { id: 'b1' }, user: { id: 'u1', role: 'owner' } });
     });
-    const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never);
-    await expect(svc.login('admin@tijaru.com', 'wrong')).rejects.toBeInstanceOf(
-      UnauthorizedError,
-    );
-  });
 
-  it('throws UnauthorizedError when admin not found', async () => {
-    const prisma = mockPrisma();
-    prisma.platformAdmin.findUnique.mockResolvedValue(null);
-    const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never);
-    await expect(svc.login('ghost@tijaru.com', 'pass')).rejects.toBeInstanceOf(
-      UnauthorizedError,
-    );
+    it('targets a specific user of the business (role switcher)', async () => {
+      const { prisma, svc } = setup();
+      await svc.impersonate('b1', 'pa1', 'ckx9owner0000cuid');
+      expect(prisma.user.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ businessId: 'b1', id: 'ckx9owner0000cuid' }) }),
+      );
+    });
+
+    it('404s on unknown business or user', async () => {
+      const { prisma, svc } = setup();
+      prisma.business.findUnique.mockResolvedValueOnce(null);
+      await expect(svc.impersonate('nope', 'pa1')).rejects.toBeInstanceOf(NotFoundError);
+      prisma.user.findFirst.mockResolvedValueOnce(null);
+      await expect(svc.impersonate('b1', 'pa1', 'ghost')).rejects.toBeInstanceOf(NotFoundError);
+    });
   });
 
   describe('getBusinessDetail', () => {
     it('returns business with owner and modules', async () => {
       const prisma = mockPrisma();
       prisma.business.findUnique.mockResolvedValue({ id: 'b1', users: [], modules: [] });
-      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never, {} as never);
       const result = await svc.getBusinessDetail('b1');
       expect(result).toEqual({ id: 'b1', users: [], modules: [] });
     });
@@ -119,7 +133,7 @@ describe('PlatformAdminService', () => {
     it('throws NotFoundError when business does not exist', async () => {
       const prisma = mockPrisma();
       prisma.business.findUnique.mockResolvedValue(null);
-      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never, {} as never);
       await expect(svc.getBusinessDetail('missing')).rejects.toBeInstanceOf(NotFoundError);
     });
   });
@@ -129,7 +143,7 @@ describe('PlatformAdminService', () => {
       const prisma = mockPrisma();
       prisma.business.findUnique.mockResolvedValue({ id: 'b1' });
       prisma.business.update.mockResolvedValue({ id: 'b1', maxUsers: 10 });
-      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never, {} as never);
       const result = await svc.updateBusiness('b1', { maxUsers: 10 });
       expect(prisma.business.update).toHaveBeenCalledWith({
         where: { id: 'b1' },
@@ -141,7 +155,7 @@ describe('PlatformAdminService', () => {
     it('throws NotFoundError when business does not exist', async () => {
       const prisma = mockPrisma();
       prisma.business.findUnique.mockResolvedValue(null);
-      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never, {} as never);
       await expect(svc.updateBusiness('missing', { maxUsers: 10 })).rejects.toBeInstanceOf(
         NotFoundError,
       );
@@ -156,7 +170,7 @@ describe('PlatformAdminService', () => {
         id: 'b1',
         ...(data as object),
       }));
-      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never, {} as never);
       const before = Date.now();
       const result = (await svc.extendSubscription('b1', '1mo')) as {
         plan: string;
@@ -173,7 +187,7 @@ describe('PlatformAdminService', () => {
     it('throws NotFoundError when business does not exist', async () => {
       const prisma = mockPrisma();
       prisma.business.findUnique.mockResolvedValue(null);
-      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never, {} as never);
       await expect(svc.extendSubscription('missing', '1yr')).rejects.toBeInstanceOf(
         NotFoundError,
       );
@@ -184,7 +198,7 @@ describe('PlatformAdminService', () => {
     it('sets status and plan to suspended', async () => {
       const prisma = mockPrisma();
       prisma.business.findUnique.mockResolvedValue({ id: 'b1' });
-      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never, {} as never);
       await svc.suspendBusiness('b1');
       expect(prisma.business.update).toHaveBeenCalledWith({
         where: { id: 'b1' },
@@ -195,7 +209,7 @@ describe('PlatformAdminService', () => {
     it('throws NotFoundError when business does not exist', async () => {
       const prisma = mockPrisma();
       prisma.business.findUnique.mockResolvedValue(null);
-      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never, {} as never);
       await expect(svc.suspendBusiness('missing')).rejects.toBeInstanceOf(NotFoundError);
     });
   });
@@ -204,7 +218,7 @@ describe('PlatformAdminService', () => {
     it('writes an err-toned entry when suspending', async () => {
       const prisma = mockPrisma();
       prisma.business.findUnique.mockResolvedValue({ id: 'b1', name: 'Pharmacie Yasmine' });
-      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never, {} as never);
       await svc.suspendBusiness('b1');
       expect(prisma.platformAuditLog.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
@@ -220,7 +234,7 @@ describe('PlatformAdminService', () => {
       const prisma = mockPrisma();
       prisma.business.findUnique.mockResolvedValue({ id: 'b1', name: 'Café Riad Nomad' });
       prisma.business.update.mockResolvedValue({ id: 'b1' });
-      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never, {} as never);
       await svc.extendSubscription('b1', '1yr');
       expect(prisma.platformAuditLog.create).toHaveBeenCalledWith({
         data: expect.objectContaining({ action: 'extend', detail: '+12 mois' }),
@@ -231,14 +245,14 @@ describe('PlatformAdminService', () => {
       const prisma = mockPrisma();
       prisma.business.findUnique.mockResolvedValue({ id: 'b1', name: 'X' });
       prisma.platformAuditLog.create.mockRejectedValue(new Error('db down'));
-      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never, {} as never);
       await expect(svc.suspendBusiness('b1')).resolves.toBeUndefined();
     });
 
     it('listAudit returns newest entries first with a limit', async () => {
       const prisma = mockPrisma();
       prisma.platformAuditLog.findMany.mockResolvedValue([{ id: 'a1' }]);
-      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never, {} as never);
       await expect(svc.listAudit(20)).resolves.toEqual([{ id: 'a1' }]);
       expect(prisma.platformAuditLog.findMany).toHaveBeenCalledWith({
         orderBy: { createdAt: 'desc' },
@@ -251,7 +265,7 @@ describe('PlatformAdminService', () => {
     it('sets status and plan to active', async () => {
       const prisma = mockPrisma();
       prisma.business.findUnique.mockResolvedValue({ id: 'b1' });
-      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never, {} as never);
       await svc.activateBusiness('b1');
       expect(prisma.business.update).toHaveBeenCalledWith({
         where: { id: 'b1' },
@@ -262,7 +276,7 @@ describe('PlatformAdminService', () => {
     it('throws NotFoundError when business does not exist', async () => {
       const prisma = mockPrisma();
       prisma.business.findUnique.mockResolvedValue(null);
-      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never, {} as never);
       await expect(svc.activateBusiness('missing')).rejects.toBeInstanceOf(NotFoundError);
     });
   });
@@ -272,7 +286,7 @@ describe('PlatformAdminService', () => {
       const prisma = mockPrisma();
       prisma.business.findUnique.mockResolvedValue({ id: 'b1' });
       prisma.businessModule.upsert.mockResolvedValue({});
-      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never, {} as never);
       await svc.updateModules('b1', { pos: true, invoicing: false });
       expect(prisma.businessModule.upsert).toHaveBeenCalledTimes(2);
       expect(prisma.businessModule.upsert).toHaveBeenCalledWith({
@@ -286,7 +300,7 @@ describe('PlatformAdminService', () => {
     it('throws NotFoundError when business does not exist', async () => {
       const prisma = mockPrisma();
       prisma.business.findUnique.mockResolvedValue(null);
-      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never, {} as never);
       await expect(svc.updateModules('missing', { pos: true })).rejects.toBeInstanceOf(
         NotFoundError,
       );
@@ -304,7 +318,7 @@ describe('PlatformAdminService', () => {
         multiWarehouse: false,
         enabledVatRates: [0, 7, 10, 14, 20],
       });
-      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never, {} as never);
       const out = await svc.updateSettings('b1', { multiWarehouse: false });
       expect(prisma.warehouse.update).toHaveBeenCalledWith({
         where: { id: 'w1' },
@@ -325,7 +339,7 @@ describe('PlatformAdminService', () => {
         multiWarehouse: false,
         enabledVatRates: [0],
       });
-      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never, {} as never);
       await svc.updateSettings('b1', { multiWarehouse: false });
       expect(prisma.warehouse.create).toHaveBeenCalledWith({
         data: {
@@ -342,7 +356,7 @@ describe('PlatformAdminService', () => {
       const prisma = mockPrisma();
       prisma.business.findUnique.mockResolvedValue(biz);
       prisma.warehouse.findMany.mockResolvedValue([{ id: 'w1' }, { id: 'w2' }]);
-      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never, {} as never);
       await expect(svc.updateSettings('b1', { multiWarehouse: false })).rejects.toBeInstanceOf(
         ConflictError,
       );
@@ -356,7 +370,7 @@ describe('PlatformAdminService', () => {
         multiWarehouse: true,
         enabledVatRates: [0],
       });
-      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never, {} as never);
       await svc.updateSettings('b1', { tvaEnabled: false });
       expect(prisma.business.update).toHaveBeenCalledWith({
         where: { id: 'b1' },
@@ -372,7 +386,7 @@ describe('PlatformAdminService', () => {
     it('throws NotFoundError when business does not exist', async () => {
       const prisma = mockPrisma();
       prisma.business.findUnique.mockResolvedValue(null);
-      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never, {} as never);
       await expect(svc.updateSettings('missing', { tvaEnabled: false })).rejects.toBeInstanceOf(
         NotFoundError,
       );
@@ -383,7 +397,7 @@ describe('PlatformAdminService', () => {
     it('filters by both status and plan when both provided', async () => {
       const prisma = mockPrisma();
       prisma.business.findMany.mockResolvedValue([]);
-      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never, {} as never);
       await svc.listBusinesses('active', 'trial');
       expect(prisma.business.findMany.mock.calls[0]![0].where).toEqual({
         status: 'active',
@@ -394,7 +408,7 @@ describe('PlatformAdminService', () => {
     it('applies no filter when both are undefined', async () => {
       const prisma = mockPrisma();
       prisma.business.findMany.mockResolvedValue([]);
-      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never, {} as never);
       await svc.listBusinesses();
       expect(prisma.business.findMany.mock.calls[0]![0].where).toEqual({});
     });
@@ -405,7 +419,7 @@ describe('PlatformAdminService', () => {
       const prisma = mockPrisma();
       prisma.user.count.mockResolvedValue(42);
       prisma.user.findMany.mockResolvedValue([{ id: 'u1', name: 'Ali', business: { id: 'b1', name: 'Biz' } }]);
-      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never, {} as never);
       const out = await svc.listUsers({ page: 2, pageSize: 10 });
       expect(out).toMatchObject({ total: 42, page: 2, pageSize: 10 });
       expect(prisma.user.findMany.mock.calls[0]![0]).toMatchObject({ skip: 10, take: 10 });
@@ -415,7 +429,7 @@ describe('PlatformAdminService', () => {
       const prisma = mockPrisma();
       prisma.user.count.mockResolvedValue(0);
       prisma.user.findMany.mockResolvedValue([]);
-      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never, {} as never);
       await svc.listUsers({ businessId: 'b1', page: 1, pageSize: 25 });
       expect(prisma.user.findMany.mock.calls[0]![0].where.businessId).toBe('b1');
     });
@@ -424,7 +438,7 @@ describe('PlatformAdminService', () => {
       const prisma = mockPrisma();
       prisma.user.count.mockResolvedValue(0);
       prisma.user.findMany.mockResolvedValue([]);
-      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never, {} as never);
       await svc.listUsers({ search: 'ali', page: 1, pageSize: 25 });
       const where = prisma.user.findMany.mock.calls[0]![0].where;
       expect(where.OR).toEqual([
@@ -437,7 +451,7 @@ describe('PlatformAdminService', () => {
       const prisma = mockPrisma();
       prisma.user.count.mockResolvedValue(0);
       prisma.user.findMany.mockResolvedValue([]);
-      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never, {} as never);
       await svc.listUsers({ page: 1, pageSize: 25 });
       expect(prisma.user.findMany.mock.calls[0]![0].where.deletedAt).toBeNull();
     });
@@ -452,7 +466,7 @@ describe('PlatformAdminService', () => {
       prisma.securityPolicy.findUnique.mockResolvedValue(null);
       prisma.user.update.mockResolvedValue({});
       prisma.session.updateMany.mockResolvedValue({ count: 0 });
-      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never, {} as never);
       const { tempPassword } = await svc.resetUserPassword('u1');
       expect(tempPassword.length).toBeGreaterThanOrEqual(10);
       expect(tempPassword).toMatch(/^[A-HJ-NP-Za-hj-np-z2-9]+$/);
@@ -464,7 +478,7 @@ describe('PlatformAdminService', () => {
       prisma.securityPolicy.findUnique.mockResolvedValue(null);
       prisma.user.update.mockResolvedValue({});
       prisma.session.updateMany.mockResolvedValue({ count: 0 });
-      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never, {} as never);
       const { tempPassword } = await svc.resetUserPassword('u1');
       const data = prisma.user.update.mock.calls[0]![0].data;
       expect(await bcrypt.compare(tempPassword, data.passwordHash)).toBe(true);
@@ -476,7 +490,7 @@ describe('PlatformAdminService', () => {
       prisma.securityPolicy.findUnique.mockResolvedValue(null);
       prisma.user.update.mockResolvedValue({});
       prisma.session.updateMany.mockResolvedValue({ count: 3 });
-      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never, {} as never);
       await svc.resetUserPassword('u1');
       expect(prisma.user.update.mock.calls[0]![0]).toMatchObject({
         where: { id: 'u1' },
@@ -494,7 +508,7 @@ describe('PlatformAdminService', () => {
       prisma.securityPolicy.findUnique.mockResolvedValue({ passwordMinLen: 16 });
       prisma.user.update.mockResolvedValue({});
       prisma.session.updateMany.mockResolvedValue({ count: 0 });
-      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never, {} as never);
       const { tempPassword } = await svc.resetUserPassword('u1');
       expect(tempPassword.length).toBeGreaterThanOrEqual(16);
     });
@@ -502,7 +516,7 @@ describe('PlatformAdminService', () => {
     it('throws NotFoundError for an unknown or soft-deleted user', async () => {
       const prisma = mockPrisma();
       prisma.user.findFirst.mockResolvedValue(null);
-      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never, {} as never);
       await expect(svc.resetUserPassword('ghost')).rejects.toBeInstanceOf(NotFoundError);
     });
   });
@@ -516,7 +530,7 @@ describe('PlatformAdminService', () => {
         .mockResolvedValueOnce(1) // expired
         .mockResolvedValueOnce(2) // pending
         .mockResolvedValueOnce(1); // suspended
-      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never, {} as never);
       const result = await svc.getStats();
       expect(result).toEqual({ total: 10, active: 6, expired: 1, pending: 2, suspended: 1 });
     });
@@ -544,7 +558,7 @@ describe('PlatformAdminService', () => {
         bonsAffectStock: true,
       });
 
-      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never, {} as never);
       const result = await svc.updateSettings('b1', { enabledVatRates: [0, 10], defaultVatRate: 10 });
 
       expect(prisma.business.update).toHaveBeenCalledWith({
@@ -563,7 +577,7 @@ describe('PlatformAdminService', () => {
       const prisma = mockPrisma();
       prisma.business.findUnique.mockResolvedValue(baseBiz);
 
-      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never, {} as never);
       // 14 requested as default but not part of the enabled set.
       await expect(
         svc.updateSettings('b1', { enabledVatRates: [0, 20], defaultVatRate: 14 }),
@@ -582,7 +596,7 @@ describe('PlatformAdminService', () => {
         bonsAffectStock: false,
       });
 
-      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never, {} as never);
       const result = await svc.updateSettings('b1', { bonsAffectStock: false });
 
       expect(prisma.business.update).toHaveBeenCalledWith({
@@ -609,7 +623,7 @@ describe('PlatformAdminService', () => {
       prisma.user.update.mockResolvedValue({ ...employee, role: 'manager' });
       prisma.platformAuditLog.create.mockResolvedValue({});
 
-      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never, {} as never);
       const result = await svc.updateBusinessUser('b1', 'u2', { role: 'manager' });
 
       expect(prisma.user.update).toHaveBeenCalledWith({
@@ -625,7 +639,7 @@ describe('PlatformAdminService', () => {
       prisma.user.findFirst.mockResolvedValue({ ...employee, role: 'owner' });
       prisma.user.count.mockResolvedValue(0); // no other active owner
 
-      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never, {} as never);
       await expect(svc.updateBusinessUser('b1', 'u2', { active: false })).rejects.toMatchObject({
         response: { code: 'conflict' },
       });
@@ -636,7 +650,7 @@ describe('PlatformAdminService', () => {
       const prisma = mockPrisma();
       prisma.user.findFirst.mockResolvedValue(null);
 
-      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never);
+      const svc = new PlatformAdminService(prisma as never, mockJwt(), mockEnv, {} as never, {} as never);
       await expect(
         svc.updateBusinessUser('b1', 'u-elsewhere', { role: 'viewer' }),
       ).rejects.toBeInstanceOf(NotFoundError);
