@@ -5,23 +5,43 @@
 
 import type { ColumnType } from "kysely";
 
-export type Bonpaymentmethod = "card" | "cash" | "other" | "transfer";
+export type AppBonpaymentmethod = "card" | "cash" | "other" | "transfer";
 
-export type Builtinrole = "admin" | "cashier" | "manager" | "owner" | "stockkeeper" | "viewer";
+export type AppBuiltinrole = "admin" | "cashier" | "manager" | "owner" | "stockkeeper" | "viewer";
 
-export type Businessstatus = "active" | "pending" | "rejected" | "suspended";
+export type AppBusinessstatus = "active" | "pending" | "rejected" | "suspended";
 
-export type Deliverynotestatus = "cancelled" | "closed" | "delivered" | "partial" | "prepared" | "sent" | "shipped";
+export type AppDeliverynotestatus = "cancelled" | "closed" | "delivered" | "partial" | "prepared" | "sent" | "shipped";
 
-export type Deliverynotetype = "in_" | "order" | "out" | "retour";
+export type AppDeliverynotetype = "in_" | "order" | "out" | "retour";
 
-export type Estimatestatus = "accepted" | "cancelled" | "draft" | "expired" | "rejected" | "sent";
+export type AppEstimatestatus = "accepted" | "cancelled" | "draft" | "expired" | "rejected" | "sent";
+
+export type AppInvoicestatus = "cancelled" | "draft" | "overdue" | "paid" | "partial" | "sent";
+
+export type AppMovementreason = "achat" | "ajustement" | "casse" | "peremption" | "retour" | "transfert" | "vente";
+
+export type AppMovementtype = "in" | "out" | "transfer";
+
+export type AppNotificationtype = "expiring" | "lowStock" | "orderReceived" | "orderStatus" | "outOfStock" | "poReceived" | "userInvited" | "variance";
+
+export type AppOcrstatus = "done" | "failed" | "pending";
+
+export type AppOrderstatus = "cancelled" | "confirmed" | "delivered" | "in_progress" | "pending" | "shipped";
+
+export type AppPaymentmethod = "card" | "cash" | "credit" | "split";
+
+export type AppPurchaseorderstatus = "cancelled" | "draft" | "partiallyReceived" | "received" | "sent";
+
+export type AppSubscriptionplan = "active" | "expired" | "suspended" | "trial";
+
+export type AppUnit = "carton" | "g" | "kg" | "litre" | "ml" | "pack" | "piece";
+
+export type AppWebhookdeliverystatus = "failed" | "ok" | "pending";
 
 export type Generated<T> = T extends ColumnType<infer S, infer I, infer U>
   ? ColumnType<S, I | undefined, U>
   : ColumnType<T, T | undefined, T>;
-
-export type Invoicestatus = "cancelled" | "draft" | "overdue" | "paid" | "partial" | "sent";
 
 export type Json = JsonValue;
 
@@ -35,42 +55,11 @@ export type JsonPrimitive = boolean | number | string | null;
 
 export type JsonValue = JsonArray | JsonObject | JsonPrimitive;
 
-export type Movementreason = "achat" | "ajustement" | "casse" | "peremption" | "retour" | "transfert" | "vente";
-
-export type Movementtype = "in" | "out" | "transfer";
-
-export type Notificationtype = "expiring" | "lowStock" | "orderReceived" | "orderStatus" | "outOfStock" | "poReceived" | "userInvited" | "variance";
-
 export type Numeric = ColumnType<string, number | string, number | string>;
-
-export type Ocrstatus = "done" | "failed" | "pending";
-
-export type Orderstatus = "cancelled" | "confirmed" | "delivered" | "in_progress" | "pending" | "shipped";
-
-export type Paymentmethod = "card" | "cash" | "credit" | "split";
-
-export type Purchaseorderstatus = "cancelled" | "draft" | "partiallyReceived" | "received" | "sent";
-
-export type Subscriptionplan = "active" | "expired" | "suspended" | "trial";
 
 export type Timestamp = ColumnType<Date, Date | string, Date | string>;
 
-export type Unit = "carton" | "g" | "kg" | "litre" | "ml" | "pack" | "piece";
-
-export type Webhookdeliverystatus = "failed" | "ok" | "pending";
-
-export interface _PrismaMigrations {
-  applied_steps_count: Generated<number>;
-  checksum: string;
-  finished_at: Timestamp | null;
-  id: string;
-  logs: string | null;
-  migration_name: string;
-  rolled_back_at: Timestamp | null;
-  started_at: Generated<Timestamp>;
-}
-
-export interface Activities {
+export interface AppActivities {
   action: string;
   business_id: string;
   date: Generated<Timestamp>;
@@ -80,7 +69,7 @@ export interface Activities {
   userId: string | null;
 }
 
-export interface ApiKeys {
+export interface AppApiKeys {
   business_id: string;
   createdAt: Generated<Timestamp>;
   hash: string;
@@ -91,14 +80,14 @@ export interface ApiKeys {
   revoked_at: Timestamp | null;
 }
 
-export interface AttendancePauses {
+export interface AppAttendancePauses {
   attendance_id: string;
   ended_at: Timestamp | null;
   id: string;
   started_at: Generated<Timestamp>;
 }
 
-export interface Attendances {
+export interface AppAttendances {
   business_id: string;
   check_in: Generated<Timestamp>;
   check_out: Timestamp | null;
@@ -114,7 +103,91 @@ export interface Attendances {
   worked_hours: number | null;
 }
 
-export interface BugReports {
+export interface AppAuthCustomRoles {
+  business_id: string;
+  createdAt: Generated<Timestamp>;
+  id: string;
+  inherits: AppBuiltinrole | null;
+  name: string;
+  tone: string;
+  updatedAt: Timestamp;
+}
+
+export interface AppAuthRoleCapabilities {
+  capId: string;
+  customRoleId: string;
+  granted: boolean;
+}
+
+export interface AppAuthRoleCustomizations {
+  business_id: string;
+  capId: string;
+  granted: boolean;
+  role: AppBuiltinrole;
+}
+
+export interface AppAuthSecurityPolicies {
+  auditRetentionDays: Generated<number>;
+  businessId: string;
+  id: string;
+  ipAllowlist: Generated<string[] | null>;
+  lockAfterFailures: Generated<number>;
+  passwordExpiryDays: Generated<number>;
+  passwordHistoryCount: Generated<number>;
+  passwordMinLen: Generated<number>;
+  requireDigit: Generated<boolean>;
+  requireSymbol: Generated<boolean>;
+  requireUpper: Generated<boolean>;
+  sessionTimeoutMin: Generated<number>;
+  twoFARequiredFor: Generated<string[] | null>;
+  updatedAt: Timestamp;
+}
+
+export interface AppAuthSessions {
+  city: string | null;
+  createdAt: Generated<Timestamp>;
+  device: string | null;
+  expiresAt: Timestamp;
+  id: string;
+  ip: string | null;
+  lastSeenAt: Generated<Timestamp>;
+  os: string | null;
+  refreshTokenHash: string;
+  revokedAt: Timestamp | null;
+  userAgent: string | null;
+  userId: string;
+}
+
+export interface AppAuthUserOverrides {
+  capId: string;
+  granted: boolean;
+  userId: string;
+}
+
+export interface AppAuthUsers {
+  active: Generated<boolean>;
+  business_id: string;
+  createdAt: Generated<Timestamp>;
+  deletedAt: Timestamp | null;
+  email: string;
+  id: string;
+  lastLogin: Timestamp | null;
+  module_access: Generated<string[]>;
+  name: string;
+  passwordHash: string;
+  phone: string | null;
+  restrict_modules: Generated<boolean>;
+  role: AppBuiltinrole;
+  tokenVersion: Generated<number>;
+  updatedAt: Timestamp;
+}
+
+export interface AppAuthUserWarehouses {
+  userId: string;
+  warehouseId: string;
+}
+
+export interface AppBugReports {
   app_version: string | null;
   business_id: string;
   created_at: Generated<Timestamp>;
@@ -132,7 +205,7 @@ export interface BugReports {
   zone: Json | null;
 }
 
-export interface Businesses {
+export interface AppBusinesses {
   address: string | null;
   bons_affect_stock: Generated<boolean>;
   city: string | null;
@@ -152,22 +225,22 @@ export interface Businesses {
   name: string;
   patente: string | null;
   phone: string | null;
-  plan: Generated<Subscriptionplan>;
+  plan: Generated<AppSubscriptionplan>;
   rc: string | null;
-  status: Generated<Businessstatus>;
+  status: Generated<AppBusinessstatus>;
   subscription_end: Timestamp | null;
   subscription_start: Timestamp | null;
   updatedAt: Timestamp;
 }
 
-export interface BusinessModules {
+export interface AppBusinessModules {
   active: Generated<boolean>;
   business_id: string;
   module_id: string;
   updatedAt: Timestamp;
 }
 
-export interface Categories {
+export interface AppCategories {
   active: Generated<boolean>;
   business_id: string;
   icon: string;
@@ -176,7 +249,7 @@ export interface Categories {
   tone: string;
 }
 
-export interface Customers {
+export interface AppCustomers {
   business_id: string;
   buyer_business_id: string | null;
   city: string | null;
@@ -191,17 +264,7 @@ export interface Customers {
   updatedAt: Timestamp;
 }
 
-export interface CustomRoles {
-  business_id: string;
-  createdAt: Generated<Timestamp>;
-  id: string;
-  inherits: Builtinrole | null;
-  name: string;
-  tone: string;
-  updatedAt: Timestamp;
-}
-
-export interface DeliveryNoteLines {
+export interface AppDeliveryNoteLines {
   delivery_note_id: string;
   id: string;
   label: string;
@@ -211,18 +274,18 @@ export interface DeliveryNoteLines {
   unit_price: Generated<Numeric>;
 }
 
-export interface DeliveryNotePayments {
+export interface AppDeliveryNotePayments {
   amount: Numeric;
   business_id: string;
   created_by_id: string;
   createdAt: Generated<Timestamp>;
   delivery_note_id: string;
   id: string;
-  method: Generated<Bonpaymentmethod>;
+  method: Generated<AppBonpaymentmethod>;
   note: string | null;
 }
 
-export interface DeliveryNotes {
+export interface AppDeliveryNotes {
   business_id: string;
   carrier: string | null;
   createdAt: Generated<Timestamp>;
@@ -237,13 +300,13 @@ export interface DeliveryNotes {
   signed: Generated<boolean>;
   signed_at: Timestamp | null;
   source_ref: string | null;
-  status: Generated<Deliverynotestatus>;
+  status: Generated<AppDeliverynotestatus>;
   supplier_id: string | null;
-  type: Deliverynotetype;
+  type: AppDeliverynotetype;
   updatedAt: Timestamp;
 }
 
-export interface DocumentAudits {
+export interface AppDocumentAudits {
   action: string;
   business_id: string;
   changes: Json | null;
@@ -256,7 +319,7 @@ export interface DocumentAudits {
   user_name: string;
 }
 
-export interface EstimateLines {
+export interface AppEstimateLines {
   discount: Generated<Numeric>;
   estimate_id: string;
   id: string;
@@ -267,7 +330,7 @@ export interface EstimateLines {
   vat: number;
 }
 
-export interface Estimates {
+export interface AppEstimates {
   business_id: string;
   createdAt: Generated<Timestamp>;
   customer_id: string;
@@ -278,7 +341,7 @@ export interface Estimates {
   issued_by_id: string;
   notes: string | null;
   number: string;
-  status: Generated<Estimatestatus>;
+  status: Generated<AppEstimatestatus>;
   terms: string | null;
   total: Numeric;
   tva: Numeric;
@@ -286,7 +349,7 @@ export interface Estimates {
   valid_until: Timestamp;
 }
 
-export interface ExpenseCategoryDefs {
+export interface AppExpenseCategoryDefs {
   archived: Generated<boolean>;
   business_id: string;
   created_at: Generated<Timestamp>;
@@ -298,14 +361,14 @@ export interface ExpenseCategoryDefs {
   updated_at: Timestamp;
 }
 
-export interface ExpensePhotos {
+export interface AppExpensePhotos {
   created_at: Generated<Timestamp>;
   expense_id: string;
   id: string;
   path: string;
 }
 
-export interface Expenses {
+export interface AppExpenses {
   amount: Numeric;
   business_id: string;
   category: Generated<string>;
@@ -316,8 +379,8 @@ export interface Expenses {
   merchant_name: string | null;
   note: string | null;
   ocr_raw: Json | null;
-  ocr_status: Ocrstatus | null;
-  payment_method: Generated<Paymentmethod>;
+  ocr_status: AppOcrstatus | null;
+  payment_method: Generated<AppPaymentmethod>;
   receipt_hash: string | null;
   receipt_path: string | null;
   supplier_id: string | null;
@@ -326,7 +389,7 @@ export interface Expenses {
   warehouse_id: string | null;
 }
 
-export interface InventoryCountLines {
+export interface AppInventoryCountLines {
   counted: number;
   countId: string;
   expected: number;
@@ -334,7 +397,7 @@ export interface InventoryCountLines {
   productId: string;
 }
 
-export interface InventoryCounts {
+export interface AppInventoryCounts {
   appliedAt: Timestamp | null;
   business_id: string;
   createdAt: Generated<Timestamp>;
@@ -344,7 +407,7 @@ export interface InventoryCounts {
   warehouseId: string;
 }
 
-export interface InvoiceLines {
+export interface AppInvoiceLines {
   discount: Generated<Numeric>;
   id: string;
   invoice_id: string;
@@ -355,7 +418,7 @@ export interface InvoiceLines {
   vat: number;
 }
 
-export interface Invoices {
+export interface AppInvoices {
   business_id: string;
   createdAt: Generated<Timestamp>;
   customer_id: string;
@@ -368,14 +431,14 @@ export interface Invoices {
   notes: string | null;
   number: string;
   paid: Generated<Numeric>;
-  status: Generated<Invoicestatus>;
+  status: Generated<AppInvoicestatus>;
   terms: string | null;
   total: Numeric;
   tva: Numeric;
   updatedAt: Timestamp;
 }
 
-export interface Listings {
+export interface AppListings {
   active: Generated<boolean>;
   business_id: string;
   createdAt: Generated<Timestamp>;
@@ -384,13 +447,13 @@ export interface Listings {
   min_order_qty: Generated<number>;
   product_id: string;
   title: string;
-  unit: Generated<Unit>;
+  unit: Generated<AppUnit>;
   unit_price: Numeric;
   updatedAt: Timestamp;
   vat: number;
 }
 
-export interface ListingTiers {
+export interface AppListingTiers {
   id: string;
   listing_id: string;
   min_qty: number;
@@ -398,7 +461,7 @@ export interface ListingTiers {
   unit_price: Numeric;
 }
 
-export interface Movements {
+export interface AppMovements {
   batch: string | null;
   business_id: string;
   createdAt: Generated<Timestamp>;
@@ -407,25 +470,25 @@ export interface Movements {
   id: string;
   productId: string;
   qty: number;
-  reason: Movementreason;
+  reason: AppMovementreason;
   ref: string | null;
   toWarehouseId: string | null;
-  type: Movementtype;
+  type: AppMovementtype;
   userId: string;
   warehouseId: string;
 }
 
-export interface Notifications {
+export interface AppNotifications {
   body: string;
   business_id: string;
   date: Generated<Timestamp>;
   id: string;
   read: Generated<boolean>;
   title: string;
-  type: Notificationtype;
+  type: AppNotificationtype;
 }
 
-export interface OrderLines {
+export interface AppOrderLines {
   id: string;
   listing_id: string;
   name: string;
@@ -437,7 +500,7 @@ export interface OrderLines {
   vat: number;
 }
 
-export interface Orders {
+export interface AppOrders {
   buyer_business_id: string;
   buyer_note: string | null;
   created_by_user_id: string | null;
@@ -449,12 +512,170 @@ export interface Orders {
   seller_business_id: string;
   seller_note: string | null;
   source: Generated<string>;
-  status: Generated<Orderstatus>;
+  status: Generated<AppOrderstatus>;
   status_changed_at: Generated<Timestamp>;
   subtotal_ht: Numeric;
   total_ttc: Numeric;
   updatedAt: Timestamp;
   vat_total: Numeric;
+}
+
+export interface AppPoSessions {
+  business_id: string;
+  closedAt: Timestamp | null;
+  id: string;
+  openedAt: Generated<Timestamp>;
+  openingFloat: Generated<Numeric>;
+  revenue: Generated<Numeric>;
+  sales: Generated<number>;
+}
+
+export interface AppPoTicketLines {
+  id: string;
+  priceTtc: Numeric;
+  productId: string;
+  qty: number;
+  ticketId: string;
+  vat: number;
+}
+
+export interface AppPoTickets {
+  business_id: string;
+  cashierId: string;
+  createdAt: Generated<Timestamp>;
+  customerId: string | null;
+  date: Generated<Timestamp>;
+  discount: Generated<Numeric>;
+  due: Generated<Numeric>;
+  ht: Numeric;
+  id: string;
+  number: string;
+  parked: Generated<boolean>;
+  payment: Json;
+  sessionId: string;
+  total: Numeric;
+  tva: Numeric;
+  warehouseId: string;
+}
+
+export interface AppPriceGroups {
+  business_id: string;
+  createdAt: Generated<Timestamp>;
+  id: string;
+  is_default: Generated<boolean>;
+  name: string;
+  updatedAt: Timestamp;
+}
+
+export interface AppProducts {
+  barcode: string;
+  batch: string | null;
+  business_id: string;
+  categoryId: string;
+  createdAt: Generated<Timestamp>;
+  deletedAt: Timestamp | null;
+  expiry: Timestamp | null;
+  id: string;
+  image_path: string | null;
+  maxStock: Generated<number>;
+  minStock: Generated<number>;
+  name: string;
+  name_fr: string | null;
+  notes: string | null;
+  purchase: Numeric;
+  sale: Numeric;
+  sku: string;
+  supplierId: string | null;
+  tone: Generated<string>;
+  trackExpiry: Generated<boolean>;
+  unit: Generated<AppUnit>;
+  updatedAt: Timestamp;
+  vat: number;
+}
+
+export interface AppPurchaseOrderLines {
+  id: string;
+  price: Numeric;
+  productId: string;
+  purchaseOrderId: string;
+  qty: number;
+  received: Generated<number>;
+  vat: number;
+}
+
+export interface AppPurchaseOrders {
+  business_id: string;
+  createdAt: Generated<Timestamp>;
+  date: Generated<Timestamp>;
+  id: string;
+  notes: string | null;
+  number: string;
+  status: Generated<AppPurchaseorderstatus>;
+  supplierId: string;
+  updatedAt: Timestamp;
+  warehouseId: string;
+}
+
+export interface AppStockLevels {
+  avgCost: Generated<Numeric>;
+  businessId: string;
+  productId: string;
+  qty: Generated<number>;
+  reservedQty: Generated<number>;
+  updatedAt: Timestamp;
+  warehouseId: string;
+}
+
+export interface AppSuppliers {
+  business_id: string;
+  city: string | null;
+  contact: string | null;
+  createdAt: Generated<Timestamp>;
+  email: string | null;
+  ice: string | null;
+  id: string;
+  name: string;
+  phone: string | null;
+  updatedAt: Timestamp;
+}
+
+export interface AppWarehouses {
+  active: Generated<boolean>;
+  address: string | null;
+  business_id: string;
+  city: string;
+  createdAt: Generated<Timestamp>;
+  deletedAt: Timestamp | null;
+  id: string;
+  isDefault: Generated<boolean>;
+  managerId: string | null;
+  name: string;
+  phone: string | null;
+  updatedAt: Timestamp;
+}
+
+export interface AppWebhookDeliveries {
+  attempts: Generated<number>;
+  createdAt: Generated<Timestamp>;
+  event: string;
+  id: string;
+  last_error: string | null;
+  next_at: Generated<Timestamp>;
+  payload: Json;
+  status: Generated<AppWebhookdeliverystatus>;
+  updatedAt: Timestamp;
+  webhook_id: string;
+}
+
+export interface AppWebhooks {
+  active: Generated<boolean>;
+  business_id: string;
+  createdAt: Generated<Timestamp>;
+  events: string[] | null;
+  id: string;
+  secret: string;
+  updatedAt: Timestamp;
+  url: string;
 }
 
 export interface PgAllForeignKeys {
@@ -500,147 +721,6 @@ export interface PlatformAuditLogs {
   target_name: string;
   target_type: Generated<string>;
   tone: Generated<string>;
-}
-
-export interface PoSessions {
-  business_id: string;
-  closedAt: Timestamp | null;
-  id: string;
-  openedAt: Generated<Timestamp>;
-  openingFloat: Generated<Numeric>;
-  revenue: Generated<Numeric>;
-  sales: Generated<number>;
-}
-
-export interface PoTicketLines {
-  id: string;
-  priceTtc: Numeric;
-  productId: string;
-  qty: number;
-  ticketId: string;
-  vat: number;
-}
-
-export interface PoTickets {
-  business_id: string;
-  cashierId: string;
-  createdAt: Generated<Timestamp>;
-  customerId: string | null;
-  date: Generated<Timestamp>;
-  discount: Generated<Numeric>;
-  due: Generated<Numeric>;
-  ht: Numeric;
-  id: string;
-  number: string;
-  parked: Generated<boolean>;
-  payment: Json;
-  sessionId: string;
-  total: Numeric;
-  tva: Numeric;
-  warehouseId: string;
-}
-
-export interface PriceGroups {
-  business_id: string;
-  createdAt: Generated<Timestamp>;
-  id: string;
-  is_default: Generated<boolean>;
-  name: string;
-  updatedAt: Timestamp;
-}
-
-export interface Products {
-  barcode: string;
-  batch: string | null;
-  business_id: string;
-  categoryId: string;
-  createdAt: Generated<Timestamp>;
-  deletedAt: Timestamp | null;
-  expiry: Timestamp | null;
-  id: string;
-  image_path: string | null;
-  maxStock: Generated<number>;
-  minStock: Generated<number>;
-  name: string;
-  name_fr: string | null;
-  notes: string | null;
-  purchase: Numeric;
-  sale: Numeric;
-  sku: string;
-  supplierId: string | null;
-  tone: Generated<string>;
-  trackExpiry: Generated<boolean>;
-  unit: Generated<Unit>;
-  updatedAt: Timestamp;
-  vat: number;
-}
-
-export interface PurchaseOrderLines {
-  id: string;
-  price: Numeric;
-  productId: string;
-  purchaseOrderId: string;
-  qty: number;
-  received: Generated<number>;
-  vat: number;
-}
-
-export interface PurchaseOrders {
-  business_id: string;
-  createdAt: Generated<Timestamp>;
-  date: Generated<Timestamp>;
-  id: string;
-  notes: string | null;
-  number: string;
-  status: Generated<Purchaseorderstatus>;
-  supplierId: string;
-  updatedAt: Timestamp;
-  warehouseId: string;
-}
-
-export interface RoleCapabilities {
-  capId: string;
-  customRoleId: string;
-  granted: boolean;
-}
-
-export interface RoleCustomizations {
-  business_id: string;
-  capId: string;
-  granted: boolean;
-  role: Builtinrole;
-}
-
-export interface SecurityPolicies {
-  auditRetentionDays: Generated<number>;
-  businessId: string;
-  id: string;
-  ipAllowlist: Generated<string[] | null>;
-  lockAfterFailures: Generated<number>;
-  passwordExpiryDays: Generated<number>;
-  passwordHistoryCount: Generated<number>;
-  passwordMinLen: Generated<number>;
-  requireDigit: Generated<boolean>;
-  requireSymbol: Generated<boolean>;
-  requireUpper: Generated<boolean>;
-  sessionTimeoutMin: Generated<number>;
-  twoFARequiredFor: Generated<string[] | null>;
-  updatedAt: Timestamp;
-}
-
-export interface Sessions {
-  city: string | null;
-  createdAt: Generated<Timestamp>;
-  device: string | null;
-  expiresAt: Timestamp;
-  id: string;
-  ip: string | null;
-  lastSeenAt: Generated<Timestamp>;
-  os: string | null;
-  refreshTokenHash: string;
-  revokedAt: Timestamp | null;
-  userAgent: string | null;
-  userId: string;
 }
 
 export interface SqitchChanges {
@@ -857,29 +937,6 @@ export interface SqitchTags {
   tag_id: string;
 }
 
-export interface StockLevels {
-  avgCost: Generated<Numeric>;
-  businessId: string;
-  productId: string;
-  qty: Generated<number>;
-  reservedQty: Generated<number>;
-  updatedAt: Timestamp;
-  warehouseId: string;
-}
-
-export interface Suppliers {
-  business_id: string;
-  city: string | null;
-  contact: string | null;
-  createdAt: Generated<Timestamp>;
-  email: string | null;
-  ice: string | null;
-  id: string;
-  name: string;
-  phone: string | null;
-  updatedAt: Timestamp;
-}
-
 export interface TapFunky {
   args: string | null;
   is_definer: boolean | null;
@@ -896,132 +953,63 @@ export interface TapFunky {
   volatility: string | null;
 }
 
-export interface UserOverrides {
-  capId: string;
-  granted: boolean;
-  userId: string;
-}
-
-export interface Users {
-  active: Generated<boolean>;
-  business_id: string;
-  createdAt: Generated<Timestamp>;
-  deletedAt: Timestamp | null;
-  email: string;
-  id: string;
-  lastLogin: Timestamp | null;
-  module_access: Generated<string[]>;
-  name: string;
-  passwordHash: string;
-  phone: string | null;
-  restrict_modules: Generated<boolean>;
-  role: Builtinrole;
-  tokenVersion: Generated<number>;
-  updatedAt: Timestamp;
-}
-
-export interface UserWarehouses {
-  userId: string;
-  warehouseId: string;
-}
-
-export interface Warehouses {
-  active: Generated<boolean>;
-  address: string | null;
-  business_id: string;
-  city: string;
-  createdAt: Generated<Timestamp>;
-  deletedAt: Timestamp | null;
-  id: string;
-  isDefault: Generated<boolean>;
-  managerId: string | null;
-  name: string;
-  phone: string | null;
-  updatedAt: Timestamp;
-}
-
-export interface WebhookDeliveries {
-  attempts: Generated<number>;
-  createdAt: Generated<Timestamp>;
-  event: string;
-  id: string;
-  last_error: string | null;
-  next_at: Generated<Timestamp>;
-  payload: Json;
-  status: Generated<Webhookdeliverystatus>;
-  updatedAt: Timestamp;
-  webhook_id: string;
-}
-
-export interface Webhooks {
-  active: Generated<boolean>;
-  business_id: string;
-  createdAt: Generated<Timestamp>;
-  events: string[] | null;
-  id: string;
-  secret: string;
-  updatedAt: Timestamp;
-  url: string;
-}
-
 export interface DB {
-  _prisma_migrations: _PrismaMigrations;
-  activities: Activities;
-  api_keys: ApiKeys;
-  attendance_pauses: AttendancePauses;
-  attendances: Attendances;
-  bug_reports: BugReports;
-  business_modules: BusinessModules;
-  businesses: Businesses;
-  categories: Categories;
-  custom_roles: CustomRoles;
-  customers: Customers;
-  delivery_note_lines: DeliveryNoteLines;
-  delivery_note_payments: DeliveryNotePayments;
-  delivery_notes: DeliveryNotes;
-  document_audits: DocumentAudits;
-  estimate_lines: EstimateLines;
-  estimates: Estimates;
-  expense_category_defs: ExpenseCategoryDefs;
-  expense_photos: ExpensePhotos;
-  expenses: Expenses;
-  inventory_count_lines: InventoryCountLines;
-  inventory_counts: InventoryCounts;
-  invoice_lines: InvoiceLines;
-  invoices: Invoices;
-  listing_tiers: ListingTiers;
-  listings: Listings;
-  movements: Movements;
-  notifications: Notifications;
-  order_lines: OrderLines;
-  orders: Orders;
+  "app_auth.custom_roles": AppAuthCustomRoles;
+  "app_auth.role_capabilities": AppAuthRoleCapabilities;
+  "app_auth.role_customizations": AppAuthRoleCustomizations;
+  "app_auth.security_policies": AppAuthSecurityPolicies;
+  "app_auth.sessions": AppAuthSessions;
+  "app_auth.user_overrides": AppAuthUserOverrides;
+  "app_auth.user_warehouses": AppAuthUserWarehouses;
+  "app_auth.users": AppAuthUsers;
+  "app.activities": AppActivities;
+  "app.api_keys": AppApiKeys;
+  "app.attendance_pauses": AppAttendancePauses;
+  "app.attendances": AppAttendances;
+  "app.bug_reports": AppBugReports;
+  "app.business_modules": AppBusinessModules;
+  "app.businesses": AppBusinesses;
+  "app.categories": AppCategories;
+  "app.customers": AppCustomers;
+  "app.delivery_note_lines": AppDeliveryNoteLines;
+  "app.delivery_note_payments": AppDeliveryNotePayments;
+  "app.delivery_notes": AppDeliveryNotes;
+  "app.document_audits": AppDocumentAudits;
+  "app.estimate_lines": AppEstimateLines;
+  "app.estimates": AppEstimates;
+  "app.expense_category_defs": AppExpenseCategoryDefs;
+  "app.expense_photos": AppExpensePhotos;
+  "app.expenses": AppExpenses;
+  "app.inventory_count_lines": AppInventoryCountLines;
+  "app.inventory_counts": AppInventoryCounts;
+  "app.invoice_lines": AppInvoiceLines;
+  "app.invoices": AppInvoices;
+  "app.listing_tiers": AppListingTiers;
+  "app.listings": AppListings;
+  "app.movements": AppMovements;
+  "app.notifications": AppNotifications;
+  "app.order_lines": AppOrderLines;
+  "app.orders": AppOrders;
+  "app.po_sessions": AppPoSessions;
+  "app.po_ticket_lines": AppPoTicketLines;
+  "app.po_tickets": AppPoTickets;
+  "app.price_groups": AppPriceGroups;
+  "app.products": AppProducts;
+  "app.purchase_order_lines": AppPurchaseOrderLines;
+  "app.purchase_orders": AppPurchaseOrders;
+  "app.stock_levels": AppStockLevels;
+  "app.suppliers": AppSuppliers;
+  "app.warehouses": AppWarehouses;
+  "app.webhook_deliveries": AppWebhookDeliveries;
+  "app.webhooks": AppWebhooks;
   pg_all_foreign_keys: PgAllForeignKeys;
   platform_admins: PlatformAdmins;
   platform_audit_logs: PlatformAuditLogs;
-  po_sessions: PoSessions;
-  po_ticket_lines: PoTicketLines;
-  po_tickets: PoTickets;
-  price_groups: PriceGroups;
-  products: Products;
-  purchase_order_lines: PurchaseOrderLines;
-  purchase_orders: PurchaseOrders;
-  role_capabilities: RoleCapabilities;
-  role_customizations: RoleCustomizations;
-  security_policies: SecurityPolicies;
-  sessions: Sessions;
   "sqitch.changes": SqitchChanges;
   "sqitch.dependencies": SqitchDependencies;
   "sqitch.events": SqitchEvents;
   "sqitch.projects": SqitchProjects;
   "sqitch.releases": SqitchReleases;
   "sqitch.tags": SqitchTags;
-  stock_levels: StockLevels;
-  suppliers: Suppliers;
   tap_funky: TapFunky;
-  user_overrides: UserOverrides;
-  user_warehouses: UserWarehouses;
-  users: Users;
-  warehouses: Warehouses;
-  webhook_deliveries: WebhookDeliveries;
-  webhooks: Webhooks;
 }

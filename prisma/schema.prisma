@@ -2,12 +2,14 @@
 // Single-tenant deployment (one Business per database).
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema"]
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  schemas  = ["app", "app_auth", "public"]
 }
 
 // ─── Tenancy ─────────────────────────────────────────────────────────────────
@@ -17,6 +19,8 @@ enum SubscriptionPlan {
   active
   expired
   suspended
+
+  @@schema("app")
 }
 
 enum BusinessStatus {
@@ -24,6 +28,8 @@ enum BusinessStatus {
   suspended
   pending
   rejected
+
+  @@schema("app")
 }
 
 model PlatformAdmin {
@@ -44,6 +50,7 @@ model PlatformAdmin {
   updatedAt    DateTime @updatedAt
 
   @@map("platform_admins")
+  @@schema("public")
 }
 
 /// Journal of super-admin console actions (extend, suspend, approve…). Append-only.
@@ -59,6 +66,7 @@ model PlatformAuditLog {
 
   @@index([createdAt])
   @@map("platform_audit_logs")
+  @@schema("public")
 }
 
 /// Modification history for business documents (invoices, bons, estimates, POs).
@@ -77,6 +85,7 @@ model DocumentAudit {
   @@index([businessId, docType, docId])
   @@index([businessId, createdAt])
   @@map("document_audits")
+  @@schema("app")
 }
 
 model Business {
@@ -143,6 +152,7 @@ model Business {
   bugReports          BugReport[]
 
   @@map("businesses")
+  @@schema("app")
 }
 
 // ─── Warehouses ──────────────────────────────────────────────────────────────
@@ -173,6 +183,7 @@ model Warehouse {
 
   @@index([businessId])
   @@map("warehouses")
+  @@schema("app")
 }
 
 // ─── Users + Roles + Permissions ─────────────────────────────────────────────
@@ -184,6 +195,8 @@ enum BuiltInRole {
   stockkeeper
   cashier
   viewer
+
+  @@schema("app_auth")
 }
 
 model User {
@@ -224,6 +237,7 @@ model User {
   @@unique([email, businessId])
   @@index([businessId])
   @@map("users")
+  @@schema("app_auth")
 }
 
 model UserWarehouse {
@@ -235,6 +249,7 @@ model UserWarehouse {
 
   @@id([userId, warehouseId])
   @@map("user_warehouses")
+  @@schema("app_auth")
 }
 
 model UserOverride {
@@ -246,6 +261,7 @@ model UserOverride {
 
   @@id([userId, capId])
   @@map("user_overrides")
+  @@schema("app_auth")
 }
 
 model CustomRole {
@@ -263,6 +279,7 @@ model CustomRole {
   @@unique([businessId, name])
   @@index([businessId])
   @@map("custom_roles")
+  @@schema("app_auth")
 }
 
 model RoleCapability {
@@ -274,6 +291,7 @@ model RoleCapability {
 
   @@id([customRoleId, capId])
   @@map("role_capabilities")
+  @@schema("app_auth")
 }
 
 /// Per-cap override on a built-in role. Spec §7.14 — owner is locked (UI-enforced),
@@ -289,6 +307,7 @@ model RoleCustomization {
 
   @@id([businessId, role, capId])
   @@map("role_customizations")
+  @@schema("app_auth")
 }
 
 model Session {
@@ -310,6 +329,7 @@ model Session {
   @@index([userId])
   @@index([expiresAt])
   @@map("sessions")
+  @@schema("app_auth")
 }
 
 model SecurityPolicy {
@@ -331,6 +351,7 @@ model SecurityPolicy {
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@map("security_policies")
+  @@schema("app_auth")
 }
 
 // ─── Catalog ─────────────────────────────────────────────────────────────────
@@ -349,6 +370,7 @@ model Category {
   @@unique([businessId, name])
   @@index([businessId])
   @@map("categories")
+  @@schema("app")
 }
 
 model Supplier {
@@ -371,6 +393,7 @@ model Supplier {
 
   @@index([businessId])
   @@map("suppliers")
+  @@schema("app")
 }
 
 model Customer {
@@ -404,6 +427,7 @@ model Customer {
   @@index([businessId])
   @@index([priceGroupId])
   @@map("customers")
+  @@schema("app")
 }
 
 enum Unit {
@@ -414,6 +438,8 @@ enum Unit {
   ml
   carton
   pack
+
+  @@schema("app")
 }
 
 model Product {
@@ -461,6 +487,7 @@ model Product {
   @@index([categoryId])
   @@index([supplierId])
   @@map("products")
+  @@schema("app")
 }
 
 model StockLevel {
@@ -480,6 +507,7 @@ model StockLevel {
   @@index([businessId, productId])
   @@index([warehouseId])
   @@map("stock_levels")
+  @@schema("app")
 }
 
 // ─── Movements ───────────────────────────────────────────────────────────────
@@ -488,6 +516,8 @@ enum MovementType {
   in
   out
   transfer
+
+  @@schema("app")
 }
 
 enum MovementReason {
@@ -498,6 +528,8 @@ enum MovementReason {
   ajustement
   casse
   retour
+
+  @@schema("app")
 }
 
 model Movement {
@@ -527,6 +559,7 @@ model Movement {
   @@index([warehouseId])
   @@index([date])
   @@map("movements")
+  @@schema("app")
 }
 
 // ─── Purchase Orders ─────────────────────────────────────────────────────────
@@ -537,6 +570,8 @@ enum PurchaseOrderStatus {
   partiallyReceived
   received
   cancelled
+
+  @@schema("app")
 }
 
 model PurchaseOrder {
@@ -559,6 +594,7 @@ model PurchaseOrder {
   @@unique([businessId, number])
   @@index([businessId])
   @@map("purchase_orders")
+  @@schema("app")
 }
 
 model PurchaseOrderLine {
@@ -575,6 +611,7 @@ model PurchaseOrderLine {
 
   @@index([purchaseOrderId])
   @@map("purchase_order_lines")
+  @@schema("app")
 }
 
 // ─── POS ─────────────────────────────────────────────────────────────────────
@@ -593,6 +630,7 @@ model POSession {
 
   @@index([businessId])
   @@map("po_sessions")
+  @@schema("app")
 }
 
 enum PaymentMethod {
@@ -600,6 +638,8 @@ enum PaymentMethod {
   card
   credit
   split
+
+  @@schema("app")
 }
 
 model POTicket {
@@ -632,6 +672,7 @@ model POTicket {
   @@index([cashierId])
   @@index([date])
   @@map("po_tickets")
+  @@schema("app")
 }
 
 model POTicketLine {
@@ -647,6 +688,8 @@ model POTicketLine {
 
   @@index([ticketId])
   @@map("po_ticket_lines")
+
+  @@schema("app")
 }
 
 // ─── Inventory counts ────────────────────────────────────────────────────────
@@ -666,6 +709,8 @@ model InventoryCount {
 
   @@index([businessId])
   @@map("inventory_counts")
+
+  @@schema("app")
 }
 
 model InventoryCountLine {
@@ -680,6 +725,8 @@ model InventoryCountLine {
 
   @@index([countId])
   @@map("inventory_count_lines")
+
+  @@schema("app")
 }
 
 // ─── Notifications + Activity ────────────────────────────────────────────────
@@ -693,6 +740,8 @@ enum NotificationType {
   outOfStock
   orderReceived
   orderStatus
+
+  @@schema("app")
 }
 
 model Notification {
@@ -709,6 +758,8 @@ model Notification {
   @@index([businessId])
   @@index([date])
   @@map("notifications")
+
+  @@schema("app")
 }
 
 model Activity {
@@ -727,6 +778,8 @@ model Activity {
   @@index([date])
   @@index([userId])
   @@map("activities")
+
+  @@schema("app")
 }
 
 // ─── Business modules (feature gating) ───────────────────────────────────────
@@ -740,6 +793,8 @@ model BusinessModule {
 
   @@id([businessId, moduleId])
   @@map("business_modules")
+
+  @@schema("app")
 }
 
 // ─── Expenses (dépenses) ─────────────────────────────────────────────────────
@@ -763,12 +818,16 @@ model ExpenseCategoryDef {
   @@unique([businessId, key])
   @@index([businessId, archived, sortOrder])
   @@map("expense_category_defs")
+
+  @@schema("app")
 }
 
 enum OcrStatus {
   pending
   done
   failed
+
+  @@schema("app")
 }
 
 /// A recorded business expense. `receiptPath` points at an image on the API's
@@ -804,6 +863,8 @@ model Expense {
   @@index([businessId, category])
   @@index([businessId, receiptHash])
   @@map("expenses")
+
+  @@schema("app")
 }
 
 model ExpensePhoto {
@@ -816,6 +877,8 @@ model ExpensePhoto {
 
   @@index([expenseId])
   @@map("expense_photos")
+
+  @@schema("app")
 }
 
 // ─── Invoices (customer billing — B2B) ───────────────────────────────────────
@@ -827,6 +890,8 @@ enum InvoiceStatus {
   paid
   overdue
   cancelled
+
+  @@schema("app")
 }
 
 model Invoice {
@@ -858,6 +923,8 @@ model Invoice {
   @@index([businessId, status])
   @@index([customerId])
   @@map("invoices")
+
+  @@schema("app")
 }
 
 model InvoiceLine {
@@ -875,6 +942,8 @@ model InvoiceLine {
 
   @@index([invoiceId])
   @@map("invoice_lines")
+
+  @@schema("app")
 }
 
 // ─── Delivery notes / Purchase notes (BC · BL · BR) ──────────────────────────
@@ -884,6 +953,8 @@ enum DeliveryNoteType {
   out // BL — bon de livraison (vers client)
   in_ // BR — bon de réception (du fournisseur)  (`in` is a reserved SQL keyword)
   retour // RT — retour client (annule tout ou partie d'une BL)
+
+  @@schema("app")
 }
 
 enum DeliveryNoteStatus {
@@ -894,6 +965,8 @@ enum DeliveryNoteStatus {
   delivered
   closed
   cancelled
+
+  @@schema("app")
 }
 
 enum BonPaymentMethod {
@@ -901,6 +974,8 @@ enum BonPaymentMethod {
   card
   transfer
   other
+
+  @@schema("app")
 }
 
 model DeliveryNote {
@@ -939,6 +1014,8 @@ model DeliveryNote {
   @@index([customerId])
   @@index([returnOfId])
   @@map("delivery_notes")
+
+  @@schema("app")
 }
 
 model DeliveryNotePayment {
@@ -957,6 +1034,8 @@ model DeliveryNotePayment {
   @@index([deliveryNoteId])
   @@index([businessId, createdAt])
   @@map("delivery_note_payments")
+
+  @@schema("app")
 }
 
 model DeliveryNoteLine {
@@ -973,6 +1052,8 @@ model DeliveryNoteLine {
 
   @@index([deliveryNoteId])
   @@map("delivery_note_lines")
+
+  @@schema("app")
 }
 
 // ─── Estimates / Devis (customer quotes) ────────────────────────────────────
@@ -984,6 +1065,8 @@ enum EstimateStatus {
   rejected
   expired
   cancelled
+
+  @@schema("app")
 }
 
 model Estimate {
@@ -1014,6 +1097,8 @@ model Estimate {
   @@index([businessId, status])
   @@index([customerId])
   @@map("estimates")
+
+  @@schema("app")
 }
 
 model EstimateLine {
@@ -1031,6 +1116,8 @@ model EstimateLine {
 
   @@index([estimateId])
   @@map("estimate_lines")
+
+  @@schema("app")
 }
 
 // ─── HR / Attendance ─────────────────────────────────────────────────────────
@@ -1058,6 +1145,8 @@ model Attendance {
   @@index([businessId, userId])
   @@index([businessId, checkIn])
   @@map("attendances")
+
+  @@schema("app")
 }
 
 model AttendancePause {
@@ -1070,6 +1159,8 @@ model AttendancePause {
 
   @@index([attendanceId])
   @@map("attendance_pauses")
+
+  @@schema("app")
 }
 
 // ─── Marketplace (cross-tenant) ──────────────────────────────────────────────
@@ -1093,6 +1184,8 @@ model PriceGroup {
   @@unique([businessId, name])
   @@index([businessId])
   @@map("price_groups")
+
+  @@schema("app")
 }
 
 /// A product published to the marketplace by its owning (seller) business.
@@ -1119,6 +1212,8 @@ model Listing {
   @@index([businessId])
   @@index([active])
   @@map("listings")
+
+  @@schema("app")
 }
 
 /// Quantity break. `priceGroupId` NULL = applies to every buyer.
@@ -1136,6 +1231,8 @@ model ListingTier {
   @@unique([listingId, priceGroupId, minQty])
   @@index([listingId])
   @@map("listing_tiers")
+
+  @@schema("app")
 }
 
 enum OrderStatus {
@@ -1145,6 +1242,8 @@ enum OrderStatus {
   shipped
   delivered
   cancelled
+
+  @@schema("app")
 }
 
 model Order {
@@ -1178,6 +1277,8 @@ model Order {
   @@index([sellerBusinessId, status])
   @@index([buyerBusinessId, status])
   @@map("orders")
+
+  @@schema("app")
 }
 
 model OrderLine {
@@ -1197,6 +1298,8 @@ model OrderLine {
 
   @@index([orderId])
   @@map("order_lines")
+
+  @@schema("app")
 }
 
 // ─── Integrations (webhooks + API keys) ──────────────────────────────────────
@@ -1217,12 +1320,16 @@ model Webhook {
 
   @@index([businessId])
   @@map("webhooks")
+
+  @@schema("app")
 }
 
 enum WebhookDeliveryStatus {
   pending
   ok
   failed
+
+  @@schema("app")
 }
 
 model WebhookDelivery {
@@ -1241,6 +1348,8 @@ model WebhookDelivery {
 
   @@index([status, nextAt])
   @@map("webhook_deliveries")
+
+  @@schema("app")
 }
 
 model ApiKey {
@@ -1259,6 +1368,8 @@ model ApiKey {
 
   @@index([businessId])
   @@map("api_keys")
+
+  @@schema("app")
 }
 
 // ─── Feedback ────────────────────────────────────────────────────────────────
@@ -1285,4 +1396,5 @@ model BugReport {
 
   @@index([businessId])
   @@map("bug_reports")
+  @@schema("app")
 }
