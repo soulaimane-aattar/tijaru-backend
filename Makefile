@@ -5,7 +5,7 @@
 
 DEV     := docker compose -f docker-compose.yml
 PROD    := docker compose -f docker-compose.prod.yml --env-file .env.prod
-ENVPROD := .env.prod
+ENVPROD := ./.env.prod
 PG_CTR  ?= stock-postgres
 PG_USER ?= stock
 PG_DB   ?= stock
