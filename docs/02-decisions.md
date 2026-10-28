@@ -2,6 +2,16 @@
 
 > One entry per significant decision. Newest on top. Format: date · decision · why · rejected alternatives.
 
+## D-043 — 2026-10-28 · Prisma removed entirely; cuid-shaped ids; sqitch + generated types are the schema source
+- **Decision:** `@prisma/client`, `prisma`, `schema.prisma`, prisma CLI in Docker all gone. Row ids come from `newId()` (`src/database/ids.ts`, `c`+time+random). Seeds/e2e fixtures use an owner-role Kysely pool (`prisma/db.ts`, `test/helpers/db.ts`).
+- **Why:** `schema.prisma` would drift from sqitch. Zod DTOs validate `.cuid()` — uuid ids 400'd in e2e; generating cuid-shaped ids keeps data uniform for web/mobile.
+- **Rejected:** uuid ids + relaxed validators.
+
+## D-042 — 2026-10-28 · Kysely access model: `Db.q` (RLS request txn) / `Db.admin` (owner pool) / `Db.tx`
+- **Decision:** `TenantInterceptor` wraps each tenant request in ONE transaction with `set_config(..., true)`; repos use `db.q`/`db.tx` + explicit `business_id` filters (defense in depth; dev DB role is superuser). `db.admin` (owner pool from `DATABASE_URL`, bypasses RLS) for pre-auth guards, login, cron, platform-admin, marketplace cross-tenant. `DATABASE_URL_APP` = `tijaru_app` pool (RLS enforced; boot warning if unset in prod). `@SkipTenantTx()` + `Db.scoped` for slow non-DB I/O routes (OCR). Pool `DB_POOL_MAX` (20). `kysely` pinned `^0.27` (0.29 ESM-only/Node≥22 vs Node 20 CJS image). UTC timestamp parse/serialize in `KyselyModule`.
+- **Why:** old session-scoped `set_config` on a pool leaked across connections. Owner pool = same access Prisma had.
+- **Rejected:** big-bang rewrite; explicit-businessId-only (no RLS backstop).
+
 ## D-041 — 2026-10-27 · Kysely replaces Prisma as query layer (gradual migration)
 
 - **Decision:** Install Kysely + pg driver alongside Prisma. `KyselyModule` (global, `DATABASE_URL_APP` → `tijaru_app` role). `TenantMiddleware` sets `app.current_business_id` / `current_user_id` / `current_user_role` via `SET LOCAL` before each request. Types generated from live DB via `kysely-codegen`. Prisma stays for now; modules migrate one-by-one.
