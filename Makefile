@@ -123,16 +123,18 @@ prod-ps: check-env-prod ## Prod stack status
 prod-config: check-env-prod ## Render the resolved prod compose config
 	$(PROD) config
 
+PROD_NETWORK ?= tijaru-backend_internal
+
 prod-db-up: check-env-prod ## Deploy sqitch migrations to prod DB
-	@. $(ENVPROD) && SQITCH_NETWORK=backend_internal \
+	@. $(ENVPROD) && SQITCH_NETWORK=$(PROD_NETWORK) \
 		./sqitch deploy "db:pg://$$POSTGRES_USER:$$POSTGRES_PASSWORD@tijaru-postgres:5432/$$POSTGRES_DB"
 
 prod-db-verify: check-env-prod ## Verify sqitch migrations on prod DB
-	@. $(ENVPROD) && SQITCH_NETWORK=backend_internal \
+	@. $(ENVPROD) && SQITCH_NETWORK=$(PROD_NETWORK) \
 		./sqitch verify "db:pg://$$POSTGRES_USER:$$POSTGRES_PASSWORD@tijaru-postgres:5432/$$POSTGRES_DB"
 
 prod-db-status: check-env-prod ## Show sqitch migration status on prod
-	@. $(ENVPROD) && SQITCH_NETWORK=backend_internal \
+	@. $(ENVPROD) && SQITCH_NETWORK=$(PROD_NETWORK) \
 		./sqitch status "db:pg://$$POSTGRES_USER:$$POSTGRES_PASSWORD@tijaru-postgres:5432/$$POSTGRES_DB"
 
 prod-migrate: check-env-prod ## Apply sqitch migrations to prod DB (alias for prod-db-up)
