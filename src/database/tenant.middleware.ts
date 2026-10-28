@@ -1,6 +1,7 @@
 import { Inject, Injectable, NestMiddleware } from '@nestjs/common';
-import { Kysely, sql } from 'kysely';
 import { Request, Response, NextFunction } from 'express';
+import { Kysely, sql } from 'kysely';
+
 import { KYSELY } from './kysely.module';
 import type { DB } from './types';
 

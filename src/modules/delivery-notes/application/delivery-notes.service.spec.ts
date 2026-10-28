@@ -1,5 +1,5 @@
-import type { AuthUser } from '../../../common/auth/auth-user.type';
 import type { DocumentAuditService } from '../../../common/audit/document-audit.service';
+import type { AuthUser } from '../../../common/auth/auth-user.type';
 import { DomainError, NotFoundError } from '../../../common/errors';
 import type { PrismaService } from '../../../common/prisma.service';
 import type { StockLedgerService } from '../../stock-ledger/application/stock-ledger.service';

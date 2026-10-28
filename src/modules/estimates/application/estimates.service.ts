@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
-import type { AuthUser } from '../../../common/auth/auth-user.type';
 import { DocumentAuditService } from '../../../common/audit/document-audit.service';
+import type { AuthUser } from '../../../common/auth/auth-user.type';
 import { DomainError, NotFoundError } from '../../../common/errors';
 import {
   EstimatesRepository,

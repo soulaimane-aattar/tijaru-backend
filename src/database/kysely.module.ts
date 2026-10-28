@@ -2,6 +2,7 @@ import { Global, Module, OnModuleDestroy, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Kysely, PostgresDialect } from 'kysely';
 import { Pool } from 'pg';
+
 import type { DB } from './types';
 
 export const KYSELY = Symbol('KYSELY');
