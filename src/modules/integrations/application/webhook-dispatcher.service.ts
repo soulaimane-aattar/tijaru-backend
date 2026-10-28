@@ -35,9 +35,14 @@ export class WebhookDispatcher {
   /**
    * Outbox rows are written for another tenant's hooks (the buyer's request enqueues for the
    * seller), and the poller has no tenant — so all of this runs on `db.admin` with explicit
-   * business filters.
+   * business filters. Deferred until the request transaction commits, so a rolled-back order change
+   * never leaves a delivery behind.
    */
-  async enqueue(businessId: string, event: WebhookEvent, payload: unknown): Promise<number> {
+  enqueue(businessId: string, event: WebhookEvent, payload: unknown): Promise<void> {
+    return this.db.afterCommit(() => this.insertDeliveries(businessId, event, payload));
+  }
+
+  private async insertDeliveries(businessId: string, event: WebhookEvent, payload: unknown): Promise<number> {
     const hooks = await this.db.admin
       .selectFrom('app.webhooks')
       .select('id')

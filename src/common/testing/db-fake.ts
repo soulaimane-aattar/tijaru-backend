@@ -74,7 +74,13 @@ export function fakeDb(script: Script = {}, businessId = 'biz-1') {
     deleteFrom: (t: string) => chain('delete', t),
   };
   const transaction = () => ({ execute: (fn: (q: unknown) => unknown) => fn(q) });
-  const db = { q, admin: q, businessId, tx: (fn: (q: unknown) => unknown) => fn(q) } as unknown as Db;
+  const db = {
+    q,
+    admin: q,
+    businessId,
+    tx: (fn: (q: unknown) => unknown) => fn(q),
+    afterCommit: async (fn: () => unknown) => void (await fn()),
+  } as unknown as Db;
   (q as any).transaction = transaction;
   return { db, calls, q };
 }
