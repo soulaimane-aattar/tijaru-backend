@@ -23,6 +23,13 @@
 
 ## Log
 
+### 2026-10-28 — Marketplace hardening: `Db.afterCommit` + order reads under RLS (migration 009)
+
+- **Step:** branch `feat/marketplace-hardening`. `Db.afterCommit` (commit runs callbacks, rollback drops, no txn = immediate, errors logged) used by marketplace `notify` and webhook `enqueue`. Sqitch 009 `order-lines-buyer-read`: SELECT for seller+buyer via parent order, writes seller-only. Order list/detail on `db.q`, names via admin by RLS-filtered ids.
+- **Result:** ✅ `tsc` clean, eslint clean, jest 590/590 (6 new `db.service.spec.ts`), `make db-up` + verify 009 ok, `make tap` 15/15 (new `002-order-lines-visibility.sql`: seller/buyer see, buyer cannot write, third tenant sees nothing), e2e 231/231 (17 suites, `--runInBand`) as superuser AND with `DATABASE_URL_APP=tijaru_app` (new e2e: both sides get lines, side filters don't leak, third tenant 404 on received/sent).
+- **Decisions:** D-044.
+- **Next:** prod rollout: `make prod-db-up` (applies 009) BEFORE `make deploy`.
+
 ### 2026-10-28 — Prisma → Kysely complete (runtime, seeds, e2e, deploy files)
 
 - **Step:** all ~90 `src/` files off Prisma (5 parallel clusters) — `Db` service (`q`/`admin`/`tx`/`scoped`), `TenantInterceptor` request txn, `newId()`, `@SkipTenantTx()` on expenses scan, `DB_POOL_MAX`, prod boot warning for unset `DATABASE_URL_APP`, typed 403 when no tenant. Migration `008-fix-updated-at-triggers` (007 put `set_updated_at` on categories/activities/order_lines which have no `updatedAt` → every UPDATE failed). Seeds + 14 e2e specs ported (`prisma/db.ts`, `test/helpers/{db,tenant}.ts`). Removed `@prisma/client`/`prisma`/`schema.prisma`; Dockerfiles no longer run prisma; Makefile `dev-migrate`→`db-up`; README/DEPLOY.prod.md/.env.prod.example updated. `GET /auth/permissions` stays public but scopes to tenant with a valid bearer. Line deletes in invoices/estimates/delivery-notes now filter `business_id`.

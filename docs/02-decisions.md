@@ -2,6 +2,13 @@
 
 > One entry per significant decision. Newest on top. Format: date · decision · why · rejected alternatives.
 
+## D-044 — 2026-10-28 · `Db.afterCommit` defers cross-connection side effects; order reads move to RLS (`db.q`) via migration 009
+- **Decision:** (1) `Db.afterCommit(fn)`: inside `scope()`/standalone `tx()` callbacks queue in the ALS store next to the trx and run (awaited, in order) only after a successful commit; rollback drops them; outside a txn they run immediately; failures are logged, never thrown. Marketplace `notify()` and `WebhookDispatcher.enqueue()` (now `Promise<void>`) go through it. (2) Migration 009 replaces `order_lines_tenant_isolation` with per-command policies: SELECT = seller (`business_id`) OR party to the parent order; INSERT/UPDATE/DELETE seller-only. Order list/detail (both sides) now use `db.q`.
+- **Stays on `db.admin` (RLS cannot express):** `findListings` + tiers and marketplace catalog/sellers (cross-tenant catalog gated by `sellableSeller`); `ensureCustomer` (writes seller's customers); `nextNumber` (must see seller's whole sequence); order create txn (buyer inserts seller-owned lines); counterparty `businesses.name` lookup (businesses RLS = own row; ids come from RLS-filtered orders); notify / webhook outbox writes (other tenant). `businessName` (buyer's own) moved to `db.q`. `listing_tiers` unchanged (no `db.q` read path of other tenants' listings).
+- **Known limit:** order `create` still commits on its own admin txn before the request txn ends; only its notification/webhook are deferred.
+- **Why:** admin writes committed even if the request txn later rolled back (ghost notification/webhook); buyer could not read lines under RLS so reads bypassed it.
+- **Rejected:** widening `businesses` SELECT to counterparties (exposes all columns); `FOR ALL` dual policy on order_lines (buyer could delete lines); outbox rows inside the request txn (cross-tenant WITH CHECK).
+
 ## D-043 — 2026-10-28 · Prisma removed entirely; cuid-shaped ids; sqitch + generated types are the schema source
 - **Decision:** `@prisma/client`, `prisma`, `schema.prisma`, prisma CLI in Docker all gone. Row ids come from `newId()` (`src/database/ids.ts`, `c`+time+random). Seeds/e2e fixtures use an owner-role Kysely pool (`prisma/db.ts`, `test/helpers/db.ts`).
 - **Why:** `schema.prisma` would drift from sqitch. Zod DTOs validate `.cuid()` — uuid ids 400'd in e2e; generating cuid-shaped ids keeps data uniform for web/mobile.
