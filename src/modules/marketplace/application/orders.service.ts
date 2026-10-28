@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import type { OrderStatus } from '@prisma/client';
 
 import type { AuthUser } from '../../../common/auth/auth-user.type';
 import { DomainError, NotFoundError } from '../../../common/errors';
+import type { AppOrderstatus as OrderStatus } from '../../../database/types';
 import { WebhookDispatcher } from '../../integrations/application/webhook-dispatcher.service';
 import { allowedNext, assertTransition, type Actor } from '../domain/order-state-machine';
 import type {

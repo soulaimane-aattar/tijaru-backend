@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
+import { Db } from '../database';
 import {
   CAPABILITY_IDS,
   type CapabilityId,
@@ -8,7 +9,8 @@ import {
   ROLE_PERMS,
 } from '../domain/permissions';
 
-import { PrismaService } from './prisma.service';
+
+import { TenantContext } from './tenant/tenant-context';
 
 /**
  * Resolves the *effective* role × capability matrix at runtime.
@@ -22,10 +24,29 @@ import { PrismaService } from './prisma.service';
  */
 @Injectable()
 export class PermissionsResolver {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly db: Db,
+    private readonly tenant: TenantContext,
+  ) {}
 
-  async effectiveMatrix(): Promise<Record<RoleId, CapabilityId[]>> {
-    const customizations = await this.prisma.roleCustomization.findMany();
+  /**
+   * Customizations of one business. Inside that business's request we read through the request
+   * transaction (sees uncommitted admin edits); pre-auth callers (login/refresh) pass `businessId`
+   * and read through the owner pool. No business at all (public /auth/permissions) ⇒ role defaults.
+   */
+  private async customizations(businessId?: string) {
+    const id = businessId ?? this.tenant.getBusinessId();
+    if (!id) return [];
+    const q = this.tenant.getBusinessId() === id ? this.db.q : this.db.admin;
+    return q
+      .selectFrom('app_auth.role_customizations')
+      .select(['role', 'capId', 'granted'])
+      .where('business_id', '=', id)
+      .execute();
+  }
+
+  async effectiveMatrix(businessId?: string): Promise<Record<RoleId, CapabilityId[]>> {
+    const customizations = await this.customizations(businessId);
     const byRole = new Map<RoleId, Map<CapabilityId, boolean>>();
     for (const c of customizations) {
       const role = c.role as RoleId;
@@ -56,8 +77,8 @@ export class PermissionsResolver {
     return result;
   }
 
-  async effectiveCapsForRole(role: RoleId): Promise<CapabilityId[]> {
-    const matrix = await this.effectiveMatrix();
+  async effectiveCapsForRole(role: RoleId, businessId?: string): Promise<CapabilityId[]> {
+    const matrix = await this.effectiveMatrix(businessId);
     return matrix[role];
   }
 }

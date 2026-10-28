@@ -1,12 +1,10 @@
 /**
  * Port: persistence contract for the inventory business logic.
  *
- * The application service depends on this abstraction only; the Prisma
+ * The application service depends on this abstraction only; the Kysely
  * implementation lives in `../infrastructure`. The abstract class doubles as
  * the Nest injection token (interfaces are erased at runtime).
  */
-
-import type { Prisma } from '@prisma/client';
 
 export interface StockSnapshotLine {
   productId: string;
@@ -64,25 +62,20 @@ export abstract class InventoryRepository {
 
   /**
    * Live stock quantities for the given products at the warehouse, read
-   * inside the caller's transaction so the apply delta reflects concurrent
+   * inside the caller's `db.tx` so the apply delta reflects concurrent
    * sales/movements rather than the count's original snapshot.
    */
   abstract findLiveStockLevels(
     warehouseId: string,
     productIds: string[],
-    tx: Prisma.TransactionClient,
   ): Promise<StockSnapshotLine[]>;
 
   /** Persist a user-corrected counted value for a single count line. */
-  abstract updateLineCounted(
-    lineId: string,
-    counted: number,
-    tx: Prisma.TransactionClient,
-  ): Promise<void>;
+  abstract updateLineCounted(lineId: string, counted: number): Promise<void>;
 
   /** Stamp the count as applied (sets `appliedAt`). */
-  abstract markApplied(countId: string, tx: Prisma.TransactionClient): Promise<void>;
+  abstract markApplied(countId: string): Promise<void>;
 
-  /** Record an audit-trail entry. Pass `tx` to make it part of the caller's transaction. */
-  abstract logActivity(activity: ActivityLog, tx?: Prisma.TransactionClient): Promise<void>;
+  /** Record an audit-trail entry. Joins the ambient transaction. */
+  abstract logActivity(activity: ActivityLog): Promise<void>;
 }

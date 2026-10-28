@@ -1,4 +1,4 @@
-import type { NotificationType } from '@prisma/client';
+import type { AppNotificationtype as NotificationType } from '../../../database/types';
 
 /** A product whose total stock across warehouses is at/below its minStock threshold. */
 export type LowStockCandidate = {

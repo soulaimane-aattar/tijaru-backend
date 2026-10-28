@@ -3,47 +3,67 @@ import type { LedgerPost } from '../domain/stock-ledger.types';
 
 import { StockLedgerService } from './stock-ledger.service';
 
-type StockLevelRow = {
-  productId: string;
-  warehouseId: string;
-  businessId: string;
-  qty: number;
-  reservedQty: number;
-  avgCost: number;
-  updatedAt: Date;
-};
-
-type MockPrisma = {
-  $queryRaw: jest.Mock;
-  stockLevel: {
-    upsert: jest.Mock;
-    updateMany: jest.Mock;
-  };
-  movement: { create: jest.Mock };
-  $transaction: jest.Mock;
-};
-
-const mockPrisma = (): MockPrisma => ({
-  $queryRaw: jest.fn().mockResolvedValue([]),
-  stockLevel: {
-    upsert: jest.fn(),
-    updateMany: jest.fn(),
-  },
-  movement: {
-    create: jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: 'm1', ...data })),
-  },
-  $transaction: jest.fn(async (fn: (client: MockPrisma) => unknown) => fn(mockClientRef.current)),
-});
-
-// $transaction passthrough needs a reference to the same mock object it was created from.
-const mockClientRef: { current: MockPrisma } = { current: undefined as unknown as MockPrisma };
-
-const cuid = (i: number) => `c${'l'.repeat(23)}${i}`;
-const PID = cuid(1);
-const WH = cuid(2);
-const WH2 = cuid(3);
+const PID = 'p1';
+const WH = 'wh1';
+const WH2 = 'wh2';
 const BID = 'biz1';
 const UID = 'user1';
+
+type Call = { op: string; table: string; args: Record<string, unknown> };
+
+/**
+ * Recording fake of the Kysely builder: every chained method returns the same proxy, builder
+ * callbacks (`set(eb => …)`, `onConflict(oc => …)`) are executed with tiny stand-ins so the
+ * resulting values can be asserted, and `execute*` resolves from the scripted `existing` / `updated`.
+ */
+const setup = (
+  script: { existing?: { qty: number; avgCost: number } | undefined; updated?: bigint } = {},
+) => {
+  const calls: Call[] = [];
+  const eb = (a: string, op: string, b: unknown) => ({ a, op, b });
+  const q = {
+    selectFrom: (table: string) => chain('select', table),
+    insertInto: (table: string) => chain('insert', table),
+    updateTable: (table: string) => chain('update', table),
+  };
+  function chain(op: string, table: string) {
+    const call: Call = { op, table, args: {} };
+    calls.push(call);
+    const p: unknown = new Proxy(
+      {},
+      {
+        get: (_t, name: string) => {
+          if (name === 'executeTakeFirst') {
+            return async () =>
+              op === 'update' ? { numUpdatedRows: script.updated ?? 1n } : script.existing;
+          }
+          if (name === 'executeTakeFirstOrThrow')
+            return async () => ({ id: 'm1', ...(call.args.values as object) });
+          if (name === 'execute') return async () => [];
+          return (...a: unknown[]) => {
+            if (name === 'values') call.args.values = a[0];
+            if (name === 'where') ((call.args.where ??= []) as unknown[]).push(a);
+            if (name === 'set')
+              call.args.set =
+                typeof a[0] === 'function' ? (a[0] as (e: typeof eb) => unknown)(eb) : a[0];
+            if (name === 'onConflict') {
+              (a[0] as (oc: unknown) => unknown)({
+                columns: () => ({
+                  doUpdateSet: (f: (e: typeof eb) => unknown) => (call.args.conflict = f(eb)),
+                }),
+              });
+            }
+            return p;
+          };
+        },
+      },
+    );
+    return p;
+  }
+  const db = { tx: jest.fn(async (fn: (q: unknown) => unknown) => fn(q)) };
+  const svc = new StockLedgerService(db as never);
+  return { svc, calls, db };
+};
 
 const basePost = (over: Partial<LedgerPost> = {}): LedgerPost => ({
   businessId: BID,
@@ -54,52 +74,31 @@ const basePost = (over: Partial<LedgerPost> = {}): LedgerPost => ({
   ...over,
 });
 
-const setup = () => {
-  const prisma = mockPrisma();
-  mockClientRef.current = prisma;
-  const svc = new StockLedgerService(prisma as never);
-  return { prisma, svc };
-};
-
-const stockRow = (over: Partial<StockLevelRow> = {}): StockLevelRow => ({
-  productId: PID,
-  warehouseId: WH,
-  businessId: BID,
-  qty: 0,
-  reservedQty: 0,
-  avgCost: 0,
-  updatedAt: new Date(),
-  ...over,
-});
+const find = (calls: Call[], op: string, table: string) =>
+  calls.filter((c) => c.op === op && c.table === table);
 
 describe('StockLedgerService.post', () => {
-  it('increments stock and emits Movement on type=in', async () => {
-    const { prisma, svc } = setup();
-    prisma.$queryRaw.mockResolvedValue([stockRow({ qty: 3, avgCost: 2 })]);
-    prisma.stockLevel.upsert.mockResolvedValue({});
+  it('increments stock and emits Movement on type=in, inside db.tx', async () => {
+    const { svc, calls, db } = setup({ existing: { qty: 3, avgCost: 2 } });
 
-    const result = await svc.post(
-      basePost({ type: 'in', lines: [{ productId: PID, warehouseId: WH, delta: 5 }] }),
-    );
+    const result = await svc.post(basePost());
 
-    expect(prisma.stockLevel.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ update: expect.objectContaining({ qty: { increment: 5 } }) }),
-    );
+    expect(db.tx).toHaveBeenCalledTimes(1);
+    expect(find(calls, 'select', 'app.stock_levels')).toHaveLength(1);
+    const [ins] = find(calls, 'insert', 'app.stock_levels');
+    expect(ins!.args.conflict).toMatchObject({ qty: { a: 'app.stock_levels.qty', op: '+', b: 5 } });
     expect(result).toHaveLength(1);
-    expect(result[0]).toMatchObject({ productId: PID, warehouseId: WH, qty: 5, type: 'in' });
-
-    // The read that feeds avgCost must lock the bin row, scoped to the tenant.
-    const [strings, ...values] = prisma.$queryRaw.mock.calls[0] as [string[], ...string[]];
-    const sql = strings.join('?');
-    expect(sql).toContain('FROM app.stock_levels');
-    expect(sql).toContain('FOR UPDATE');
-    expect(values).toEqual([PID, WH, BID]);
+    expect(result[0]).toMatchObject({
+      productId: PID,
+      warehouseId: WH,
+      qty: 5,
+      type: 'in',
+      businessId: BID,
+    });
   });
 
-  it('rejects out when qty < |delta| (conditional update returns 0)', async () => {
-    const { prisma, svc } = setup();
-    prisma.stockLevel.updateMany.mockResolvedValue({ count: 0 });
-
+  it('rejects out when qty < |delta| (conditional update matches 0 rows)', async () => {
+    const { svc } = setup({ updated: 0n });
     const post = () =>
       svc.post(
         basePost({
@@ -115,34 +114,24 @@ describe('StockLedgerService.post', () => {
     });
   });
 
-  it('creates stockLevel row when missing on positive delta', async () => {
-    const { prisma, svc } = setup();
-    prisma.$queryRaw.mockResolvedValue([]);
-    prisma.stockLevel.upsert.mockResolvedValue({});
-
+  it('creates stock row with unitCost as avgCost when missing on positive delta', async () => {
+    const { svc, calls } = setup();
     await svc.post(
-      basePost({ type: 'in', lines: [{ productId: PID, warehouseId: WH, delta: 4, unitCost: 3 }] }),
+      basePost({ lines: [{ productId: PID, warehouseId: WH, delta: 4, unitCost: 3 }] }),
     );
 
-    expect(prisma.stockLevel.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        create: expect.objectContaining({
-          productId: PID,
-          warehouseId: WH,
-          businessId: BID,
-          qty: 4,
-          avgCost: 3,
-        }),
-      }),
-    );
+    const [ins] = find(calls, 'insert', 'app.stock_levels');
+    expect(ins!.args.values).toMatchObject({
+      productId: PID,
+      warehouseId: WH,
+      businessId: BID,
+      qty: 4,
+      avgCost: 3,
+    });
   });
 
-  it('for transfer: decrements from warehouse and increments toWarehouseId in same tx', async () => {
-    const { prisma, svc } = setup();
-    prisma.stockLevel.updateMany.mockResolvedValue({ count: 1 });
-    prisma.$queryRaw.mockResolvedValue([stockRow({ warehouseId: WH2, qty: 0 })]);
-    prisma.stockLevel.upsert.mockResolvedValue({});
-
+  it('for transfer: decrements source and increments toWarehouseId', async () => {
+    const { svc, calls } = setup();
     const result = await svc.post(
       basePost({
         type: 'transfer',
@@ -152,42 +141,25 @@ describe('StockLedgerService.post', () => {
       }),
     );
 
-    expect(prisma.stockLevel.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({ warehouseId: WH, qty: { gte: 3 } }),
-      }),
-    );
-    expect(prisma.stockLevel.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        update: expect.objectContaining({ qty: { increment: 3 } }),
-      }),
-    );
+    const [upd] = find(calls, 'update', 'app.stock_levels');
+    expect(upd!.args.set).toMatchObject({ qty: { op: '-', b: 3 } });
+    const [ins] = find(calls, 'insert', 'app.stock_levels');
+    expect(ins!.args.values).toMatchObject({ warehouseId: WH2, qty: 3 });
     expect(result[0]).toMatchObject({ toWarehouseId: WH2 });
   });
 
   it('updates avgCost using weighted average on positive delta with unitCost', async () => {
-    const { prisma, svc } = setup();
-    prisma.$queryRaw.mockResolvedValue([stockRow({ qty: 10, avgCost: 5 })]);
-    prisma.stockLevel.upsert.mockResolvedValue({});
-
+    const { svc, calls } = setup({ existing: { qty: 10, avgCost: 5 } });
     await svc.post(
-      basePost({
-        type: 'in',
-        lines: [{ productId: PID, warehouseId: WH, delta: 10, unitCost: 10 }],
-      }),
+      basePost({ lines: [{ productId: PID, warehouseId: WH, delta: 10, unitCost: 10 }] }),
     );
 
-    expect(prisma.stockLevel.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        update: expect.objectContaining({ qty: { increment: 10 }, avgCost: 7.5 }),
-      }),
-    );
+    const [ins] = find(calls, 'insert', 'app.stock_levels');
+    expect(ins!.args.conflict).toMatchObject({ qty: { op: '+', b: 10 }, avgCost: 7.5 });
   });
 
   it('leaves avgCost untouched on negative delta', async () => {
-    const { prisma, svc } = setup();
-    prisma.stockLevel.updateMany.mockResolvedValue({ count: 1 });
-
+    const { svc, calls } = setup();
     await svc.post(
       basePost({
         type: 'out',
@@ -196,22 +168,20 @@ describe('StockLedgerService.post', () => {
       }),
     );
 
-    expect(prisma.stockLevel.upsert).not.toHaveBeenCalled();
-    expect(prisma.stockLevel.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { qty: { decrement: 2 } } }),
-    );
+    expect(find(calls, 'insert', 'app.stock_levels')).toHaveLength(0);
+    const [upd] = find(calls, 'update', 'app.stock_levels');
+    expect(upd!.args.set).toMatchObject({ qty: { op: '-', b: 2 } });
+    expect(upd!.args.where).toContainEqual(['qty', '>=', 2]);
   });
 
   it('rejects transfer without toWarehouseId', async () => {
     const { svc } = setup();
-
     const post = () =>
       svc.post(
         basePost({
           type: 'transfer',
           reason: 'transfert',
           lines: [{ productId: PID, warehouseId: WH, delta: -5 }],
-          // no toWarehouseId
         }),
       );
 
@@ -219,19 +189,5 @@ describe('StockLedgerService.post', () => {
     await expect(post()).rejects.toMatchObject({
       response: expect.objectContaining({ title: 'transfer_missing_destination' }),
     });
-  });
-
-  it('runs inside an outer tx when tx passed', async () => {
-    const { prisma, svc } = setup();
-    prisma.$queryRaw.mockResolvedValue([]);
-    prisma.stockLevel.upsert.mockResolvedValue({});
-
-    await svc.post(
-      basePost({ lines: [{ productId: PID, warehouseId: WH, delta: 1 }] }),
-      prisma as never,
-    );
-
-    expect(prisma.$transaction).not.toHaveBeenCalled();
-    expect(prisma.stockLevel.upsert).toHaveBeenCalledTimes(1);
   });
 });

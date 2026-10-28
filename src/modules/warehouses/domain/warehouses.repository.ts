@@ -27,6 +27,9 @@ export abstract class WarehousesRepository {
   /** Full detail payload (manager + assigned users) or null. */
   abstract findDetail(id: string): Promise<unknown | null>;
 
+  /** Current business's `multiWarehouse` flag; undefined when the business row is not found. */
+  abstract isMultiWarehouse(): Promise<boolean | undefined>;
+
   /** True when a non-deleted warehouse with this id exists. */
   abstract exists(id: string): Promise<boolean>;
 

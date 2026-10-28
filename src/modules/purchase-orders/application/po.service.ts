@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import type { AuthUser } from '../../../common/auth/auth-user.type';
 import { DomainError, NotFoundError } from '../../../common/errors';
-import { PrismaService } from '../../../common/prisma.service';
+import { Db } from '../../../database';
 import { StockLedgerService } from '../../stock-ledger/application/stock-ledger.service';
 import type { LedgerLine } from '../../stock-ledger/domain/stock-ledger.types';
 import { PurchaseOrdersRepository } from '../domain/po.repository';
@@ -13,7 +13,7 @@ export class POService {
   constructor(
     private readonly purchaseOrders: PurchaseOrdersRepository,
     private readonly ledger: StockLedgerService,
-    private readonly prisma: PrismaService,
+    private readonly db: Db,
   ) {}
 
   list(q: ListPOQuery): Promise<unknown> {
@@ -61,7 +61,7 @@ export class POService {
    *  - Reject qty above (line.qty - line.received).
    *  - Post an `achat` ledger entry (+qty at po.warehouseId, unitCost = line
    *    price) so the stock delta, Movement row and WAC `avgCost` update all
-   *    happen atomically via `StockLedgerService.post(input, tx)`.
+   *    happen atomically via `StockLedgerService.post`.
    *  - Increment line.received.
    * Then the PO status is recomputed (received / partiallyReceived) from
    * fresh in-transaction totals, and the activity log entry is written in
@@ -95,41 +95,34 @@ export class POService {
       });
     }
 
-    await this.prisma.$transaction(async (tx) => {
-      await this.ledger.post(
-        {
-          businessId: actor.businessId,
-          userId: actor.id,
-          type: 'in',
-          reason: 'achat',
-          ref: po.number,
-          lines: ledgerLines,
-        },
-        tx,
-      );
+    await this.db.tx(async () => {
+      await this.ledger.post({
+        businessId: actor.businessId,
+        userId: actor.id,
+        type: 'in',
+        reason: 'achat',
+        ref: po.number,
+        lines: ledgerLines,
+      });
 
       for (const r of input.lines) {
-        await this.purchaseOrders.incrementLineReceived(r.lineId, r.qty, tx);
+        await this.purchaseOrders.incrementLineReceived(r.lineId, r.qty);
       }
 
-      const totals = await this.purchaseOrders.findLineTotals(id, tx);
+      const totals = await this.purchaseOrders.findLineTotals(id);
       const totalQty = totals.reduce((s, l) => s + l.qty, 0);
       const totalRcvd = totals.reduce((s, l) => s + l.received, 0);
       await this.purchaseOrders.updateStatus(
         id,
         totalRcvd >= totalQty ? 'received' : 'partiallyReceived',
-        tx,
       );
 
-      await this.purchaseOrders.logActivity(
-        {
-          userId: actor.id,
-          action: 'po.received',
-          desc: `Réception ${po.number} — ${input.lines.reduce((s, l) => s + l.qty, 0)} unité(s)`,
-          ...(actor.device !== undefined ? { device: actor.device } : {}),
-        },
-        tx,
-      );
+      await this.purchaseOrders.logActivity({
+        userId: actor.id,
+        action: 'po.received',
+        desc: `Réception ${po.number} — ${input.lines.reduce((s, l) => s + l.qty, 0)} unité(s)`,
+        ...(actor.device !== undefined ? { device: actor.device } : {}),
+      });
     });
 
     return this.purchaseOrders.findDetail(id);

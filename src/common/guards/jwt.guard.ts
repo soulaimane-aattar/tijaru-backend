@@ -5,6 +5,7 @@ import type { Request } from 'express';
 
 import { ENV_TOKEN } from '../../config/config.module';
 import type { Env } from '../../config/env';
+import { Db } from '../../database';
 import { CAPABILITY_IDS, type CapabilityId, type RoleId } from '../../domain/permissions';
 import {
   apiKeyMatches,
@@ -13,7 +14,6 @@ import {
 } from '../../modules/integrations/domain/webhook-signature';
 import type { AuthUser } from '../auth/auth-user.type';
 import { UnauthorizedError } from '../errors';
-import { PrismaService } from '../prisma.service';
 
 export const IS_PUBLIC_KEY = 'isPublic';
 export const Public = (): MethodDecorator & ClassDecorator => SetMetadata(IS_PUBLIC_KEY, true);
@@ -36,7 +36,7 @@ export class JwtAuthGuard implements CanActivate {
     private readonly jwt: JwtService,
     private readonly reflector: Reflector,
     @Inject(ENV_TOKEN) private readonly env: Env,
-    private readonly prisma: PrismaService,
+    private readonly db: Db,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -104,23 +104,29 @@ export class JwtAuthGuard implements CanActivate {
     const prefix = prefixOf(token);
     if (!prefix) throw new UnauthorizedError('Invalid API key');
 
-    const key = await this.prisma.apiKey.findUnique({ where: { prefix } });
-    if (!key || key.revokedAt || !apiKeyMatches(token, key.hash)) {
+    // Pre-tenant → owner pool; the key itself names the business.
+    const key = await this.db.admin
+      .selectFrom('app.api_keys')
+      .select(['id', 'business_id', 'hash', 'revoked_at', 'last_used_at'])
+      .where('prefix', '=', prefix)
+      .executeTakeFirst();
+    if (!key || key.revoked_at || !apiKeyMatches(token, key.hash)) {
       throw new UnauthorizedError('Invalid API key');
     }
     // Throttled: this runs on every API-key request, and "last used" to the
     // minute is enough for the UI.
     const staleAfterMs = 60_000;
-    if (!key.lastUsedAt || Date.now() - key.lastUsedAt.getTime() > staleAfterMs) {
-      await this.prisma.apiKey.update({
-        where: { id: key.id },
-        data: { lastUsedAt: new Date() },
-      });
+    if (!key.last_used_at || Date.now() - key.last_used_at.getTime() > staleAfterMs) {
+      await this.db.admin
+        .updateTable('app.api_keys')
+        .set({ last_used_at: new Date() })
+        .where('id', '=', key.id)
+        .execute();
     }
 
     return {
       id: `apikey:${key.id}`,
-      businessId: key.businessId,
+      businessId: key.business_id,
       role: 'owner' as RoleId,
       tokenVersion: 0,
       roleCaps: [...CAPABILITY_IDS],

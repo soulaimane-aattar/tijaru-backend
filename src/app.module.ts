@@ -18,6 +18,7 @@ import { StorageModule } from './common/storage/storage.module';
 import { TenantInterceptor } from './common/tenant/tenant.interceptor';
 import { ConfigModule, ENV_TOKEN } from './config/config.module';
 import type { Env } from './config/env';
+import { KyselyModule } from './database';
 import { ActivityModule } from './modules/activity/activity.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -48,6 +49,7 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module';
 
 @Module({
   imports: [
+    KyselyModule,
     ConfigModule,
     StorageModule,
     MailModule,

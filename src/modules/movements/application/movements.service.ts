@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import type { AuthUser } from '../../../common/auth/auth-user.type';
 import { DomainError, NotFoundError, ValidationError } from '../../../common/errors';
-import { PrismaService } from '../../../common/prisma.service';
+import { Db } from '../../../database';
 import { type CapabilityId, hasPermission } from '../../../domain/permissions';
 import { StockLedgerService } from '../../stock-ledger/application/stock-ledger.service';
 import { MovementsRepository } from '../domain/movements.repository';
@@ -19,7 +19,7 @@ export class MovementsService {
   constructor(
     private readonly movements: MovementsRepository,
     private readonly ledger: StockLedgerService,
-    private readonly prisma: PrismaService,
+    private readonly db: Db,
   ) {}
 
   async list(query: ListMovementsQuery): Promise<{
@@ -51,9 +51,9 @@ export class MovementsService {
    *
    * Existence checks happen here; the stock delta, Movement row and the
    * activity-log entry are all written in one transaction — the ledger's
-   * conditional decrement (via `StockLedgerService.post(input, tx)`) guards
-   * against the negative-stock race, and passing the same `tx` to
-   * `logActivity` keeps the audit trail atomic with the stock write.
+   * conditional decrement (via `StockLedgerService.post`) guards
+   * against the negative-stock race, and `db.tx` keeps the audit trail atomic
+   * with the stock write.
    */
   async record(input: CreateMovementInput, actor: AuthUser): Promise<unknown> {
     if (!hasPermission(actor, REQUIRED_CAP[input.type])) {
@@ -79,38 +79,32 @@ export class MovementsService {
     // (conditional decrement), closing the TOCTOU window a pre-check would leave open.
     const delta = input.type === 'in' ? input.qty : -input.qty;
 
-    const movement = await this.prisma.$transaction(async (tx) => {
-      const movements = await this.ledger.post(
-        {
-          businessId: actor.businessId,
-          userId: actor.id,
-          type: input.type,
-          reason: input.reason,
-          ...(input.ref !== undefined ? { ref: input.ref } : {}),
-          ...(input.date !== undefined ? { date: input.date } : {}),
-          lines: [
-            {
-              productId: input.productId,
-              warehouseId: input.warehouseId,
-              delta,
-              ...(input.batch !== undefined ? { batch: input.batch } : {}),
-              ...(input.expiry !== undefined ? { expiry: input.expiry } : {}),
-            },
-          ],
-          ...(toWarehouseId !== undefined ? { toWarehouseId } : {}),
-        },
-        tx,
-      );
+    const movement = await this.db.tx(async () => {
+      const movements = await this.ledger.post({
+        businessId: actor.businessId,
+        userId: actor.id,
+        type: input.type,
+        reason: input.reason,
+        ...(input.ref !== undefined ? { ref: input.ref } : {}),
+        ...(input.date !== undefined ? { date: input.date } : {}),
+        lines: [
+          {
+            productId: input.productId,
+            warehouseId: input.warehouseId,
+            delta,
+            ...(input.batch !== undefined ? { batch: input.batch } : {}),
+            ...(input.expiry !== undefined ? { expiry: input.expiry } : {}),
+          },
+        ],
+        ...(toWarehouseId !== undefined ? { toWarehouseId } : {}),
+      });
 
-      await this.movements.logActivity(
-        {
-          userId: actor.id,
-          action: input.type === 'transfer' ? 'transfer' : `stock.${input.type}`,
-          desc: `${input.type === 'in' ? 'Entrée' : input.type === 'out' ? 'Sortie' : 'Transfert'} ${input.qty} × ${product.name}`,
-          ...(actor.device !== undefined ? { device: actor.device } : {}),
-        },
-        tx,
-      );
+      await this.movements.logActivity({
+        userId: actor.id,
+        action: input.type === 'transfer' ? 'transfer' : `stock.${input.type}`,
+        desc: `${input.type === 'in' ? 'Entrée' : input.type === 'out' ? 'Sortie' : 'Transfert'} ${input.qty} × ${product.name}`,
+        ...(actor.device !== undefined ? { device: actor.device } : {}),
+      });
 
       return movements[0];
     });

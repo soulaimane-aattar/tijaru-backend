@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
 import { ConflictError, ForbiddenError, NotFoundError } from '../../../common/errors';
-import { PrismaService } from '../../../common/prisma.service';
 import { TenantContext } from '../../../common/tenant/tenant-context';
 import { WarehousesRepository } from '../domain/warehouses.repository';
 import type { CreateWarehouseInput, UpdateWarehouseInput } from '../dto/warehouse.dto';
@@ -10,7 +9,6 @@ import type { CreateWarehouseInput, UpdateWarehouseInput } from '../dto/warehous
 export class WarehousesService {
   constructor(
     private readonly warehouses: WarehousesRepository,
-    private readonly prisma: PrismaService,
     private readonly tenant: TenantContext,
   ) {}
 
@@ -27,11 +25,7 @@ export class WarehousesService {
   async create(input: CreateWarehouseInput): Promise<unknown> {
     const businessId = this.tenant.getBusinessId();
     if (businessId) {
-      const biz = await this.prisma.business.findUnique({
-        where: { id: businessId },
-        select: { multiWarehouse: true },
-      });
-      if (biz && !biz.multiWarehouse) {
+      if ((await this.warehouses.isMultiWarehouse()) === false) {
         const count = await this.warehouses.countActive();
         if (count >= 1) {
           throw new ForbiddenError('multi_warehouse_disabled');

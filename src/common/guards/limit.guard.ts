@@ -1,16 +1,16 @@
 import { type CanActivate, type ExecutionContext, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 
+import { Db } from '../../database';
 import type { AuthUser } from '../auth/auth-user.type';
 import { ENFORCE_LIMIT_KEY, type LimitResource } from '../decorators/enforce-limit.decorator';
 import { ForbiddenError } from '../errors';
-import { PrismaService } from '../prisma.service';
 
 @Injectable()
 export class LimitGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
-    private readonly prisma: PrismaService,
+    private readonly db: Db,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -23,10 +23,12 @@ export class LimitGuard implements CanActivate {
     const user = context.switchToHttp().getRequest<{ user?: AuthUser }>().user;
     if (!user || user.isSuperAdmin) return true;
 
-    const business = await this.prisma.business.findUnique({
-      where: { id: user.businessId },
-      select: { maxUsers: true, maxProducts: true, maxWarehouses: true },
-    });
+    // Guards run before the tenant transaction exists → owner pool, explicit id filters.
+    const business = await this.db.admin
+      .selectFrom('app.businesses')
+      .select(['max_users', 'max_products', 'max_warehouses'])
+      .where('id', '=', user.businessId)
+      .executeTakeFirst();
     if (!business) return true;
 
     const max = this.maxFor(resource, business);
@@ -41,26 +43,26 @@ export class LimitGuard implements CanActivate {
 
   private maxFor(
     resource: LimitResource,
-    business: { maxUsers: number; maxProducts: number; maxWarehouses: number },
+    business: { max_users: number; max_products: number; max_warehouses: number },
   ): number {
     switch (resource) {
       case 'users':
-        return business.maxUsers;
+        return business.max_users;
       case 'products':
-        return business.maxProducts;
+        return business.max_products;
       case 'warehouses':
-        return business.maxWarehouses;
+        return business.max_warehouses;
     }
   }
 
-  private countResource(resource: LimitResource, businessId: string): Promise<number> {
-    switch (resource) {
-      case 'users':
-        return this.prisma.user.count({ where: { businessId, deletedAt: null } });
-      case 'products':
-        return this.prisma.product.count({ where: { businessId, deletedAt: null } });
-      case 'warehouses':
-        return this.prisma.warehouse.count({ where: { businessId, deletedAt: null } });
-    }
+  private async countResource(resource: LimitResource, businessId: string): Promise<number> {
+    const table = { users: 'app_auth.users', products: 'app.products', warehouses: 'app.warehouses' } as const;
+    const r = await this.db.admin
+      .selectFrom(table[resource])
+      .select((eb) => eb.fn.countAll<string>().as('n'))
+      .where('business_id', '=', businessId)
+      .where('deletedAt', 'is', null)
+      .executeTakeFirstOrThrow();
+    return Number(r.n);
   }
 }

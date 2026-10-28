@@ -1,4 +1,7 @@
-import type { NotificationType, OrderStatus } from '@prisma/client';
+import type {
+  AppNotificationtype as NotificationType,
+  AppOrderstatus as OrderStatus,
+} from '../../../database/types';
 
 export interface OrderLineData {
   listingId: string;
@@ -76,10 +79,7 @@ export interface ListOrdersResult {
 export abstract class OrdersRepository {
   abstract findListings(ids: string[]): Promise<OrderableListing[]>;
 
-  /**
-   * Seller-side customer row for this buyer, created on first order.
-   * Runs in the seller's tenant scope (D-030).
-   */
+  /** Seller-side customer row for this buyer, created on first order (cross-tenant, D-030). */
   abstract ensureCustomer(
     sellerBusinessId: string,
     buyerBusinessId: string,
@@ -93,8 +93,8 @@ export abstract class OrdersRepository {
 
   /**
    * Flip the status and run the side effects that belong in the same
-   * transaction: stock movement on `shipped`, notification for the other party,
-   * activity row on the acting tenant.
+   * transaction: stock movement on `shipped` (atomic with the status flip via the
+   * request transaction). Notifications for the other party are sent by the caller.
    */
   abstract transition(
     id: string,

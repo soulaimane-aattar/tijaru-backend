@@ -1,6 +1,5 @@
-import type { OrderStatus } from '@prisma/client';
-
 import { DomainError, ForbiddenError } from '../../../common/errors';
+import type { AppOrderstatus as OrderStatus } from '../../../database/types';
 
 /**
  * Minimal typed finite state machine, after Vendure's

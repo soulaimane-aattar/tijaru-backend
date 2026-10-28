@@ -1,7 +1,10 @@
+
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import { sql } from 'kysely';
 
-import { PrismaService } from '../../../common/prisma.service';
+import { Db } from '../../../database';
+import { newId } from '../../../database/ids';
 import {
   MAX_ATTEMPTS,
   nextAttemptAt,
@@ -27,22 +30,37 @@ const TIMEOUT_MS = 10_000;
 export class WebhookDispatcher {
   private readonly log = new Logger(WebhookDispatcher.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly db: Db) {}
 
+  /**
+   * Outbox rows are written for another tenant's hooks (the buyer's request enqueues for the
+   * seller), and the poller has no tenant — so all of this runs on `db.admin` with explicit
+   * business filters.
+   */
   async enqueue(businessId: string, event: WebhookEvent, payload: unknown): Promise<number> {
-    const hooks = await this.prisma.webhook.findMany({
-      where: { businessId, active: true, events: { has: event } },
-      select: { id: true },
-    });
+    const hooks = await this.db.admin
+      .selectFrom('app.webhooks')
+      .select('id')
+      .where('business_id', '=', businessId)
+      .where('active', '=', true)
+      .where(sql<boolean>`${event} = any(events)`)
+      .execute();
     if (hooks.length === 0) return 0;
 
-    await this.prisma.webhookDelivery.createMany({
-      data: hooks.map((h) => ({
-        webhookId: h.id,
-        event,
-        payload: payload as object,
-      })),
-    });
+    const now = new Date();
+    await this.db.admin
+      .insertInto('app.webhook_deliveries')
+      .values(
+        hooks.map((h) => ({
+          id: newId(),
+          webhook_id: h.id,
+          business_id: businessId,
+          event,
+          payload: JSON.stringify(payload),
+          updatedAt: now,
+        })),
+      )
+      .execute();
     return hooks.length;
   }
 
@@ -58,17 +76,20 @@ export class WebhookDispatcher {
   }
 
   async drain(limit = 50): Promise<{ sent: number; failed: number }> {
-    const due = await this.prisma.webhookDelivery.findMany({
-      where: { status: 'pending', nextAt: { lte: new Date() } },
-      include: { webhook: true },
-      orderBy: { nextAt: 'asc' },
-      take: limit,
-    });
+    const due = await this.db.admin
+      .selectFrom('app.webhook_deliveries as d')
+      .innerJoin('app.webhooks as w', 'w.id', 'd.webhook_id')
+      .select(['d.id', 'd.event', 'd.payload', 'd.createdAt', 'w.url', 'w.secret'])
+      .where('d.status', '=', 'pending')
+      .where('d.next_at', '<=', new Date())
+      .orderBy('d.next_at', 'asc')
+      .limit(limit)
+      .execute();
 
     let sent = 0;
     let failed = 0;
     for (const delivery of due) {
-      const ok = await this.deliver(delivery.id, delivery.webhook.url, delivery.webhook.secret, {
+      const ok = await this.deliver(delivery.id, delivery.url, delivery.secret, {
         event: delivery.event,
         id: delivery.id,
         occurredAt: delivery.createdAt.toISOString(),
@@ -110,10 +131,11 @@ export class WebhookDispatcher {
       });
       if (!res.ok) throw new Error(`responded ${res.status}`);
 
-      await this.prisma.webhookDelivery.update({
-        where: { id },
-        data: { status: 'ok', attempts: { increment: 1 }, lastError: null },
-      });
+      await this.db.admin
+        .updateTable('app.webhook_deliveries')
+        .set({ status: 'ok', attempts: sql<number>`attempts + 1`, last_error: null })
+        .where('id', '=', id)
+        .execute();
       return true;
     } catch (e) {
       const attempts = (await this.bumpAttempts(id, e instanceof Error ? e.message : 'failed'));
@@ -123,18 +145,21 @@ export class WebhookDispatcher {
   }
 
   private async bumpAttempts(id: string, error: string): Promise<number> {
-    const current = await this.prisma.webhookDelivery.update({
-      where: { id },
-      data: { attempts: { increment: 1 }, lastError: error },
-      select: { attempts: true },
-    });
-    await this.prisma.webhookDelivery.update({
-      where: { id },
-      data:
+    const current = await this.db.admin
+      .updateTable('app.webhook_deliveries')
+      .set({ attempts: sql<number>`attempts + 1`, last_error: error })
+      .where('id', '=', id)
+      .returning('attempts')
+      .executeTakeFirstOrThrow();
+    await this.db.admin
+      .updateTable('app.webhook_deliveries')
+      .set(
         current.attempts >= MAX_ATTEMPTS
           ? { status: 'failed' }
-          : { nextAt: nextAttemptAt(current.attempts) },
-    });
+          : { next_at: nextAttemptAt(current.attempts) },
+      )
+      .where('id', '=', id)
+      .execute();
     return current.attempts;
   }
 }

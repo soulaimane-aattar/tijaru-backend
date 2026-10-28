@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import type { AuthUser } from '../../../common/auth/auth-user.type';
 import { ConflictError, NotFoundError } from '../../../common/errors';
-import { PrismaService } from '../../../common/prisma.service';
+import { Db } from '../../../database';
 import { StockLedgerService } from '../../stock-ledger/application/stock-ledger.service';
 import type { LedgerLine } from '../../stock-ledger/domain/stock-ledger.types';
 import { InventoryRepository } from '../domain/inventory.repository';
@@ -13,7 +13,7 @@ export class InventoryService {
   constructor(
     private readonly inventory: InventoryRepository,
     private readonly ledger: StockLedgerService,
-    private readonly prisma: PrismaService,
+    private readonly db: Db,
   ) {}
 
   list(): Promise<unknown> {
@@ -61,11 +61,10 @@ export class InventoryService {
     const inputByProduct = new Map(input.lines.map((l) => [l.productId, l.counted]));
     const ref = `INV-${count.id.slice(-6).toUpperCase()}`;
 
-    await this.prisma.$transaction(async (tx) => {
+    await this.db.tx(async () => {
       const live = await this.inventory.findLiveStockLevels(
         count.warehouseId,
         count.lines.map((l) => l.productId),
-        tx,
       );
       const liveMap = new Map(live.map((s) => [s.productId, s.qty]));
 
@@ -81,47 +80,38 @@ export class InventoryService {
           negativeLines.push({ productId: line.productId, warehouseId: count.warehouseId, delta });
         }
         if (counted !== line.counted) {
-          await this.inventory.updateLineCounted(line.id, counted, tx);
+          await this.inventory.updateLineCounted(line.id, counted);
         }
       }
 
       if (positiveLines.length > 0) {
-        await this.ledger.post(
-          {
-            businessId: actor.businessId,
-            userId: actor.id,
-            type: 'in',
-            reason: 'ajustement',
-            ref,
-            lines: positiveLines,
-          },
-          tx,
-        );
+        await this.ledger.post({
+          businessId: actor.businessId,
+          userId: actor.id,
+          type: 'in',
+          reason: 'ajustement',
+          ref,
+          lines: positiveLines,
+        });
       }
       if (negativeLines.length > 0) {
-        await this.ledger.post(
-          {
-            businessId: actor.businessId,
-            userId: actor.id,
-            type: 'out',
-            reason: 'ajustement',
-            ref,
-            lines: negativeLines,
-          },
-          tx,
-        );
+        await this.ledger.post({
+          businessId: actor.businessId,
+          userId: actor.id,
+          type: 'out',
+          reason: 'ajustement',
+          ref,
+          lines: negativeLines,
+        });
       }
 
-      await this.inventory.markApplied(id, tx);
-      await this.inventory.logActivity(
-        {
-          userId: actor.id,
-          action: 'inventory.applied',
-          desc: `Inventaire appliqué — ${count.lines.length} lignes`,
-          device: actor.device,
-        },
-        tx,
-      );
+      await this.inventory.markApplied(id);
+      await this.inventory.logActivity({
+        userId: actor.id,
+        action: 'inventory.applied',
+        desc: `Inventaire appliqué — ${count.lines.length} lignes`,
+        device: actor.device,
+      });
     });
 
     return this.inventory.findDetail(id);

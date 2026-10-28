@@ -4,7 +4,7 @@ import { EmailRemindersService } from './application/email-reminders.service';
 import { NotificationsScannerService } from './application/notifications-scanner.service';
 import { NotificationsService } from './application/notifications.service';
 import { NotificationsRepository } from './domain/notifications.repository';
-import { PrismaNotificationsRepository } from './infrastructure/prisma-notifications.repository';
+import { KyselyNotificationsRepository } from './infrastructure/kysely-notifications.repository';
 import { NotificationsController } from './notifications.controller';
 
 @Module({
@@ -13,7 +13,7 @@ import { NotificationsController } from './notifications.controller';
     NotificationsService,
     NotificationsScannerService,
     EmailRemindersService,
-    { provide: NotificationsRepository, useClass: PrismaNotificationsRepository },
+    { provide: NotificationsRepository, useClass: KyselyNotificationsRepository },
   ],
 })
 export class NotificationsModule {}

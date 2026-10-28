@@ -7,8 +7,8 @@ import { MarketplaceService } from './application/marketplace.service';
 import { OrdersService } from './application/orders.service';
 import { MarketplaceRepository } from './domain/marketplace.repository';
 import { OrdersRepository } from './domain/orders.repository';
-import { PrismaMarketplaceRepository } from './infrastructure/prisma-marketplace.repository';
-import { PrismaOrdersRepository } from './infrastructure/prisma-orders.repository';
+import { KyselyMarketplaceRepository } from './infrastructure/kysely-marketplace.repository';
+import { KyselyOrdersRepository } from './infrastructure/kysely-orders.repository';
 import { MarketplaceController } from './marketplace.controller';
 import { OrdersController } from './orders.controller';
 
@@ -18,8 +18,8 @@ import { OrdersController } from './orders.controller';
   providers: [
     MarketplaceService,
     OrdersService,
-    { provide: MarketplaceRepository, useClass: PrismaMarketplaceRepository },
-    { provide: OrdersRepository, useClass: PrismaOrdersRepository },
+    { provide: MarketplaceRepository, useClass: KyselyMarketplaceRepository },
+    { provide: OrdersRepository, useClass: KyselyOrdersRepository },
   ],
   exports: [MarketplaceService, OrdersService],
 })

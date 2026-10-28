@@ -1,9 +1,7 @@
-import type { Prisma } from '@prisma/client';
-
 /**
  * Port: persistence contract for the stock-movements business logic.
  *
- * The application service depends on this abstraction only; the Prisma
+ * The application service depends on this abstraction only; the Kysely
  * implementation lives in `../infrastructure`. The abstract class doubles as
  * the Nest injection token (interfaces are erased at runtime).
  */
@@ -44,9 +42,7 @@ export interface ActivityLog {
 
 export abstract class MovementsRepository {
   /** One page of movements (relations included), newest first. */
-  abstract findPage(
-    criteria: MovementSearchCriteria,
-  ): Promise<{ items: unknown[]; total: number }>;
+  abstract findPage(criteria: MovementSearchCriteria): Promise<{ items: unknown[]; total: number }>;
 
   /** Identity of a non-deleted product, or null. */
   abstract findProductRef(id: string): Promise<ProductRef | null>;
@@ -54,6 +50,6 @@ export abstract class MovementsRepository {
   /** True when a non-deleted warehouse with this id exists. */
   abstract warehouseExists(id: string): Promise<boolean>;
 
-  /** Record an audit-trail entry for a movement. Pass `tx` to make it part of the caller's transaction. */
-  abstract logActivity(activity: ActivityLog, tx?: Prisma.TransactionClient): Promise<void>;
+  /** Record an audit-trail entry (joins the ambient request transaction). */
+  abstract logActivity(activity: ActivityLog): Promise<void>;
 }

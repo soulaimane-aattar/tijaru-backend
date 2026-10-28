@@ -4,16 +4,13 @@ import { StockLedgerModule } from '../stock-ledger/stock-ledger.module';
 
 import { ProductsService } from './application/products.service';
 import { ProductsRepository } from './domain/products.repository';
-import { PrismaProductsRepository } from './infrastructure/prisma-products.repository';
+import { KyselyProductsRepository } from './infrastructure/kysely-products.repository';
 import { ProductsController } from './products.controller';
 
 @Module({
   imports: [StockLedgerModule],
   controllers: [ProductsController],
-  providers: [
-    ProductsService,
-    { provide: ProductsRepository, useClass: PrismaProductsRepository },
-  ],
+  providers: [ProductsService, { provide: ProductsRepository, useClass: KyselyProductsRepository }],
   exports: [ProductsService],
 })
 export class ProductsModule {}

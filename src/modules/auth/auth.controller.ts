@@ -1,4 +1,5 @@
-import { Body, Controller, Get, HttpCode, Post, Req, UsePipes } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Inject, Post, Req, UsePipes } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
@@ -10,6 +11,8 @@ import { MailService } from '../../common/mail/mail.service';
 import { registrationReceived } from '../../common/mail/mail.templates';
 import { PermissionsResolver } from '../../common/permissions-resolver.service';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import { ENV_TOKEN } from '../../config/config.module';
+import type { Env } from '../../config/env';
 import { CAPABILITIES, CAPABILITY_IDS, ROLES, ROLE_IDS } from '../../domain/permissions';
 
 import { AuthService } from './application/auth.service';
@@ -32,6 +35,8 @@ export class AuthController {
     private readonly mfa: PlatformAdminMfaService,
     private readonly mail: MailService,
     private readonly permissions: PermissionsResolver,
+    private readonly jwt: JwtService,
+    @Inject(ENV_TOKEN) private readonly env: Env,
   ) {}
 
   @Public()
@@ -133,8 +138,18 @@ export class AuthController {
   @ApiOperation({
     summary: 'Live role × capability matrix (defaults + role customizations). Clients cache this.',
   })
-  async getPermissions(): Promise<unknown> {
-    const matrix = await this.permissions.effectiveMatrix();
+  async getPermissions(@Req() req: Request): Promise<unknown> {
+    // Public, but a valid bearer scopes the matrix to the caller's tenant; without one: role defaults only.
+    let businessId: string | undefined;
+    const token = req.headers.authorization?.replace(/^Bearer /, '');
+    if (token) {
+      try {
+        businessId = (await this.jwt.verifyAsync<{ bid?: string }>(token, { secret: this.env.JWT_ACCESS_SECRET })).bid;
+      } catch {
+        /* invalid token → defaults */
+      }
+    }
+    const matrix = await this.permissions.effectiveMatrix(businessId);
     return {
       roles: ROLE_IDS.map((id) => ROLES[id]),
       capabilities: CAPABILITY_IDS.map((id) => CAPABILITIES[id]),

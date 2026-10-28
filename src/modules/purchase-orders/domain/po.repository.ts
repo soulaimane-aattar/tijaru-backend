@@ -1,12 +1,10 @@
 /**
  * Port: persistence contract for the purchase-orders business logic.
  *
- * The application service depends on this abstraction only; the Prisma
+ * The application service depends on this abstraction only; the Kysely
  * implementation lives in `../infrastructure`. The abstract class doubles as
  * the Nest injection token (interfaces are erased at runtime).
  */
-
-import type { Prisma } from '@prisma/client';
 
 export type POStatus = 'draft' | 'sent' | 'partiallyReceived' | 'received' | 'cancelled';
 
@@ -92,26 +90,18 @@ export abstract class PurchaseOrdersRepository {
 
   abstract findWithLines(id: string): Promise<POView | null>;
 
-  /** Increment a single line's received qty. Part of the caller's transaction. */
-  abstract incrementLineReceived(
-    lineId: string,
-    qty: number,
-    tx: Prisma.TransactionClient,
-  ): Promise<void>;
+  /** Increment a single line's received qty. Joins the ambient transaction. */
+  abstract incrementLineReceived(lineId: string, qty: number): Promise<void>;
 
   /**
    * Fresh per-line (qty, received) totals read inside the caller's
    * transaction, used to recompute PO status after a receipt.
    */
-  abstract findLineTotals(poId: string, tx: Prisma.TransactionClient): Promise<POLineTotals[]>;
+  abstract findLineTotals(poId: string): Promise<POLineTotals[]>;
 
-  /** Persist the recomputed PO status. Part of the caller's transaction. */
-  abstract updateStatus(
-    poId: string,
-    status: POStatus,
-    tx: Prisma.TransactionClient,
-  ): Promise<void>;
+  /** Persist the recomputed PO status. Joins the ambient transaction. */
+  abstract updateStatus(poId: string, status: POStatus): Promise<void>;
 
-  /** Record an audit-trail entry. Part of the caller's transaction. */
-  abstract logActivity(activity: ActivityLog, tx: Prisma.TransactionClient): Promise<void>;
+  /** Record an audit-trail entry. Joins the ambient transaction. */
+  abstract logActivity(activity: ActivityLog): Promise<void>;
 }

@@ -5,9 +5,7 @@ import { VAT_RATES } from '../../../domain/value-objects/vat-rate';
 const UnitEnum = z.enum(['piece', 'kg', 'g', 'litre', 'ml', 'carton', 'pack']);
 const VatEnum = z.union([z.literal(0), z.literal(7), z.literal(10), z.literal(14), z.literal(20)]);
 
-const HexColor = z
-  .string()
-  .regex(/^#[0-9a-fA-F]{6}$/, 'Tone must be a #RRGGBB hex color');
+const HexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Tone must be a #RRGGBB hex color');
 
 const ean13 = z
   .string()

@@ -1,8 +1,7 @@
 /**
  * Port: persistence contract for the expenses business logic.
  *
- * `businessId` never appears here — the Prisma tenant middleware injects it on
- * writes and filters it on reads for every model in `TENANT_MODELS`.
+ * `businessId` never appears here — implementations take it from the request tenant (`Db.businessId`).
  */
 
 import type { ListExpensesQuery } from '../dto/expense.dto';

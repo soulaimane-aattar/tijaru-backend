@@ -1,4 +1,7 @@
-import type { MovementReason, MovementType } from '@prisma/client';
+import type {
+  AppMovementreason as MovementReason,
+  AppMovementtype as MovementType,
+} from '../../../database/types';
 
 export type LedgerLine = {
   productId: string;
@@ -27,3 +30,6 @@ export type LedgerPost = {
   lines: LedgerLine[];
   toWarehouseId?: string; // required when type === 'transfer'
 };
+
+/** A posted movement row, camelCase like the old Prisma `Movement`. */
+export type LedgerMovement = Record<string, unknown>;

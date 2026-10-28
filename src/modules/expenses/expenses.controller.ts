@@ -20,6 +20,7 @@ import type { AuthUser } from '../../common/auth/auth-user.type';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequireCap } from '../../common/decorators/require-cap.decorator';
 import { RequiresModule } from '../../common/decorators/require-module.decorator';
+import { SkipTenantTx } from '../../common/decorators/skip-tenant-tx.decorator';
 import { ValidationError } from '../../common/errors';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { TenantContext } from '../../common/tenant/tenant-context';
@@ -107,6 +108,7 @@ export class ExpensesController {
    * numbers in the form and saves from there.
    */
   @Post('scan')
+  @SkipTenantTx() // OCR can take up to OCR_TIMEOUT_MS — don't pin a pooled connection meanwhile
   @RequireCap('expenses.create')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_RECEIPT_BYTES } }))
   scan(

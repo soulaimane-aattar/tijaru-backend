@@ -9,8 +9,8 @@ import { ExpensesRepository } from './domain/expenses.repository';
 import { OcrProvider } from './domain/ocr.provider';
 import { ExpensesController } from './expenses.controller';
 import { HttpOcrProvider } from './infrastructure/http-ocr.provider';
-import { PrismaBusinessInfoLookup } from './infrastructure/prisma-business-info.lookup';
-import { PrismaExpensesRepository } from './infrastructure/prisma-expenses.repository';
+import { KyselyBusinessInfoLookup } from './infrastructure/kysely-business-info.lookup';
+import { KyselyExpensesRepository } from './infrastructure/kysely-expenses.repository';
 
 @Module({
   imports: [ExpenseCategoriesModule],
@@ -18,9 +18,9 @@ import { PrismaExpensesRepository } from './infrastructure/prisma-expenses.repos
   providers: [
     ExpensesService,
     ExpenseReportPdfService,
-    { provide: ExpensesRepository, useClass: PrismaExpensesRepository },
+    { provide: ExpensesRepository, useClass: KyselyExpensesRepository },
     { provide: OcrProvider, useClass: HttpOcrProvider },
-    { provide: BusinessInfoLookup, useClass: PrismaBusinessInfoLookup },
+    { provide: BusinessInfoLookup, useClass: KyselyBusinessInfoLookup },
   ],
 })
 export class ExpensesModule {}

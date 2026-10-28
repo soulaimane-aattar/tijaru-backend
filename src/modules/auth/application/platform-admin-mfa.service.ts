@@ -2,9 +2,9 @@ import { Inject, Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 
 import { ForbiddenError, UnauthorizedError } from '../../../common/errors';
-import { PrismaService } from '../../../common/prisma.service';
 import { ENV_TOKEN } from '../../../config/config.module';
 import type { Env } from '../../../config/env';
+import { Db } from '../../../database';
 import { seal, unseal } from '../domain/secret-box';
 import { generateTotpSecret, otpauthUrl, verifyTotp } from '../domain/totp';
 
@@ -29,7 +29,7 @@ export type MfaChallenge = {
 @Injectable()
 export class PlatformAdminMfaService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly db: Db,
     private readonly jwt: JwtService,
     @Inject(ENV_TOKEN) private readonly env: Env,
   ) {}
@@ -45,20 +45,22 @@ export class PlatformAdminMfaService {
       { secret: this.env.JWT_ACCESS_SECRET, expiresIn: MFA_TOKEN_TTL },
     );
 
-    const row = await this.prisma.platformAdmin.findUniqueOrThrow({
-      where: { id: admin.id },
-      select: { totpEnabledAt: true, totpSecret: true },
-    });
+    const row = await this.db.admin
+      .selectFrom('platform_admins')
+      .select(['totpEnabledAt', 'totpSecret'])
+      .where('id', '=', admin.id)
+      .executeTakeFirstOrThrow();
     if (row.totpEnabledAt && this.readSecret(row.totpSecret)) {
       return { type: 'platform-admin-mfa', mfaToken, enrolled: true };
     }
 
     // Pending secret: only becomes active once a code generated from it verifies.
     const secret = generateTotpSecret();
-    await this.prisma.platformAdmin.update({
-      where: { id: admin.id },
-      data: { totpSecret: seal(secret, this.sealKey), totpLastStep: null },
-    });
+    await this.db.admin
+      .updateTable('platform_admins')
+      .set({ totpSecret: seal(secret, this.sealKey), totpLastStep: null, updatedAt: new Date() })
+      .where('id', '=', admin.id)
+      .execute();
     return {
       type: 'platform-admin-mfa',
       mfaToken,
@@ -69,7 +71,11 @@ export class PlatformAdminMfaService {
 
   async verify(mfaToken: string, code: string, now = Date.now()): Promise<{ accessToken: string; type: 'platform-admin' }> {
     const adminId = await this.adminIdFrom(mfaToken);
-    const admin = await this.prisma.platformAdmin.findUnique({ where: { id: adminId } });
+    const admin = await this.db.admin
+      .selectFrom('platform_admins')
+      .selectAll()
+      .where('id', '=', adminId)
+      .executeTakeFirst();
     const secret = admin ? this.readSecret(admin.totpSecret) : null;
     if (!admin || !secret) throw new UnauthorizedError('Invalid or expired token');
     if (admin.mfaLockedUntil && admin.mfaLockedUntil.getTime() > now) {
@@ -78,29 +84,33 @@ export class PlatformAdminMfaService {
 
     const step = verifyTotp(secret, code, now, admin.totpLastStep);
     if (step === null) {
-      const { mfaFailures } = await this.prisma.platformAdmin.update({
-        where: { id: admin.id },
-        data: { mfaFailures: { increment: 1 } },
-        select: { mfaFailures: true },
-      });
+      const { mfaFailures } = await this.db.admin
+        .updateTable('platform_admins')
+        .set((eb) => ({ mfaFailures: eb('mfaFailures', '+', 1), updatedAt: new Date() }))
+        .where('id', '=', admin.id)
+        .returning('mfaFailures')
+        .executeTakeFirstOrThrow();
       if (mfaFailures >= MAX_FAILURES) {
-        await this.prisma.platformAdmin.update({
-          where: { id: admin.id },
-          data: { mfaFailures: 0, mfaLockedUntil: new Date(now + LOCK_MS) },
-        });
+        await this.db.admin
+          .updateTable('platform_admins')
+          .set({ mfaFailures: 0, mfaLockedUntil: new Date(now + LOCK_MS), updatedAt: new Date() })
+          .where('id', '=', admin.id)
+          .execute();
       }
       throw new UnauthorizedError('Invalid code');
     }
 
-    await this.prisma.platformAdmin.update({
-      where: { id: admin.id },
-      data: {
+    await this.db.admin
+      .updateTable('platform_admins')
+      .set({
         mfaFailures: 0,
         mfaLockedUntil: null,
         totpLastStep: step,
         totpEnabledAt: admin.totpEnabledAt ?? new Date(now),
-      },
-    });
+        updatedAt: new Date(),
+      })
+      .where('id', '=', admin.id)
+      .execute();
 
     const accessToken = await this.jwt.signAsync(
       { sub: admin.id, type: 'platform-admin', ver: admin.tokenVersion },

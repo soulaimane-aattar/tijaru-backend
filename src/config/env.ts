@@ -4,6 +4,10 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().int().positive().default(3000),
   DATABASE_URL: z.string().url(),
+  /** Non-superuser role (`tijaru_app`) so RLS is enforced on request queries; falls back to DATABASE_URL. */
+  DATABASE_URL_APP: z.string().url().optional(),
+  /** Max connections for the request (RLS) pool; each in-flight tenant request holds one. */
+  DB_POOL_MAX: z.coerce.number().int().positive().default(20),
   JWT_ACCESS_SECRET: z.string().min(32),
   JWT_REFRESH_SECRET: z.string().min(32),
   JWT_ACCESS_TTL: z.string().default('15m'),

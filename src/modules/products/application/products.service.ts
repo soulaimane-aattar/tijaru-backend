@@ -1,24 +1,18 @@
 import { Injectable } from '@nestjs/common';
-import type { MovementReason } from '@prisma/client';
+
 
 import type { AuthUser } from '../../../common/auth/auth-user.type';
 import { ConflictError, NotFoundError, ValidationError } from '../../../common/errors';
-import { PrismaService } from '../../../common/prisma.service';
 import { LocalStorageService } from '../../../common/storage/local-storage.service';
+import { Db } from '../../../database';
+import type { AppMovementreason as MovementReason } from '../../../database/types';
 import { StockLedgerService } from '../../stock-ledger/application/stock-ledger.service';
-import {
-  ProductsRepository,
-  type ProductStockView,
-} from '../domain/products.repository';
+import { ProductsRepository, type ProductStockView } from '../domain/products.repository';
 import type { AdjustProductInput } from '../dto/adjust.dto';
-import type {
-  CreateProductInput,
-  ListProductsQuery,
-  UpdateProductInput,
-} from '../dto/product.dto';
+import type { CreateProductInput, ListProductsQuery, UpdateProductInput } from '../dto/product.dto';
 
 /**
- * Maps the user-facing adjustment reason to the closest Prisma `MovementReason`.
+ * Maps the user-facing adjustment reason to the closest `MovementReason`.
  * The DB enum (achat|vente|transfert|peremption|ajustement|casse) is narrower
  * than what users pick from — the original reason is preserved in the
  * movement `ref` for audit clarity.
@@ -45,7 +39,7 @@ export class ProductsService {
   constructor(
     private readonly products: ProductsRepository,
     private readonly ledger: StockLedgerService,
-    private readonly prisma: PrismaService,
+    private readonly db: Db,
     private readonly storage: LocalStorageService,
   ) {}
 
@@ -133,28 +127,22 @@ export class ProductsService {
 
     if (input.delta === 0) throw new ValidationError('adjust_delta_zero');
 
-    const movements = await this.prisma.$transaction(async (tx) => {
-      const posted = await this.ledger.post(
-        {
-          businessId: user.businessId,
-          userId: user.id,
-          type: input.delta > 0 ? 'in' : 'out',
-          reason: ADJUST_REASON_MAP[input.reason],
-          ref: input.note ? `${input.reason}: ${input.note}` : input.reason,
-          lines: [{ productId, warehouseId: input.warehouseId, delta: input.delta }],
-        },
-        tx,
-      );
+    const movements = await this.db.tx(async () => {
+      const posted = await this.ledger.post({
+        businessId: user.businessId,
+        userId: user.id,
+        type: input.delta > 0 ? 'in' : 'out',
+        reason: ADJUST_REASON_MAP[input.reason],
+        ref: input.note ? `${input.reason}: ${input.note}` : input.reason,
+        lines: [{ productId, warehouseId: input.warehouseId, delta: input.delta }],
+      });
 
-      await this.products.logActivity(
-        {
-          userId: user.id,
-          action: 'stock.adjust',
-          desc: `Ajustement ${input.delta > 0 ? '+' : ''}${input.delta} × ${existing.name} (${input.reason})`,
-          ...(user.device !== undefined ? { device: user.device } : {}),
-        },
-        tx,
-      );
+      await this.products.logActivity({
+        userId: user.id,
+        action: 'stock.adjust',
+        desc: `Ajustement ${input.delta > 0 ? '+' : ''}${input.delta} × ${existing.name} (${input.reason})`,
+        ...(user.device !== undefined ? { device: user.device } : {}),
+      });
 
       return posted;
     });
@@ -172,7 +160,11 @@ export class ProductsService {
    * Store a new product photo. Replaces any prior image — the old file is
    * removed best-effort so a stale blob never lingers when a user re-shoots.
    */
-  async uploadImage(id: string, buffer: Buffer, businessId: string): Promise<{ imagePath: string }> {
+  async uploadImage(
+    id: string,
+    buffer: Buffer,
+    businessId: string,
+  ): Promise<{ imagePath: string }> {
     const existing = await this.products.findIdentity(id);
     if (!existing) throw new NotFoundError('Product', id);
     const ext = this.storage.sniffExtension(buffer);

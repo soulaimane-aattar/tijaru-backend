@@ -93,7 +93,10 @@ export class POController {
 
   @Get(':id/pdf')
   @RequireCap('po.manage')
-  async pdfFile(@Param('id') id: string, @Res({ passthrough: false }) res: Response): Promise<void> {
+  async pdfFile(
+    @Param('id') id: string,
+    @Res({ passthrough: false }) res: Response,
+  ): Promise<void> {
     const po = (await this.svc.get(id)) as PODetailForPdf;
     const businessId = this.tenant.getBusinessId();
     const business = businessId ? await this.pdfInfo.getBusiness(businessId) : null;
@@ -103,8 +106,7 @@ export class POController {
       sent: l.received,
       unitPrice: Number(l.price),
     }));
-    const subtotal =
-      Math.round(lines.reduce((s, l) => s + l.ordered * l.unitPrice, 0) * 100) / 100;
+    const subtotal = Math.round(lines.reduce((s, l) => s + l.ordered * l.unitPrice, 0) * 100) / 100;
     const buf = await this.pdf.render({
       number: po.number,
       type: 'order',

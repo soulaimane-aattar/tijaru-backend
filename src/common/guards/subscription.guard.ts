@@ -1,9 +1,9 @@
 import { type CanActivate, type ExecutionContext, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 
+import { Db } from '../../database';
 import type { AuthUser } from '../auth/auth-user.type';
 import { BusinessSuspendedError, ForbiddenError, SubscriptionExpiredError } from '../errors';
-import { PrismaService } from '../prisma.service';
 
 import { IS_PUBLIC_KEY } from './jwt.guard';
 
@@ -11,7 +11,7 @@ import { IS_PUBLIC_KEY } from './jwt.guard';
 export class SubscriptionGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
-    private readonly prisma: PrismaService,
+    private readonly db: Db,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -25,19 +25,22 @@ export class SubscriptionGuard implements CanActivate {
     if (!user || user.isSuperAdmin) return true;
     if (!user.businessId) return true;
 
-    const business = await this.prisma.business.findUnique({
-      where: { id: user.businessId },
-      select: { plan: true, subscriptionEnd: true },
-    });
+    // Guards run before the tenant transaction exists → owner pool, explicit id filter.
+    const business = await this.db.admin
+      .selectFrom('app.businesses')
+      .select(['plan', 'subscription_end'])
+      .where('id', '=', user.businessId)
+      .executeTakeFirst();
 
     if (!business) throw new ForbiddenError('Business not found');
 
-    if (business.subscriptionEnd && business.subscriptionEnd < new Date()) {
+    if (business.subscription_end && business.subscription_end < new Date()) {
       if (business.plan === 'active') {
-        await this.prisma.business.update({
-          where: { id: user.businessId },
-          data: { plan: 'expired' },
-        });
+        await this.db.admin
+          .updateTable('app.businesses')
+          .set({ plan: 'expired' })
+          .where('id', '=', user.businessId)
+          .execute();
       }
       throw new SubscriptionExpiredError();
     }

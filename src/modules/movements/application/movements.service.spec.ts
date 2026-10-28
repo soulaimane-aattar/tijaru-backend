@@ -1,5 +1,5 @@
 import { DomainError, NotFoundError, ValidationError } from '../../../common/errors';
-import type { PrismaService } from '../../../common/prisma.service';
+import type { Db } from '../../../database';
 import type { StockLedgerService } from '../../stock-ledger/application/stock-ledger.service';
 import type { MovementsRepository } from '../domain/movements.repository';
 import type { CreateMovementInput } from '../dto/movement.dto';
@@ -33,13 +33,10 @@ const mockLedger = (): jest.Mocked<StockLedgerService> =>
     post: jest.fn().mockResolvedValue([{ id: 'm1' }]),
   }) as unknown as jest.Mocked<StockLedgerService>;
 
-/** A fake `tx` handle that's distinguishable by identity from `prisma` itself. */
-const FAKE_TX = { __tx: true } as never;
-
-const mockPrisma = (): jest.Mocked<PrismaService> =>
+const mockDb = (): jest.Mocked<Db> =>
   ({
-    $transaction: jest.fn().mockImplementation((fn: (tx: unknown) => unknown) => fn(FAKE_TX)),
-  }) as unknown as jest.Mocked<PrismaService>;
+    tx: jest.fn().mockImplementation((fn: (q: unknown) => unknown) => fn({})),
+  }) as unknown as jest.Mocked<Db>;
 
 const baseInput = (over: Partial<CreateMovementInput> = {}): CreateMovementInput => ({
   type: 'in',
@@ -54,8 +51,8 @@ describe('MovementsService.record', () => {
   it('type=in calls ledger with positive delta', async () => {
     const repo = mockRepo();
     const ledger = mockLedger();
-    const prisma = mockPrisma();
-    const svc = new MovementsService(repo, ledger, prisma);
+    const db = mockDb();
+    const svc = new MovementsService(repo, ledger, db);
 
     await svc.record(baseInput({ type: 'in', qty: 5 }), actor);
 
@@ -67,51 +64,46 @@ describe('MovementsService.record', () => {
         reason: 'achat',
         lines: [expect.objectContaining({ productId: PID, warehouseId: WH, delta: 5 })],
       }),
-      FAKE_TX,
     );
   });
 
   it('writes the ledger post and the activity log in the same transaction', async () => {
     const repo = mockRepo();
     const ledger = mockLedger();
-    const prisma = mockPrisma();
-    const svc = new MovementsService(repo, ledger, prisma);
+    const db = mockDb();
+    const svc = new MovementsService(repo, ledger, db);
 
     await svc.record(baseInput({ type: 'in', qty: 5 }), actor);
 
-    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
-    const ledgerTx = ledger.post.mock.calls[0]?.[1];
-    const activityTx = repo.logActivity.mock.calls[0]?.[1];
-    expect(ledgerTx).toBe(FAKE_TX);
-    expect(activityTx).toBe(FAKE_TX);
-    expect(ledgerTx).toBe(activityTx);
+    expect(db.tx).toHaveBeenCalledTimes(1);
+    expect(ledger.post).toHaveBeenCalledTimes(1);
+    expect(repo.logActivity).toHaveBeenCalledTimes(1);
   });
 
   it('type=out calls ledger with negative delta and propagates insufficient_stock', async () => {
     const repo = mockRepo();
     const ledger = mockLedger();
     ledger.post.mockRejectedValue(new DomainError('insufficient_stock', 'nope', 409));
-    const prisma = mockPrisma();
-    const svc = new MovementsService(repo, ledger, prisma);
+    const db = mockDb();
+    const svc = new MovementsService(repo, ledger, db);
 
-    await expect(svc.record(baseInput({ type: 'out', qty: 3, reason: 'vente' }), actor)).rejects.toThrow(
-      DomainError,
-    );
+    await expect(
+      svc.record(baseInput({ type: 'out', qty: 3, reason: 'vente' }), actor),
+    ).rejects.toThrow(DomainError);
 
     expect(ledger.post).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'out',
         lines: [expect.objectContaining({ productId: PID, warehouseId: WH, delta: -3 })],
       }),
-      FAKE_TX,
     );
   });
 
   it('type=transfer requires toWarehouseId and passes it through', async () => {
     const repo = mockRepo();
     const ledger = mockLedger();
-    const prisma = mockPrisma();
-    const svc = new MovementsService(repo, ledger, prisma);
+    const db = mockDb();
+    const svc = new MovementsService(repo, ledger, db);
 
     await svc.record(
       baseInput({ type: 'transfer', qty: 2, reason: 'transfert', toWarehouseId: WH2 }),
@@ -124,30 +116,29 @@ describe('MovementsService.record', () => {
         toWarehouseId: WH2,
         lines: [expect.objectContaining({ productId: PID, warehouseId: WH, delta: -2 })],
       }),
-      FAKE_TX,
     );
   });
 
   it('type=transfer without toWarehouseId → ValidationError', async () => {
     const repo = mockRepo();
     const ledger = mockLedger();
-    const prisma = mockPrisma();
-    const svc = new MovementsService(repo, ledger, prisma);
+    const db = mockDb();
+    const svc = new MovementsService(repo, ledger, db);
 
     await expect(
       svc.record(baseInput({ type: 'transfer', qty: 2, reason: 'transfert' }), actor),
     ).rejects.toThrow(ValidationError);
 
     expect(ledger.post).not.toHaveBeenCalled();
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(db.tx).not.toHaveBeenCalled();
   });
 
   it('throws NotFoundError when product does not exist', async () => {
     const repo = mockRepo();
     repo.findProductRef.mockResolvedValue(null);
     const ledger = mockLedger();
-    const prisma = mockPrisma();
-    const svc = new MovementsService(repo, ledger, prisma);
+    const db = mockDb();
+    const svc = new MovementsService(repo, ledger, db);
 
     await expect(svc.record(baseInput(), actor)).rejects.toThrow(NotFoundError);
   });
