@@ -1,35 +1,51 @@
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import type { INestApplication } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
 
+import { closeTestDb, testDb } from './helpers/db';
 import { api, bearer, bootTestApp, login, seedFresh } from './helpers/test-app';
 
 describe('Batch modules (PO/inventory/reports/activity/notifications) e2e', () => {
   let app: INestApplication;
-  let prisma: PrismaClient;
   let ownerToken: string;
   let cashierToken: string;
   let warehouseId: string;
 
   const stockAt = async (pid: string, whId: string): Promise<number> => {
-    const sl = await prisma.stockLevel.findUnique({
-      where: { productId_warehouseId: { productId: pid, warehouseId: whId } },
-    });
+    const sl = await testDb
+      .selectFrom('app.stock_levels')
+      .select('qty')
+      .where('productId', '=', pid)
+      .where('warehouseId', '=', whId)
+      .executeTakeFirst();
     return sl?.qty ?? 0;
   };
+
+  const countAjustements = async (): Promise<number> =>
+    Number(
+      (
+        await testDb
+          .selectFrom('app.movements')
+          .select((eb) => eb.fn.countAll<string>().as('n'))
+          .where('reason', '=', 'ajustement')
+          .executeTakeFirstOrThrow()
+      ).n,
+    );
 
   beforeAll(async () => {
     await seedFresh();
     app = await bootTestApp();
-    prisma = new PrismaClient();
     ownerToken = (await login(app, 'owner')).accessToken;
     cashierToken = (await login(app, 'cashier')).accessToken;
-    const wh = await prisma.warehouse.findFirstOrThrow({ where: { isDefault: true } });
+    const wh = await testDb
+      .selectFrom('app.warehouses')
+      .select('id')
+      .where('isDefault', '=', true)
+      .executeTakeFirstOrThrow();
     warehouseId = wh.id;
   });
 
   afterAll(async () => {
-    await prisma.$disconnect();
+    await closeTestDb();
     await app.close();
   });
 
@@ -44,8 +60,12 @@ describe('Batch modules (PO/inventory/reports/activity/notifications) e2e', () =
     });
 
     it('create PO + receive partially → status partiallyReceived + in-movement', async () => {
-      const supplier = await prisma.supplier.findFirstOrThrow();
-      const product = await prisma.product.findFirstOrThrow({ where: { deletedAt: null } });
+      const supplier = await testDb.selectFrom('app.suppliers').select('id').executeTakeFirstOrThrow();
+      const product = await testDb
+        .selectFrom('app.products')
+        .select('id')
+        .where('deletedAt', 'is', null)
+        .executeTakeFirstOrThrow();
       const before = await stockAt(product.id, warehouseId);
 
       const created = await api(app)
@@ -69,9 +89,12 @@ describe('Batch modules (PO/inventory/reports/activity/notifications) e2e', () =
       expect(received.body.status).toBe('partiallyReceived');
       expect(await stockAt(product.id, warehouseId)).toBe(before + 20);
 
-      const mvts = await prisma.movement.findMany({
-        where: { ref: created.body.number, type: 'in' },
-      });
+      const mvts = await testDb
+        .selectFrom('app.movements')
+        .selectAll()
+        .where('ref', '=', created.body.number)
+        .where('type', '=', 'in')
+        .execute();
       expect(mvts).toHaveLength(1);
       expect(mvts[0]!.qty).toBe(20);
 
@@ -85,8 +108,12 @@ describe('Batch modules (PO/inventory/reports/activity/notifications) e2e', () =
     });
 
     it('over-receive rejected (422)', async () => {
-      const supplier = await prisma.supplier.findFirstOrThrow();
-      const product = await prisma.product.findFirstOrThrow({ where: { deletedAt: null } });
+      const supplier = await testDb.selectFrom('app.suppliers').select('id').executeTakeFirstOrThrow();
+      const product = await testDb
+        .selectFrom('app.products')
+        .select('id')
+        .where('deletedAt', 'is', null)
+        .executeTakeFirstOrThrow();
       const created = await api(app)
         .post('/api/v1/purchase-orders')
         .set(bearer(ownerToken))
@@ -120,7 +147,7 @@ describe('Batch modules (PO/inventory/reports/activity/notifications) e2e', () =
       const before = await stockAt(firstLine.productId, warehouseId);
       const newCount = before + 7; // diff +7
 
-      const mvtBefore = await prisma.movement.count({ where: { reason: 'ajustement' } });
+      const mvtBefore = await countAjustements();
 
       const applied = await api(app)
         .post(`/api/v1/inventory/${countId}/apply`)
@@ -131,7 +158,7 @@ describe('Batch modules (PO/inventory/reports/activity/notifications) e2e', () =
         .expect(201);
       expect(applied.body.appliedAt).not.toBeNull();
       expect(await stockAt(firstLine.productId, warehouseId)).toBe(newCount);
-      expect(await prisma.movement.count({ where: { reason: 'ajustement' } })).toBe(mvtBefore + 1);
+      expect(await countAjustements()).toBe(mvtBefore + 1);
     });
 
     it('re-applying same count returns 422', async () => {

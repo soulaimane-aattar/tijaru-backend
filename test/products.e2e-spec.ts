@@ -1,14 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import type { INestApplication } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
 
 import { EAN13 } from '../src/domain/value-objects/ean13';
 
+import { closeTestDb, testDb } from './helpers/db';
 import { api, bearer, bootTestApp, login, seedFresh } from './helpers/test-app';
 
 describe('Products (e2e)', () => {
   let app: INestApplication;
-  let prisma: PrismaClient;
   let tokens: Record<'owner' | 'manager' | 'stockkeeper' | 'cashier' | 'admin', string>;
   let categoryId: string;
   let warehouseId: string;
@@ -18,9 +17,8 @@ describe('Products (e2e)', () => {
   beforeAll(async () => {
     await seedFresh();
     app = await bootTestApp();
-    prisma = new PrismaClient();
-    const cat = await prisma.category.findFirstOrThrow();
-    const wh = await prisma.warehouse.findFirstOrThrow({ where: { isDefault: true } });
+    const cat = await testDb.selectFrom('app.categories').select('id').executeTakeFirstOrThrow();
+    const wh = await testDb.selectFrom('app.warehouses').select('id').where('isDefault', '=', true).executeTakeFirstOrThrow();
     categoryId = cat.id;
     warehouseId = wh.id;
     tokens = {
@@ -33,7 +31,7 @@ describe('Products (e2e)', () => {
   });
 
   afterAll(async () => {
-    await prisma.$disconnect();
+    await closeTestDb();
     await app.close();
   });
 
@@ -113,7 +111,7 @@ describe('Products (e2e)', () => {
 
   describe('GET /products/by-barcode/:code', () => {
     it('returns the product matching the barcode', async () => {
-      const p = await prisma.product.findFirstOrThrow();
+      const p = await testDb.selectFrom('app.products').select(['id', 'barcode']).executeTakeFirstOrThrow();
       const res = await api(app)
         .get(`/api/v1/products/by-barcode/${p.barcode}`)
         .set(bearer(tokens.owner))

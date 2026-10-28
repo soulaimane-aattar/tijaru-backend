@@ -1,24 +1,27 @@
-import { PrismaClient } from '@prisma/client';
+import { makeSeedDb } from './db';
 
-const prisma = new PrismaClient();
 const MODULES = ['marketplace', 'pos', 'expenses', 'purchase-orders', 'inventory', 'reports', 'invoices', 'delivery-notes', 'hr', 'estimates'];
 
 async function main() {
-  const businesses = await prisma.business.findMany({ select: { id: true } });
-  for (const biz of businesses) {
-    await prisma.business.update({
-      where: { id: biz.id },
-      data: { plan: 'active' },
-    });
-    for (const moduleId of MODULES) {
-      await prisma.businessModule.upsert({
-        where: { businessId_moduleId: { businessId: biz.id, moduleId } },
-        update: {},
-        create: { businessId: biz.id, moduleId, active: true },
-      });
+  const db = makeSeedDb();
+  try {
+    const now = new Date();
+    const businesses = await db.selectFrom('app.businesses').select('id').execute();
+    for (const biz of businesses) {
+      await db.updateTable('app.businesses').set({ plan: 'active', updatedAt: now }).where('id', '=', biz.id).execute();
+      await db
+        .insertInto('app.business_modules')
+        .values(MODULES.map((module_id) => ({ business_id: biz.id, module_id, active: true, updatedAt: now })))
+        .onConflict((oc) => oc.columns(['business_id', 'module_id']).doNothing())
+        .execute();
     }
+    console.log(`Seeded ${businesses.length} businesses with default modules`);
+  } finally {
+    await db.destroy();
   }
-  console.log(`Seeded ${businesses.length} businesses with default modules`);
 }
 
-main().catch(console.error).finally(() => prisma.$disconnect());
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

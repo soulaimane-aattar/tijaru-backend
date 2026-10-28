@@ -3,18 +3,18 @@ import type { AddressInfo } from 'node:net';
 
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import type { INestApplication } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
 
 import { WebhookDispatcher } from '../src/modules/integrations/application/webhook-dispatcher.service';
 import { verifySignature } from '../src/modules/integrations/domain/webhook-signature';
 
+import { closeTestDb, testDb } from './helpers/db';
+import { createTenant } from './helpers/tenant';
 import { api, bearer, bootTestApp, login, seedFresh } from './helpers/test-app';
 
 type Received = { headers: Record<string, string>; raw: string };
 
 describe('Integrations — webhooks + API keys (e2e)', () => {
   let app: INestApplication;
-  let prisma: PrismaClient;
   let dispatcher: WebhookDispatcher;
 
   let sellerToken: string;
@@ -33,7 +33,6 @@ describe('Integrations — webhooks + API keys (e2e)', () => {
   beforeAll(async () => {
     await seedFresh();
     app = await bootTestApp();
-    prisma = new PrismaClient();
     dispatcher = app.get(WebhookDispatcher);
 
     receiver = createServer((req, res) => {
@@ -48,31 +47,29 @@ describe('Integrations — webhooks + API keys (e2e)', () => {
     receiverUrl = `http://127.0.0.1:${(receiver.address() as AddressInfo).port}/hook`;
 
     sellerToken = (await login(app, 'owner')).accessToken;
-    const sellerOwner = await prisma.user.findFirstOrThrow({
-      where: { email: 'youssef@elamrani.ma' },
-    });
-    sellerBusinessId = sellerOwner.businessId;
+    sellerBusinessId = (
+      await testDb
+        .selectFrom('app_auth.users')
+        .select('business_id')
+        .where('email', '=', 'youssef@elamrani.ma')
+        .executeTakeFirstOrThrow()
+    ).business_id;
 
-    const buyerBiz = await prisma.business.create({
-      data: { name: 'Acheteur SARL', ice: '555555555555555' },
-    });
-    await prisma.businessModule.create({
-      data: { businessId: buyerBiz.id, moduleId: 'marketplace', active: true },
-    });
-    await prisma.user.create({
-      data: {
-        businessId: buyerBiz.id,
-        name: 'Buyer Owner',
-        email: 'buyer@example.ma',
-        passwordHash: sellerOwner.passwordHash,
-        role: 'owner',
-      },
+    await createTenant({
+      name: 'Acheteur SARL',
+      ice: '555555555555555',
+      moduleId: 'marketplace',
+      email: 'buyer@example.ma',
+      ownerName: 'Buyer Owner',
     });
     buyerToken = (await login(app, 'buyer@example.ma')).accessToken;
 
-    const product = await prisma.product.findFirstOrThrow({
-      where: { businessId: sellerBusinessId, deletedAt: null },
-    });
+    const product = await testDb
+      .selectFrom('app.products')
+      .select('id')
+      .where('business_id', '=', sellerBusinessId)
+      .where('deletedAt', 'is', null)
+      .executeTakeFirstOrThrow();
     const listing = await api(app)
       .post('/api/v1/marketplace/listings')
       .set(bearer(sellerToken))
@@ -83,7 +80,7 @@ describe('Integrations — webhooks + API keys (e2e)', () => {
 
   afterAll(async () => {
     await new Promise<void>((r) => receiver.close(() => r()));
-    await prisma.$disconnect();
+    await closeTestDb();
     await app.close();
   });
 
@@ -145,7 +142,15 @@ describe('Integrations — webhooks + API keys (e2e)', () => {
         .send({ lines: [{ listingId, qty: 4 }] })
         .expect(201);
 
-      const pending = await prisma.webhookDelivery.count({ where: { status: 'pending' } });
+      const pending = Number(
+        (
+          await testDb
+            .selectFrom('app.webhook_deliveries')
+            .select((eb) => eb.fn.countAll<string>().as('n'))
+            .where('status', '=', 'pending')
+            .executeTakeFirstOrThrow()
+        ).n,
+      );
       expect(pending).toBe(1);
 
       const result = await dispatcher.drain();
@@ -172,7 +177,7 @@ describe('Integrations — webhooks + API keys (e2e)', () => {
     });
 
     it('marks a delivery ok and leaves nothing pending', async () => {
-      const rows = await prisma.webhookDelivery.findMany();
+      const rows = await testDb.selectFrom('app.webhook_deliveries').select('status').execute();
       expect(rows.every((r) => r.status === 'ok')).toBe(true);
     });
 
@@ -180,7 +185,7 @@ describe('Integrations — webhooks + API keys (e2e)', () => {
       receiverStatus = 500;
       const before = received.length;
 
-      const order = await prisma.order.findFirstOrThrow();
+      const order = await testDb.selectFrom('app.orders').select('id').executeTakeFirstOrThrow();
       await api(app)
         .post(`/api/v1/orders/received/${order.id}/status`)
         .set(bearer(sellerToken))
@@ -191,19 +196,29 @@ describe('Integrations — webhooks + API keys (e2e)', () => {
       expect(result.failed).toBe(1);
       expect(received.length).toBe(before + 1);
 
-      const delivery = await prisma.webhookDelivery.findFirstOrThrow({
-        where: { event: 'order.status_changed' },
-      });
+      const delivery = await testDb
+        .selectFrom('app.webhook_deliveries')
+        .selectAll()
+        .where('event', '=', 'order.status_changed')
+        .executeTakeFirstOrThrow();
       expect(delivery.status).toBe('pending');
       expect(delivery.attempts).toBe(1);
-      expect(delivery.lastError).toContain('500');
-      expect(delivery.nextAt.getTime()).toBeGreaterThan(Date.now()); // backed off
+      expect(delivery.last_error).toContain('500');
+      expect(delivery.next_at.getTime()).toBeGreaterThan(Date.now()); // backed off
 
       receiverStatus = 200;
     });
 
     it('does not deliver to another tenant’s hook', async () => {
-      const foreign = await prisma.webhook.count({ where: { businessId: { not: sellerBusinessId } } });
+      const foreign = Number(
+        (
+          await testDb
+            .selectFrom('app.webhooks')
+            .select((eb) => eb.fn.countAll<string>().as('n'))
+            .where('business_id', '<>', sellerBusinessId)
+            .executeTakeFirstOrThrow()
+        ).n,
+      );
       expect(foreign).toBe(0);
       await api(app)
         .get('/api/v1/integrations/webhooks')
@@ -228,7 +243,11 @@ describe('Integrations — webhooks + API keys (e2e)', () => {
       keyId = res.body.id;
       expect(token.startsWith(res.body.prefix)).toBe(true);
 
-      const stored = await prisma.apiKey.findUniqueOrThrow({ where: { id: keyId } });
+      const stored = await testDb
+        .selectFrom('app.api_keys')
+        .selectAll()
+        .where('id', '=', keyId)
+        .executeTakeFirstOrThrow();
       expect(stored.hash).not.toContain(token);
 
       const list = await api(app)
@@ -245,8 +264,12 @@ describe('Integrations — webhooks + API keys (e2e)', () => {
         .expect(200);
       expect(res.body.items).toHaveLength(1);
 
-      const stored = await prisma.apiKey.findUniqueOrThrow({ where: { id: keyId } });
-      expect(stored.lastUsedAt).not.toBeNull();
+      const stored = await testDb
+        .selectFrom('app.api_keys')
+        .selectAll()
+        .where('id', '=', keyId)
+        .executeTakeFirstOrThrow();
+      expect(stored.last_used_at).not.toBeNull();
     });
 
     it('rejects a tampered token', async () => {

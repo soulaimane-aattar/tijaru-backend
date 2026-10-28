@@ -1,33 +1,32 @@
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import type { INestApplication } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
 
+import { closeTestDb, testDb } from './helpers/db';
 import { api, bearer, bootTestApp, login, seedFresh } from './helpers/test-app';
 
 describe('Movements (e2e)', () => {
   let app: INestApplication;
-  let prisma: PrismaClient;
   let tokens: Record<'owner' | 'stockkeeper' | 'cashier' | 'manager', string>;
   let productId: string;
   let casaId: string;
   let marrakechId: string;
 
   const stockAt = async (pid: string, whId: string): Promise<number> => {
-    const sl = await prisma.stockLevel.findUnique({
-      where: { productId_warehouseId: { productId: pid, warehouseId: whId } },
-    });
+    const sl = await testDb
+      .selectFrom('app.stock_levels')
+      .select('qty')
+      .where('productId', '=', pid)
+      .where('warehouseId', '=', whId)
+      .executeTakeFirst();
     return sl?.qty ?? 0;
   };
 
   beforeAll(async () => {
     await seedFresh();
     app = await bootTestApp();
-    prisma = new PrismaClient();
-    const casa = await prisma.warehouse.findFirstOrThrow({ where: { isDefault: true } });
-    const marrakech = await prisma.warehouse.findFirstOrThrow({
-      where: { city: 'Marrakech' },
-    });
-    const product = await prisma.product.findFirstOrThrow({ where: { sku: 'SUC-1KG' } });
+    const casa = await testDb.selectFrom('app.warehouses').select('id').where('isDefault', '=', true).executeTakeFirstOrThrow();
+    const marrakech = await testDb.selectFrom('app.warehouses').select('id').where('city', '=', 'Marrakech').executeTakeFirstOrThrow();
+    const product = await testDb.selectFrom('app.products').select('id').where('sku', '=', 'SUC-1KG').executeTakeFirstOrThrow();
     casaId = casa.id;
     marrakechId = marrakech.id;
     productId = product.id;
@@ -41,7 +40,7 @@ describe('Movements (e2e)', () => {
   });
 
   afterAll(async () => {
-    await prisma.$disconnect();
+    await closeTestDb();
     await app.close();
   });
 

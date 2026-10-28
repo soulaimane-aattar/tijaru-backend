@@ -1,12 +1,14 @@
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import type { INestApplication } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
 
+import { newId } from '../src/database/ids';
+
+import { closeTestDb, testDb } from './helpers/db';
+import { createTenant } from './helpers/tenant';
 import { api, bearer, bootTestApp, login, seedFresh } from './helpers/test-app';
 
 describe('Marketplace orders — lifecycle (e2e)', () => {
   let app: INestApplication;
-  let prisma: PrismaClient;
 
   let sellerToken: string;
   let sellerBusinessId: string;
@@ -21,41 +23,30 @@ describe('Marketplace orders — lifecycle (e2e)', () => {
   let orderNumber: string;
 
   const stockOf = async (): Promise<number> => {
-    const levels = await prisma.stockLevel.findMany({ where: { productId } });
+    const levels = await testDb
+      .selectFrom('app.stock_levels')
+      .select('qty')
+      .where('productId', '=', productId)
+      .execute();
     return levels.reduce((s, l) => s + l.qty, 0);
   };
 
   /** Spins up a tenant with the marketplace module and an owner login. */
-  const makeTenant = async (name: string, ice: string, email: string): Promise<string> => {
-    const seeded = await prisma.user.findFirstOrThrow({
-      where: { email: 'youssef@elamrani.ma' },
-    });
-    const biz = await prisma.business.create({ data: { name, ice } });
-    await prisma.businessModule.create({
-      data: { businessId: biz.id, moduleId: 'marketplace', active: true },
-    });
-    await prisma.user.create({
-      data: {
-        businessId: biz.id,
-        name: `${name} Owner`,
-        email,
-        passwordHash: seeded.passwordHash,
-        role: 'owner',
-      },
-    });
-    return biz.id;
-  };
+  const makeTenant = (name: string, ice: string, email: string): Promise<string> =>
+    createTenant({ name, ice, moduleId: 'marketplace', email });
 
   beforeAll(async () => {
     await seedFresh();
     app = await bootTestApp();
-    prisma = new PrismaClient();
 
     sellerToken = (await login(app, 'owner')).accessToken;
-    const sellerOwner = await prisma.user.findFirstOrThrow({
-      where: { email: 'youssef@elamrani.ma' },
-    });
-    sellerBusinessId = sellerOwner.businessId;
+    sellerBusinessId = (
+      await testDb
+        .selectFrom('app_auth.users')
+        .select('business_id')
+        .where('email', '=', 'youssef@elamrani.ma')
+        .executeTakeFirstOrThrow()
+    ).business_id;
 
     buyerBusinessId = await makeTenant('Acheteur SARL', '777777777777777', 'buyer@example.ma');
     buyerToken = (await login(app, 'buyer@example.ma')).accessToken;
@@ -64,23 +55,33 @@ describe('Marketplace orders — lifecycle (e2e)', () => {
     thirdToken = (await login(app, 'third@example.ma')).accessToken;
 
     // Seller inventory: a product with a known stock level in one warehouse.
-    const warehouse = await prisma.warehouse.findFirstOrThrow({
-      where: { businessId: sellerBusinessId, active: true },
-      orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
-    });
+    const warehouse = await testDb
+      .selectFrom('app.warehouses')
+      .select('id')
+      .where('business_id', '=', sellerBusinessId)
+      .where('active', '=', true)
+      .orderBy('isDefault', 'desc')
+      .orderBy('createdAt', 'asc')
+      .executeTakeFirstOrThrow();
     warehouseId = warehouse.id;
-    const product = await prisma.product.findFirstOrThrow({
-      where: { businessId: sellerBusinessId, deletedAt: null },
-    });
+    const product = await testDb
+      .selectFrom('app.products')
+      .select('id')
+      .where('business_id', '=', sellerBusinessId)
+      .where('deletedAt', 'is', null)
+      .executeTakeFirstOrThrow();
     productId = product.id;
-    await prisma.stockLevel.deleteMany({ where: { productId } });
-    await prisma.stockLevel.create({
-      data: { productId, warehouseId, businessId: sellerBusinessId, qty: 500 },
-    });
+    await testDb.deleteFrom('app.stock_levels').where('productId', '=', productId).execute();
+    await testDb
+      .insertInto('app.stock_levels')
+      .values({ productId, warehouseId, businessId: sellerBusinessId, qty: 500, updatedAt: new Date() })
+      .execute();
 
-    const group = await prisma.priceGroup.create({
-      data: { businessId: sellerBusinessId, name: 'Gros' },
-    });
+    const group = await testDb
+      .insertInto('app.price_groups')
+      .values({ id: newId(), business_id: sellerBusinessId, name: 'Gros', updatedAt: new Date() })
+      .returning('id')
+      .executeTakeFirstOrThrow();
     const listing = await api(app)
       .post('/api/v1/marketplace/listings')
       .set(bearer(sellerToken))
@@ -98,18 +99,21 @@ describe('Marketplace orders — lifecycle (e2e)', () => {
     listingId = listing.body.id;
 
     // Seller files the buyer under "Gros".
-    await prisma.customer.create({
-      data: {
-        businessId: sellerBusinessId,
+    await testDb
+      .insertInto('app.customers')
+      .values({
+        id: newId(),
+        business_id: sellerBusinessId,
         name: 'Acheteur SARL',
-        buyerBusinessId,
-        priceGroupId: group.id,
-      },
-    });
+        buyer_business_id: buyerBusinessId,
+        price_group_id: group.id,
+        updatedAt: new Date(),
+      })
+      .execute();
   });
 
   afterAll(async () => {
-    await prisma.$disconnect();
+    await closeTestDb();
     await app.close();
   });
 
@@ -150,10 +154,13 @@ describe('Marketplace orders — lifecycle (e2e)', () => {
     });
 
     it('notifies the seller', async () => {
-      const notif = await prisma.notification.findFirst({
-        where: { businessId: sellerBusinessId, type: 'orderReceived' },
-        orderBy: { date: 'desc' },
-      });
+      const notif = await testDb
+        .selectFrom('app.notifications')
+        .select('title')
+        .where('business_id', '=', sellerBusinessId)
+        .where('type', '=', 'orderReceived')
+        .orderBy('date', 'desc')
+        .executeTakeFirst();
       expect(notif?.title).toContain(orderNumber);
     });
 
@@ -230,16 +237,22 @@ describe('Marketplace orders — lifecycle (e2e)', () => {
         .expect(201);
 
       expect(await stockOf()).toBe(350);
-      const movement = await prisma.movement.findFirst({
-        where: { businessId: sellerBusinessId, ref: orderNumber },
-      });
+      const movement = await testDb
+        .selectFrom('app.movements')
+        .selectAll()
+        .where('business_id', '=', sellerBusinessId)
+        .where('ref', '=', orderNumber)
+        .executeTakeFirst();
       expect(movement).toMatchObject({ type: 'out', reason: 'vente', qty: 150 });
     });
 
     it('notifies the buyer of each status change', async () => {
-      const notifs = await prisma.notification.findMany({
-        where: { businessId: buyerBusinessId, type: 'orderStatus' },
-      });
+      const notifs = await testDb
+        .selectFrom('app.notifications')
+        .select('id')
+        .where('business_id', '=', buyerBusinessId)
+        .where('type', '=', 'orderStatus')
+        .execute();
       expect(notifs).toHaveLength(3); // confirmed, in_progress, shipped
     });
 
@@ -292,10 +305,11 @@ describe('Marketplace orders — lifecycle (e2e)', () => {
     });
 
     it('refuses to order from a seller whose subscription expired', async () => {
-      await prisma.business.update({
-        where: { id: sellerBusinessId },
-        data: { plan: 'expired' },
-      });
+      await testDb
+        .updateTable('app.businesses')
+        .set({ plan: 'expired' })
+        .where('id', '=', sellerBusinessId)
+        .execute();
 
       await api(app)
         .post('/api/v1/orders')
@@ -303,10 +317,11 @@ describe('Marketplace orders — lifecycle (e2e)', () => {
         .send({ lines: [{ listingId, qty: 10 }] })
         .expect(404); // the listing is not orderable, so it does not resolve
 
-      await prisma.business.update({
-        where: { id: sellerBusinessId },
-        data: { plan: 'active' },
-      });
+      await testDb
+        .updateTable('app.businesses')
+        .set({ plan: 'active' })
+        .where('id', '=', sellerBusinessId)
+        .execute();
     });
 
     it('lets the buyer cancel while pending', async () => {
@@ -322,10 +337,13 @@ describe('Marketplace orders — lifecycle (e2e)', () => {
         .expect(201);
       expect(cancelled.body.status).toBe('cancelled');
 
-      const sellerNotif = await prisma.notification.findFirst({
-        where: { businessId: sellerBusinessId, type: 'orderStatus' },
-        orderBy: { date: 'desc' },
-      });
+      const sellerNotif = await testDb
+        .selectFrom('app.notifications')
+        .select('body')
+        .where('business_id', '=', sellerBusinessId)
+        .where('type', '=', 'orderStatus')
+        .orderBy('date', 'desc')
+        .executeTakeFirst();
       expect(sellerNotif?.body).toContain('annulé');
     });
 

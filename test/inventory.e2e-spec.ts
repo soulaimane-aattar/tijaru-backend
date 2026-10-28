@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import type { INestApplication } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
 
+import { closeTestDb, testDb } from './helpers/db';
 import { api, bearer, bootTestApp, login, seedFresh } from './helpers/test-app';
 
 /**
@@ -12,7 +12,6 @@ import { api, bearer, bootTestApp, login, seedFresh } from './helpers/test-app';
  */
 describe('Inventory counts — écarts (e2e)', () => {
   let app: INestApplication;
-  let prisma: PrismaClient;
   let tokens: Record<'owner' | 'stockkeeper' | 'cashier', string>;
   let sucId: string;
   let theId: string;
@@ -20,18 +19,21 @@ describe('Inventory counts — écarts (e2e)', () => {
   let casaId: string;
 
   const stockAt = async (pid: string, whId: string): Promise<number> => {
-    const sl = await prisma.stockLevel.findUnique({
-      where: { productId_warehouseId: { productId: pid, warehouseId: whId } },
-    });
+    const sl = await testDb
+      .selectFrom('app.stock_levels')
+      .select('qty')
+      .where('productId', '=', pid)
+      .where('warehouseId', '=', whId)
+      .executeTakeFirst();
     return sl?.qty ?? 0;
   };
 
   const setStock = async (pid: string, qty: number): Promise<void> => {
-    await prisma.stockLevel.upsert({
-      where: { productId_warehouseId: { productId: pid, warehouseId: casaId } },
-      create: { productId: pid, warehouseId: casaId, businessId, qty },
-      update: { qty },
-    });
+    await testDb
+      .insertInto('app.stock_levels')
+      .values({ productId: pid, warehouseId: casaId, businessId, qty, updatedAt: new Date() })
+      .onConflict((oc) => oc.columns(['productId', 'warehouseId']).doUpdateSet({ qty }))
+      .execute();
   };
 
   const startCount = () =>
@@ -45,21 +47,32 @@ describe('Inventory counts — écarts (e2e)', () => {
 
   const movementsByRef = async (countId: string) => {
     const ref = `INV-${countId.slice(-6).toUpperCase()}`;
-    return prisma.movement.findMany({ where: { ref } });
+    return testDb.selectFrom('app.movements').selectAll().where('ref', '=', ref).execute();
   };
 
   beforeAll(async () => {
     await seedFresh();
     app = await bootTestApp();
-    prisma = new PrismaClient();
 
-    const casa = await prisma.warehouse.findFirstOrThrow({ where: { isDefault: true } });
+    const casa = await testDb
+      .selectFrom('app.warehouses')
+      .select('id')
+      .where('isDefault', '=', true)
+      .executeTakeFirstOrThrow();
     casaId = casa.id;
-    const suc = await prisma.product.findFirstOrThrow({ where: { sku: 'SUC-1KG' } });
-    const the = await prisma.product.findFirstOrThrow({ where: { sku: 'THE-200' } });
+    const suc = await testDb
+      .selectFrom('app.products')
+      .select(['id', 'business_id'])
+      .where('sku', '=', 'SUC-1KG')
+      .executeTakeFirstOrThrow();
+    const the = await testDb
+      .selectFrom('app.products')
+      .select('id')
+      .where('sku', '=', 'THE-200')
+      .executeTakeFirstOrThrow();
     sucId = suc.id;
     theId = the.id;
-    businessId = suc.businessId;
+    businessId = suc.business_id;
 
     tokens = {
       owner: (await login(app, 'owner')).accessToken,
@@ -69,7 +82,7 @@ describe('Inventory counts — écarts (e2e)', () => {
   });
 
   afterAll(async () => {
-    await prisma.$disconnect();
+    await closeTestDb();
     await app.close();
   });
 
