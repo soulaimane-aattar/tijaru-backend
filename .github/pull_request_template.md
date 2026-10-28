@@ -7,7 +7,7 @@
 - [ ] `npm run typecheck` passes
 - [ ] `npm run lint` passes
 - [ ] `npm test` passes
-- [ ] Prisma migrations are valid (`npx prisma migrate deploy`)
+- [ ] Sqitch migrations deploy + verify (`make db-up`)
 - [ ] No secrets or `.env` files committed
 
 ## CI Status

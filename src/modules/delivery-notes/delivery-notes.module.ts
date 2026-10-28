@@ -10,9 +10,9 @@ import {
   DeliveryPdfInfoLookup,
   ProductPriceLookup,
 } from './domain/delivery-notes.repository';
-import { PrismaDeliveryNotesRepository } from './infrastructure/prisma-delivery-notes.repository';
-import { PrismaDeliveryPdfInfoLookup } from './infrastructure/prisma-delivery-pdf-info-lookup';
-import { PrismaProductPriceLookup } from './infrastructure/prisma-product-price-lookup';
+import { KyselyDeliveryNotesRepository } from './infrastructure/kysely-delivery-notes.repository';
+import { KyselyDeliveryPdfInfoLookup } from './infrastructure/kysely-delivery-pdf-info-lookup';
+import { KyselyProductPriceLookup } from './infrastructure/kysely-product-price-lookup';
 
 @Module({
   imports: [StockLedgerModule],
@@ -20,9 +20,9 @@ import { PrismaProductPriceLookup } from './infrastructure/prisma-product-price-
   providers: [
     DeliveryNotesService,
     DeliveryNotePdfService,
-    { provide: DeliveryNotesRepository, useClass: PrismaDeliveryNotesRepository },
-    { provide: ProductPriceLookup, useClass: PrismaProductPriceLookup },
-    { provide: DeliveryPdfInfoLookup, useClass: PrismaDeliveryPdfInfoLookup },
+    { provide: DeliveryNotesRepository, useClass: KyselyDeliveryNotesRepository },
+    { provide: ProductPriceLookup, useClass: KyselyProductPriceLookup },
+    { provide: DeliveryPdfInfoLookup, useClass: KyselyDeliveryPdfInfoLookup },
   ],
   exports: [DeliveryNotesService, DeliveryNotePdfService, DeliveryPdfInfoLookup],
 })

@@ -1,12 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import type { INestApplication } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
 
+import { closeTestDb, testDb } from './helpers/db';
 import { api, bearer, bootTestApp, login, seedFresh } from './helpers/test-app';
 
 describe('Admin (e2e) — acceptance §13 #4 to #7', () => {
   let app: INestApplication;
-  let prisma: PrismaClient;
   let ownerToken: string;
   let managerToken: string;
   let hassanId: string;
@@ -14,14 +13,19 @@ describe('Admin (e2e) — acceptance §13 #4 to #7', () => {
   beforeAll(async () => {
     await seedFresh();
     app = await bootTestApp();
-    prisma = new PrismaClient();
     ownerToken = (await login(app, 'owner')).accessToken;
     managerToken = (await login(app, 'manager')).accessToken;
-    hassanId = (await prisma.user.findFirstOrThrow({ where: { email: 'hassan@elamrani.ma' } })).id;
+    hassanId = (
+      await testDb
+        .selectFrom('app_auth.users')
+        .select('id')
+        .where('email', '=', 'hassan@elamrani.ma')
+        .executeTakeFirstOrThrow()
+    ).id;
   });
 
   afterAll(async () => {
-    await prisma.$disconnect();
+    await closeTestDb();
     await app.close();
   });
 
@@ -41,7 +45,7 @@ describe('Admin (e2e) — acceptance §13 #4 to #7', () => {
   describe('Acceptance #4 — Manager role toggle off reports.view', () => {
     it('owner toggles reports.view off; matrix reflects change', async () => {
       // Before: manager has reports.view (default §6.2)
-      const before = await api(app).get('/api/v1/auth/permissions').expect(200);
+      const before = await api(app).get('/api/v1/auth/permissions').set(bearer(ownerToken)).expect(200);
       expect(before.body.matrix.manager).toContain('reports.view');
 
       await api(app)
@@ -50,7 +54,7 @@ describe('Admin (e2e) — acceptance §13 #4 to #7', () => {
         .send({ capabilities: { 'reports.view': false } })
         .expect(200);
 
-      const after = await api(app).get('/api/v1/auth/permissions').expect(200);
+      const after = await api(app).get('/api/v1/auth/permissions').set(bearer(ownerToken)).expect(200);
       expect(after.body.matrix.manager).not.toContain('reports.view');
       expect(after.body.matrix.manager).toContain('products.view'); // others intact
     });
@@ -83,9 +87,12 @@ describe('Admin (e2e) — acceptance §13 #4 to #7', () => {
         .set(bearer(ownerToken))
         .send({ capabilities: { 'reports.view': true } })
         .expect(200);
-      const customizations = await prisma.roleCustomization.findMany({
-        where: { role: 'manager', capId: 'reports.view' },
-      });
+      const customizations = await testDb
+        .selectFrom('app_auth.role_customizations')
+        .selectAll()
+        .where('role', '=', 'manager')
+        .where('capId', '=', 'reports.view')
+        .execute();
       expect(customizations).toHaveLength(0);
     });
   });
@@ -126,9 +133,12 @@ describe('Admin (e2e) — acceptance §13 #4 to #7', () => {
         .set(bearer(ownerToken))
         .send({ overrides: { 'reports.view': 'role' } })
         .expect(200);
-      const overrides = await prisma.userOverride.findMany({
-        where: { userId: hassanId, capId: 'reports.view' },
-      });
+      const overrides = await testDb
+        .selectFrom('app_auth.user_overrides')
+        .selectAll()
+        .where('userId', '=', hassanId)
+        .where('capId', '=', 'reports.view')
+        .execute();
       expect(overrides).toHaveLength(0);
     });
   });

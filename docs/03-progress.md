@@ -23,6 +23,14 @@
 
 ## Log
 
+### 2026-10-28 — Prisma → Kysely complete (runtime, seeds, e2e, deploy files)
+
+- **Step:** all ~90 `src/` files off Prisma (5 parallel clusters) — `Db` service (`q`/`admin`/`tx`/`scoped`), `TenantInterceptor` request txn, `newId()`, `@SkipTenantTx()` on expenses scan, `DB_POOL_MAX`, prod boot warning for unset `DATABASE_URL_APP`, typed 403 when no tenant. Migration `008-fix-updated-at-triggers` (007 put `set_updated_at` on categories/activities/order_lines which have no `updatedAt` → every UPDATE failed). Seeds + 14 e2e specs ported (`prisma/db.ts`, `test/helpers/{db,tenant}.ts`). Removed `@prisma/client`/`prisma`/`schema.prisma`; Dockerfiles no longer run prisma; Makefile `dev-migrate`→`db-up`; README/DEPLOY.prod.md/.env.prod.example updated. `GET /auth/permissions` stays public but scopes to tenant with a valid bearer. Line deletes in invoices/estimates/delivery-notes now filter `business_id`.
+- **Result:** ✅ `tsc` clean, eslint 0 errors, jest 584/584, e2e 230/230 (17 suites) as superuser AND with `DATABASE_URL_APP=tijaru_app` (RLS enforced; tijaru_app sees 0 `app.products` without tenant ctx vs 17 as owner). Seed row counts identical to old Prisma seed. Bugs only found by booting the app: circular import db.service↔kysely.module; app has `ENV` token not `ConfigService`; uuid ids rejected by `.cuid()` DTOs; .env no longer auto-loaded once seed dropped PrismaClient (`dotenv/config` in jest-e2e).
+- **Decisions:** D-042, D-043.
+- **⚠️ Open:** set `DATABASE_URL_APP` in prod `.env.prod` (tijaru_app login) — until then prod runs as owner, RLS NOT enforced; `DATABASE_URL` must stay superuser/BYPASSRLS (`db.admin`, 005 uses FORCE RLS). Docker images not built here. Marketplace webhook/notification rows via `db.admin` commit even if request txn rolls back later; order reads use `db.admin` (order_lines RLS hides buyer). One e2e (pos) failed once under RLS run, not reproducible (passed alone + full rerun) — watch for flake. Behaviour changes: admin sessions list/revoke tenant-scoped; `users.update` no longer returns `passwordHash`; POS receipt `lineTotal` float-rounded.
+- **Next:** set `DATABASE_URL_APP` in prod + `make deploy` (image rebuilt without Prisma); `make prod-db-up` for 008.
+
 ### 2026-10-27 — Claude Code agents + skills + hooks (macompta-inspired)
 
 - **Step:** Created `.claude/agents/`, `.claude/skills/`, `.claude/hooks/`, and `.claude/settings.json` adapted from macompta project patterns for Tijaru's stack (NestJS + Kysely + Sqitch backend, React web, Expo mobile).

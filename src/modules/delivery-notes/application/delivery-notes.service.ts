@@ -3,7 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { DocumentAuditService } from '../../../common/audit/document-audit.service';
 import type { AuthUser } from '../../../common/auth/auth-user.type';
 import { DomainError, NotFoundError, ValidationError } from '../../../common/errors';
-import { PrismaService } from '../../../common/prisma.service';
+import { Db } from '../../../database';
 import { StockLedgerService } from '../../stock-ledger/application/stock-ledger.service';
 import type { LedgerLine } from '../../stock-ledger/domain/stock-ledger.types';
 import {
@@ -67,7 +67,7 @@ export class DeliveryNotesService {
     private readonly repo: DeliveryNotesRepository,
     private readonly products: ProductPriceLookup,
     private readonly ledger: StockLedgerService,
-    private readonly prisma: PrismaService,
+    private readonly db: Db,
     private readonly audit: DocumentAuditService,
   ) {}
 
@@ -328,17 +328,18 @@ export class DeliveryNotesService {
     if (!inv) throw new NotFoundError('DeliveryNote', id);
     if (inv.signed) return;
 
-    const biz = await this.prisma.business.findUnique({
-      where: { id: businessId },
-      select: { bonsAffectStock: true },
-    });
-    const stockEnabled = biz?.bonsAffectStock ?? true;
+    const biz = await this.db.q
+      .selectFrom('app.businesses')
+      .select('bons_affect_stock')
+      .where('id', '=', businessId)
+      .executeTakeFirst();
+    const stockEnabled = biz?.bons_affect_stock ?? true;
 
-    await this.prisma.$transaction(async (tx) => {
+    await this.db.tx(async () => {
       if (stockEnabled && inv.type !== 'order') {
         const linesToPost = inv.lines.filter((l) => l.sent > 0);
         if (linesToPost.length > 0) {
-          const warehouseId = await this.repo.findDefaultWarehouseId(businessId, tx);
+          const warehouseId = await this.repo.findDefaultWarehouseId(businessId);
           if (!warehouseId) throw new ValidationError('no_default_warehouse');
           const direction = inv.type === 'out' ? -1 : 1;
           const reason = inv.type === 'out' ? 'vente' : inv.type === 'in_' ? 'achat' : 'retour';
@@ -347,20 +348,17 @@ export class DeliveryNotesService {
             warehouseId,
             delta: direction * l.sent,
           }));
-          await this.ledger.post(
-            {
-              businessId,
-              userId: actor.id,
-              type: direction === -1 ? 'out' : 'in',
-              reason,
-              ref: inv.number,
-              lines,
-            },
-            tx,
-          );
+          await this.ledger.post({
+            businessId,
+            userId: actor.id,
+            type: direction === -1 ? 'out' : 'in',
+            reason,
+            ref: inv.number,
+            lines,
+          });
         }
       }
-      await this.repo.markSigned(id, new Date(), tx);
+      await this.repo.markSigned(id, new Date());
     });
   }
 

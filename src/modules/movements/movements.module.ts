@@ -4,7 +4,7 @@ import { StockLedgerModule } from '../stock-ledger/stock-ledger.module';
 
 import { MovementsService } from './application/movements.service';
 import { MovementsRepository } from './domain/movements.repository';
-import { PrismaMovementsRepository } from './infrastructure/prisma-movements.repository';
+import { KyselyMovementsRepository } from './infrastructure/kysely-movements.repository';
 import { MovementsController } from './movements.controller';
 
 @Module({
@@ -12,7 +12,7 @@ import { MovementsController } from './movements.controller';
   controllers: [MovementsController],
   providers: [
     MovementsService,
-    { provide: MovementsRepository, useClass: PrismaMovementsRepository },
+    { provide: MovementsRepository, useClass: KyselyMovementsRepository },
   ],
   exports: [MovementsService],
 })

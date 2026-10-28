@@ -1,5 +1,4 @@
 import { ConflictError, ForbiddenError } from '../../../common/errors';
-import type { PrismaService } from '../../../common/prisma.service';
 import type { TenantContext } from '../../../common/tenant/tenant-context';
 import type { WarehousesRepository } from '../domain/warehouses.repository';
 import type { CreateWarehouseInput } from '../dto/warehouse.dto';
@@ -15,6 +14,7 @@ const repo = (over: Partial<jest.Mocked<WarehousesRepository>> = {}): jest.Mocke
     exists: jest.fn().mockResolvedValue(true),
     countActive: jest.fn().mockResolvedValue(0),
     countNonZeroStock: jest.fn().mockResolvedValue(0),
+    isMultiWarehouse: jest.fn().mockResolvedValue(true),
     create: jest.fn().mockResolvedValue({ id: 'wh1' }),
     update: jest.fn(),
     softDelete: jest.fn(),
@@ -23,11 +23,6 @@ const repo = (over: Partial<jest.Mocked<WarehousesRepository>> = {}): jest.Mocke
 
 const tenant = (id: string | undefined): TenantContext =>
   ({ getBusinessId: () => id }) as unknown as TenantContext;
-
-const prisma = (multiWarehouse: boolean): PrismaService =>
-  ({
-    business: { findUnique: jest.fn().mockResolvedValue({ multiWarehouse }) },
-  }) as unknown as PrismaService;
 
 const input: CreateWarehouseInput = {
   name: 'Main',
@@ -39,31 +34,30 @@ const input: CreateWarehouseInput = {
 describe('WarehousesService.create — multi-warehouse gating', () => {
   it('allows create when multiWarehouse=true regardless of count', async () => {
     const r = repo({ countActive: jest.fn().mockResolvedValue(5) as never });
-    const svc = new WarehousesService(r, prisma(true), tenant(BID));
+    const svc = new WarehousesService(r, tenant(BID));
     await expect(svc.create(input)).resolves.toEqual({ id: 'wh1' });
     expect(r.create).toHaveBeenCalledTimes(1);
   });
 
   it('allows first warehouse when multiWarehouse=false', async () => {
-    const r = repo({ countActive: jest.fn().mockResolvedValue(0) as never });
-    const svc = new WarehousesService(r, prisma(false), tenant(BID));
+    const r = repo({ countActive: jest.fn().mockResolvedValue(0) as never, isMultiWarehouse: jest.fn().mockResolvedValue(false) as never });
+    const svc = new WarehousesService(r, tenant(BID));
     await expect(svc.create(input)).resolves.toEqual({ id: 'wh1' });
     expect(r.create).toHaveBeenCalledTimes(1);
   });
 
   it('rejects second warehouse when multiWarehouse=false', async () => {
-    const r = repo({ countActive: jest.fn().mockResolvedValue(1) as never });
-    const svc = new WarehousesService(r, prisma(false), tenant(BID));
+    const r = repo({ countActive: jest.fn().mockResolvedValue(1) as never, isMultiWarehouse: jest.fn().mockResolvedValue(false) as never });
+    const svc = new WarehousesService(r, tenant(BID));
     await expect(svc.create(input)).rejects.toBeInstanceOf(ForbiddenError);
     expect(r.create).not.toHaveBeenCalled();
   });
 
   it('skips gating when tenant context missing', async () => {
     const r = repo();
-    const p = prisma(false);
-    const svc = new WarehousesService(r, p, tenant(undefined));
+    const svc = new WarehousesService(r, tenant(undefined));
     await svc.create(input);
-    expect(p.business.findUnique).not.toHaveBeenCalled();
+    expect(r.isMultiWarehouse).not.toHaveBeenCalled();
     expect(r.create).toHaveBeenCalledTimes(1);
   });
 });
@@ -71,14 +65,14 @@ describe('WarehousesService.create — multi-warehouse gating', () => {
 describe('WarehousesService.remove — non-empty warehouse guard', () => {
   it('delete rejects when any stock level qty > 0 in the warehouse', async () => {
     const r = repo({ countNonZeroStock: jest.fn().mockResolvedValue(1) as never });
-    const svc = new WarehousesService(r, prisma(true), tenant(BID));
+    const svc = new WarehousesService(r, tenant(BID));
     await expect(svc.remove('wh1')).rejects.toBeInstanceOf(ConflictError);
     expect(r.softDelete).not.toHaveBeenCalled();
   });
 
   it('delete succeeds when all stock levels are zero', async () => {
     const r = repo({ countNonZeroStock: jest.fn().mockResolvedValue(0) as never });
-    const svc = new WarehousesService(r, prisma(true), tenant(BID));
+    const svc = new WarehousesService(r, tenant(BID));
     await expect(svc.remove('wh1')).resolves.toBeUndefined();
     expect(r.softDelete).toHaveBeenCalledWith('wh1');
   });

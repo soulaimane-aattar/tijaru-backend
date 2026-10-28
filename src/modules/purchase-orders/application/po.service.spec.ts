@@ -1,5 +1,5 @@
 import { DomainError, NotFoundError } from '../../../common/errors';
-import type { PrismaService } from '../../../common/prisma.service';
+import type { Db } from '../../../database';
 import type { StockLedgerService } from '../../stock-ledger/application/stock-ledger.service';
 import type { POView } from '../domain/po.repository';
 import type { PurchaseOrdersRepository } from '../domain/po.repository';
@@ -54,13 +54,10 @@ const mockLedger = (): jest.Mocked<StockLedgerService> =>
     post: jest.fn().mockResolvedValue([{ id: 'm1' }]),
   }) as unknown as jest.Mocked<StockLedgerService>;
 
-/** A fake `tx` handle that's distinguishable by identity from `prisma` itself. */
-const FAKE_TX = { __tx: true } as never;
-
-const mockPrisma = (): jest.Mocked<PrismaService> =>
+const mockDb = (): jest.Mocked<Db> =>
   ({
-    $transaction: jest.fn().mockImplementation((fn: (tx: unknown) => unknown) => fn(FAKE_TX)),
-  }) as unknown as jest.Mocked<PrismaService>;
+    tx: jest.fn().mockImplementation((fn: (q: unknown) => unknown) => fn({})),
+  }) as unknown as jest.Mocked<Db>;
 
 const receiveInput = (lines: ReceivePOInput['lines']): ReceivePOInput => ({ lines });
 
@@ -68,7 +65,7 @@ describe('POService.patch', () => {
   it('replaces lines on a draft PO', async () => {
     const repo = mockRepo();
     repo.findStatus.mockResolvedValue('draft');
-    const svc = new POService(repo, mockLedger(), mockPrisma());
+    const svc = new POService(repo, mockLedger(), mockDb());
     const lines = [{ productId: PID, qty: 3, price: 10, vat: 20 as const }];
     await svc.patch(PO_ID, { lines });
     expect(repo.update).toHaveBeenCalledWith(PO_ID, { lines });
@@ -77,7 +74,7 @@ describe('POService.patch', () => {
   it('rejects line edits on a sent PO (not_draft)', async () => {
     const repo = mockRepo();
     repo.findStatus.mockResolvedValue('sent');
-    const svc = new POService(repo, mockLedger(), mockPrisma());
+    const svc = new POService(repo, mockLedger(), mockDb());
     await expect(
       svc.patch(PO_ID, { lines: [{ productId: PID, qty: 1, price: 1, vat: 0 as const }] }),
     ).rejects.toBeInstanceOf(DomainError);
@@ -87,7 +84,7 @@ describe('POService.patch', () => {
   it('still allows status/notes on a sent PO', async () => {
     const repo = mockRepo();
     repo.findStatus.mockResolvedValue('sent');
-    const svc = new POService(repo, mockLedger(), mockPrisma());
+    const svc = new POService(repo, mockLedger(), mockDb());
     await svc.patch(PO_ID, { status: 'cancelled', notes: 'n' });
     expect(repo.update).toHaveBeenCalledWith(PO_ID, { status: 'cancelled', notes: 'n' });
   });
@@ -97,8 +94,8 @@ describe('POService.receive', () => {
   it('receive posts ledger lines with unitCost from PO line', async () => {
     const repo = mockRepo();
     const ledger = mockLedger();
-    const prisma = mockPrisma();
-    const svc = new POService(repo, ledger, prisma);
+    const db = mockDb();
+    const svc = new POService(repo, ledger, db);
 
     await svc.receive(PO_ID, receiveInput([{ lineId: LINE_ID, qty: 5 }]), actor);
 
@@ -113,7 +110,6 @@ describe('POService.receive', () => {
           expect.objectContaining({ productId: PID, warehouseId: WH, delta: 5, unitCost: 12.5 }),
         ]),
       }),
-      FAKE_TX,
     );
   });
 
@@ -121,16 +117,15 @@ describe('POService.receive', () => {
     const repo = mockRepo();
     repo.findLineTotals.mockResolvedValue([{ qty: 5, received: 5 }]);
     const ledger = mockLedger();
-    const prisma = mockPrisma();
-    const svc = new POService(repo, ledger, prisma);
+    const db = mockDb();
+    const svc = new POService(repo, ledger, db);
 
     await svc.receive(PO_ID, receiveInput([{ lineId: LINE_ID, qty: 5 }]), actor);
 
-    expect(repo.incrementLineReceived).toHaveBeenCalledWith(LINE_ID, 5, FAKE_TX);
-    expect(repo.updateStatus).toHaveBeenCalledWith(PO_ID, 'received', FAKE_TX);
+    expect(repo.incrementLineReceived).toHaveBeenCalledWith(LINE_ID, 5);
+    expect(repo.updateStatus).toHaveBeenCalledWith(PO_ID, 'received');
     expect(repo.logActivity).toHaveBeenCalledWith(
       expect.objectContaining({ userId: actor.id, action: 'po.received' }),
-      FAKE_TX,
     );
   });
 
@@ -141,8 +136,8 @@ describe('POService.receive', () => {
     );
     repo.findLineTotals.mockResolvedValue([{ qty: 10, received: 4 }]);
     const ledger = mockLedger();
-    const prisma = mockPrisma();
-    const svc = new POService(repo, ledger, prisma);
+    const db = mockDb();
+    const svc = new POService(repo, ledger, db);
 
     await svc.receive(PO_ID, receiveInput([{ lineId: LINE_ID, qty: 4 }]), actor);
 
@@ -150,9 +145,8 @@ describe('POService.receive', () => {
       expect.objectContaining({
         lines: expect.arrayContaining([expect.objectContaining({ delta: 4, unitCost: 3 })]),
       }),
-      FAKE_TX,
     );
-    expect(repo.updateStatus).toHaveBeenCalledWith(PO_ID, 'partiallyReceived', FAKE_TX);
+    expect(repo.updateStatus).toHaveBeenCalledWith(PO_ID, 'partiallyReceived');
   });
 
   it('rejects over-receiving beyond the remaining qty and posts nothing', async () => {
@@ -161,23 +155,23 @@ describe('POService.receive', () => {
       basePO({ lines: [{ id: LINE_ID, productId: PID, qty: 5, received: 3 }] as never }),
     );
     const ledger = mockLedger();
-    const prisma = mockPrisma();
-    const svc = new POService(repo, ledger, prisma);
+    const db = mockDb();
+    const svc = new POService(repo, ledger, db);
 
     await expect(
       svc.receive(PO_ID, receiveInput([{ lineId: LINE_ID, qty: 3 }]), actor),
     ).rejects.toBeInstanceOf(DomainError);
 
     expect(ledger.post).not.toHaveBeenCalled();
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(db.tx).not.toHaveBeenCalled();
   });
 
   it('rejects receiving a cancelled PO', async () => {
     const repo = mockRepo();
     repo.findWithLines.mockResolvedValue(basePO({ status: 'cancelled' }));
     const ledger = mockLedger();
-    const prisma = mockPrisma();
-    const svc = new POService(repo, ledger, prisma);
+    const db = mockDb();
+    const svc = new POService(repo, ledger, db);
 
     await expect(
       svc.receive(PO_ID, receiveInput([{ lineId: LINE_ID, qty: 1 }]), actor),
@@ -190,8 +184,8 @@ describe('POService.receive', () => {
     const repo = mockRepo();
     repo.findWithLines.mockResolvedValue(null);
     const ledger = mockLedger();
-    const prisma = mockPrisma();
-    const svc = new POService(repo, ledger, prisma);
+    const db = mockDb();
+    const svc = new POService(repo, ledger, db);
 
     await expect(
       svc.receive(PO_ID, receiveInput([{ lineId: LINE_ID, qty: 1 }]), actor),
@@ -201,8 +195,8 @@ describe('POService.receive', () => {
   it('throws NotFoundError when a receipt line id is not part of the PO', async () => {
     const repo = mockRepo();
     const ledger = mockLedger();
-    const prisma = mockPrisma();
-    const svc = new POService(repo, ledger, prisma);
+    const db = mockDb();
+    const svc = new POService(repo, ledger, db);
 
     await expect(
       svc.receive(PO_ID, receiveInput([{ lineId: LINE_ID2, qty: 1 }]), actor),
@@ -220,8 +214,8 @@ describe('POService.receive', () => {
       }),
     );
     const ledger = mockLedger();
-    const prisma = mockPrisma();
-    const svc = new POService(repo, ledger, prisma);
+    const db = mockDb();
+    const svc = new POService(repo, ledger, db);
 
     await svc.receive(
       PO_ID,
@@ -239,7 +233,6 @@ describe('POService.receive', () => {
           expect.objectContaining({ productId: PID2, delta: 2, unitCost: 7 }),
         ],
       }),
-      FAKE_TX,
     );
   });
 });

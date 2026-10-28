@@ -1,7 +1,7 @@
 /**
  * Port: persistence contract for the warehouses business logic.
  *
- * The application service depends on this abstraction only; the Prisma
+ * The application service depends on this abstraction only; the Kysely
  * implementation lives in `../infrastructure`. The abstract class doubles as
  * the Nest injection token (interfaces are erased at runtime).
  */
@@ -26,6 +26,9 @@ export abstract class WarehousesRepository {
 
   /** Full detail payload (manager + assigned users) or null. */
   abstract findDetail(id: string): Promise<unknown | null>;
+
+  /** Current business's `multiWarehouse` flag; undefined when the business row is not found. */
+  abstract isMultiWarehouse(): Promise<boolean | undefined>;
 
   /** True when a non-deleted warehouse with this id exists. */
   abstract exists(id: string): Promise<boolean>;

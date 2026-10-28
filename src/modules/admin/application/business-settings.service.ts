@@ -1,16 +1,16 @@
 import { Injectable } from '@nestjs/common';
 
 import { DomainError, ValidationError } from '../../../common/errors';
-import { PrismaService } from '../../../common/prisma.service';
 import { LocalStorageService } from '../../../common/storage/local-storage.service';
 import { TenantContext } from '../../../common/tenant/tenant-context';
+import { Db } from '../../../database';
 
 const ALLOWED_VAT = [0, 7, 10, 14, 20] as const;
 
 @Injectable()
 export class BusinessSettingsService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly db: Db,
     private readonly tenant: TenantContext,
     private readonly storage: LocalStorageService,
   ) {}
@@ -21,39 +21,43 @@ export class BusinessSettingsService {
     return id;
   }
 
+  private business<C extends 'enabled_vat_rates' | 'multi_warehouse' | 'logo'>(col: C) {
+    return this.db.q
+      .selectFrom('app.businesses')
+      .select(col)
+      .where('id', '=', this.businessId())
+      .executeTakeFirst();
+  }
+
   async getVatRates(): Promise<{ enabledVatRates: number[]; allowed: readonly number[] }> {
-    const b = await this.prisma.business.findUnique({
-      where: { id: this.businessId() },
-      select: { enabledVatRates: true },
-    });
+    const b = await this.business('enabled_vat_rates');
     if (!b) throw new DomainError('not_found', 'Business not found', 404);
-    return { enabledVatRates: b.enabledVatRates, allowed: ALLOWED_VAT };
+    return { enabledVatRates: b.enabled_vat_rates, allowed: ALLOWED_VAT };
   }
 
   async listModules(): Promise<{ moduleId: string; active: boolean }[]> {
-    return this.prisma.businessModule.findMany({
-      where: { businessId: this.businessId() },
-      select: { moduleId: true, active: true },
-    });
+    const rows = await this.db.q
+      .selectFrom('app.business_modules')
+      .select(['module_id', 'active'])
+      .where('business_id', '=', this.businessId())
+      .execute();
+    return rows.map((r) => ({ moduleId: r.module_id, active: r.active }));
   }
 
   async getMultiWarehouse(): Promise<{ multiWarehouse: boolean }> {
-    const b = await this.prisma.business.findUnique({
-      where: { id: this.businessId() },
-      select: { multiWarehouse: true },
-    });
+    const b = await this.business('multi_warehouse');
     if (!b) throw new DomainError('not_found', 'Business not found', 404);
-    return { multiWarehouse: b.multiWarehouse };
+    return { multiWarehouse: b.multi_warehouse };
   }
 
   async setMultiWarehouse(enabled: boolean): Promise<{ multiWarehouse: boolean }> {
-    const bid = this.businessId();
-    const b = await this.prisma.business.update({
-      where: { id: bid },
-      data: { multiWarehouse: enabled },
-      select: { multiWarehouse: true },
-    });
-    return { multiWarehouse: b.multiWarehouse };
+    const b = await this.db.q
+      .updateTable('app.businesses')
+      .set({ multi_warehouse: enabled })
+      .where('id', '=', this.businessId())
+      .returning('multi_warehouse')
+      .executeTakeFirstOrThrow();
+    return { multiWarehouse: b.multi_warehouse };
   }
 
   async uploadLogo(buffer: Buffer): Promise<{ logoPath: string }> {
@@ -61,19 +65,18 @@ export class BusinessSettingsService {
     if (!ext) throw new ValidationError('Unsupported image format');
     const bid = this.businessId();
     const logoPath = await this.storage.save('logos', bid, buffer, ext);
-    const previous = await this.prisma.business
-      .findUnique({ where: { id: bid }, select: { logo: true } })
-      .then((b) => b?.logo);
-    await this.prisma.business.update({ where: { id: bid }, data: { logo: logoPath } });
+    const previous = (await this.business('logo'))?.logo;
+    await this.setLogo(bid, logoPath);
     if (previous) await this.storage.remove(previous).catch(() => undefined);
     return { logoPath };
   }
 
+  private async setLogo(bid: string, logo: string | null): Promise<void> {
+    await this.db.q.updateTable('app.businesses').set({ logo }).where('id', '=', bid).execute();
+  }
+
   async readLogo(): Promise<{ buffer: Buffer; ext: string }> {
-    const b = await this.prisma.business.findUnique({
-      where: { id: this.businessId() },
-      select: { logo: true },
-    });
+    const b = await this.business('logo');
     if (!b?.logo) throw new DomainError('not_found', 'No logo uploaded', 404);
     const buffer = await this.storage.read(b.logo);
     const ext = b.logo.split('.').pop() ?? 'png';
@@ -82,12 +85,9 @@ export class BusinessSettingsService {
 
   async removeLogo(): Promise<void> {
     const bid = this.businessId();
-    const b = await this.prisma.business.findUnique({
-      where: { id: bid },
-      select: { logo: true },
-    });
+    const b = await this.business('logo');
     if (b?.logo) {
-      await this.prisma.business.update({ where: { id: bid }, data: { logo: null } });
+      await this.setLogo(bid, null);
       await this.storage.remove(b.logo).catch(() => undefined);
     }
   }

@@ -6,11 +6,12 @@ import { inflateSync } from 'node:zlib';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { ValidationPipe, VersioningType, type INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { PrismaClient } from '@prisma/client';
 
 import { AppModule } from '../src/app.module';
 import { OcrProvider, type OcrResult } from '../src/modules/expenses/domain/ocr.provider';
 
+import { closeTestDb, testDb } from './helpers/db';
+import { createTenant } from './helpers/tenant';
 import { api, bearer, login, seedFresh } from './helpers/test-app';
 
 /** Minimal valid JPEG header — enough for the magic-byte sniffer. */
@@ -40,11 +41,20 @@ class StubOcrProvider extends OcrProvider {
 
 describe('Expenses (e2e)', () => {
   let app: INestApplication;
-  let prisma: PrismaClient;
   let ownerToken: string;
   let cashierToken: string;
   let otherTenantToken: string;
   let expenseWithReceiptId: string;
+
+  const countExpenses = async (): Promise<number> =>
+    Number(
+      (
+        await testDb
+          .selectFrom('app.expenses')
+          .select((eb) => eb.fn.countAll<string>().as('n'))
+          .executeTakeFirstOrThrow()
+      ).n,
+    );
 
   beforeAll(async () => {
     // Receipts must not land in the working tree during tests.
@@ -63,41 +73,28 @@ describe('Expenses (e2e)', () => {
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
     await app.init();
 
-    prisma = new PrismaClient();
     ownerToken = (await login(app, 'owner')).accessToken;
     cashierToken = (await login(app, 'cashier')).accessToken;
 
-    // A second tenant, created through the raw client so the tenant middleware
-    // does not scope it. Password hash is copied from a seeded user so the
-    // demo password works.
-    const seeded = await prisma.user.findFirstOrThrow({ where: { email: 'youssef@elamrani.ma' } });
-    const other = await prisma.business.create({
-      data: { name: 'Autre Commerce', ice: '999999999999999' },
-    });
-    // Without a module row, ModuleGuard would 403 before tenant isolation is exercised.
-    await prisma.businessModule.create({
-      data: { businessId: other.id, moduleId: 'expenses', active: true },
-    });
-    await prisma.user.create({
-      data: {
-        businessId: other.id,
-        name: 'Rival Owner',
-        email: 'rival@example.ma',
-        passwordHash: seeded.passwordHash,
-        role: 'owner',
-      },
+    // A second tenant, created through the owner pool so RLS does not scope it.
+    await createTenant({
+      name: 'Autre Commerce',
+      ice: '999999999999999',
+      moduleId: 'expenses',
+      email: 'rival@example.ma',
+      ownerName: 'Rival Owner',
     });
     otherTenantToken = (await login(app, 'rival@example.ma')).accessToken;
   });
 
   afterAll(async () => {
-    await prisma.$disconnect();
+    await closeTestDb();
     await app.close();
   });
 
   describe('POST /expenses/scan', () => {
     it('stores the receipt and returns a suggestion without creating an expense', async () => {
-      const before = await prisma.expense.count();
+      const before = await countExpenses();
 
       const res = await api(app)
         .post('/api/v1/expenses/scan')
@@ -108,7 +105,7 @@ describe('Expenses (e2e)', () => {
       expect(res.body.ocrStatus).toBe('done');
       expect(res.body.suggestion.amount).toBe(284.5);
       expect(res.body.receiptPath).toMatch(/\.jpg$/);
-      expect(await prisma.expense.count()).toBe(before);
+      expect(await countExpenses()).toBe(before);
     });
 
     it('rejects a payload whose magic bytes are not an image', async () => {

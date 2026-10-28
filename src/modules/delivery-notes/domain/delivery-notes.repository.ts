@@ -1,5 +1,3 @@
-import type { Prisma } from '@prisma/client';
-
 import type { BonPaymentMethod, DeliveryNoteStatus, DeliveryNoteType } from '../dto/delivery-notes.dto';
 
 export interface DeliveryLineData {
@@ -121,18 +119,14 @@ export abstract class DeliveryNotesRepository {
   abstract updateStatus(id: string, status: DeliveryNoteStatus): Promise<void>;
   abstract updateLineSent(lineId: string, sent: number): Promise<void>;
 
-  /** Part of the caller's transaction — used when sign() also posts a ledger entry. */
-  abstract markSigned(id: string, when: Date, tx: Prisma.TransactionClient): Promise<void>;
+  /** Runs in the caller's transaction (`Db.tx`) — used when sign() also posts a ledger entry. */
+  abstract markSigned(id: string, when: Date): Promise<void>;
 
   /**
    * Records a payment and increments the note's `paid` atomically.
-   * Pass a transaction client when the caller enforces the remaining-amount
-   * guard inside the same transaction.
+   * Joins the request transaction, so the caller's remaining-amount guard stays atomic.
    */
-  abstract addPayment(
-    data: PaymentCreateData,
-    tx?: Prisma.TransactionClient,
-  ): Promise<PaymentRow>;
+  abstract addPayment(data: PaymentCreateData): Promise<PaymentRow>;
 
   abstract findPayments(businessId: string, deliveryNoteId: string): Promise<PaymentRow[]>;
 
@@ -149,10 +143,7 @@ export abstract class DeliveryNotesRepository {
    * The business's default warehouse (used at sign-time since DeliveryNote
    * itself carries no warehouseId). Part of the caller's transaction.
    */
-  abstract findDefaultWarehouseId(
-    businessId: string,
-    tx: Prisma.TransactionClient,
-  ): Promise<string | null>;
+  abstract findDefaultWarehouseId(businessId: string): Promise<string | null>;
 }
 
 /**

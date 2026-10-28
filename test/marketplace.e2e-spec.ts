@@ -1,12 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import type { INestApplication } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
 
+import { newId } from '../src/database/ids';
+
+import { closeTestDb, testDb } from './helpers/db';
 import { api, bearer, bootTestApp, login, seedFresh } from './helpers/test-app';
 
 describe('Marketplace — listings, price groups, catalog (e2e)', () => {
   let app: INestApplication;
-  let prisma: PrismaClient;
 
   /** Seller = the seeded demo tenant. Buyer = a second tenant created here. */
   let sellerToken: string;
@@ -19,45 +20,65 @@ describe('Marketplace — listings, price groups, catalog (e2e)', () => {
   let listingId: string;
   let grosGroupId: string;
 
+  const setModule = (businessId: string, active: boolean) =>
+    testDb
+      .updateTable('app.business_modules')
+      .set({ active, updatedAt: new Date() })
+      .where('business_id', '=', businessId)
+      .where('module_id', '=', 'marketplace')
+      .execute();
+  const setPlan = (businessId: string, plan: 'active' | 'expired') =>
+    testDb.updateTable('app.businesses').set({ plan, updatedAt: new Date() }).where('id', '=', businessId).execute();
+
   beforeAll(async () => {
     await seedFresh();
     app = await bootTestApp();
-    prisma = new PrismaClient();
 
     sellerToken = (await login(app, 'owner')).accessToken;
     cashierToken = (await login(app, 'cashier')).accessToken;
 
-    const seededOwner = await prisma.user.findFirstOrThrow({
-      where: { email: 'youssef@elamrani.ma' },
-    });
-    sellerBusinessId = seededOwner.businessId;
+    const seededOwner = await testDb
+      .selectFrom('app_auth.users')
+      .select(['business_id', 'passwordHash'])
+      .where('email', '=', 'youssef@elamrani.ma')
+      .executeTakeFirstOrThrow();
+    sellerBusinessId = seededOwner.business_id;
 
-    const buyer = await prisma.business.create({
-      data: { name: 'Acheteur SARL', city: 'Rabat', ice: '888888888888888' },
-    });
+    const buyer = await testDb
+      .insertInto('app.businesses')
+      .values({ id: newId(), name: 'Acheteur SARL', city: 'Rabat', ice: '888888888888888', updatedAt: new Date() })
+      .returning('id')
+      .executeTakeFirstOrThrow();
     buyerBusinessId = buyer.id;
-    await prisma.businessModule.create({
-      data: { businessId: buyer.id, moduleId: 'marketplace', active: true },
-    });
-    await prisma.user.create({
-      data: {
-        businessId: buyer.id,
+    await testDb
+      .insertInto('app.business_modules')
+      .values({ business_id: buyer.id, module_id: 'marketplace', active: true, updatedAt: new Date() })
+      .execute();
+    await testDb
+      .insertInto('app_auth.users')
+      .values({
+        id: newId(),
+        business_id: buyer.id,
         name: 'Buyer Owner',
         email: 'buyer@example.ma',
         passwordHash: seededOwner.passwordHash,
         role: 'owner',
-      },
-    });
+        updatedAt: new Date(),
+      })
+      .execute();
     buyerToken = (await login(app, 'buyer@example.ma')).accessToken;
 
-    const product = await prisma.product.findFirstOrThrow({
-      where: { businessId: sellerBusinessId, deletedAt: null },
-    });
+    const product = await testDb
+      .selectFrom('app.products')
+      .select('id')
+      .where('business_id', '=', sellerBusinessId)
+      .where('deletedAt', 'is', null)
+      .executeTakeFirstOrThrow();
     productId = product.id;
   });
 
   afterAll(async () => {
-    await prisma.$disconnect();
+    await closeTestDb();
     await app.close();
   });
 
@@ -78,7 +99,7 @@ describe('Marketplace — listings, price groups, catalog (e2e)', () => {
         .post('/api/v1/marketplace/price-groups')
         .set(bearer(sellerToken))
         .send({ name: 'Gros' })
-        .expect(500); // unique violation surfaces as a Prisma error, not a domain 409
+        .expect(500); // unique violation surfaces as a raw DB error, not a domain 409
     });
 
     it('denies a cashier (no marketplace.manage)', async () => {
@@ -137,9 +158,11 @@ describe('Marketplace — listings, price groups, catalog (e2e)', () => {
     });
 
     it('refuses a tier pointing at a foreign price group', async () => {
-      const foreign = await prisma.priceGroup.create({
-        data: { businessId: buyerBusinessId, name: 'Foreign' },
-      });
+      const foreign = await testDb
+        .insertInto('app.price_groups')
+        .values({ id: newId(), business_id: buyerBusinessId, name: 'Foreign', updatedAt: new Date() })
+        .returning('id')
+        .executeTakeFirstOrThrow();
       await api(app)
         .put(`/api/v1/marketplace/listings/${listingId}/tiers`)
         .set(bearer(sellerToken))
@@ -188,14 +211,17 @@ describe('Marketplace — listings, price groups, catalog (e2e)', () => {
     });
 
     it('applies the buyer’s price group once the seller assigns one', async () => {
-      await prisma.customer.create({
-        data: {
-          businessId: sellerBusinessId,
+      await testDb
+        .insertInto('app.customers')
+        .values({
+          id: newId(),
+          business_id: sellerBusinessId,
           name: 'Acheteur SARL',
-          buyerBusinessId,
-          priceGroupId: grosGroupId,
-        },
-      });
+          buyer_business_id: buyerBusinessId,
+          price_group_id: grosGroupId,
+          updatedAt: new Date(),
+        })
+        .execute();
 
       const res = await api(app)
         .get('/api/v1/marketplace/catalog?qty=150')
@@ -251,53 +277,31 @@ describe('Marketplace — listings, price groups, catalog (e2e)', () => {
     });
 
     it('hides a seller whose subscription expired', async () => {
-      await prisma.business.update({
-        where: { id: sellerBusinessId },
-        data: { plan: 'expired' },
-      });
+      await setPlan(sellerBusinessId, 'expired');
       const res = await api(app)
         .get('/api/v1/marketplace/catalog')
         .set(bearer(buyerToken))
         .expect(200);
       expect(res.body.items).toEqual([]);
 
-      await prisma.business.update({
-        where: { id: sellerBusinessId },
-        data: { plan: 'active' },
-      });
+      await setPlan(sellerBusinessId, 'active');
     });
 
     it('hides a seller that switched the marketplace module off', async () => {
-      await prisma.businessModule.update({
-        where: {
-          businessId_moduleId: { businessId: sellerBusinessId, moduleId: 'marketplace' },
-        },
-        data: { active: false },
-      });
+      await setModule(sellerBusinessId, false);
       const res = await api(app)
         .get('/api/v1/marketplace/catalog')
         .set(bearer(buyerToken))
         .expect(200);
       expect(res.body.items).toEqual([]);
 
-      await prisma.businessModule.update({
-        where: {
-          businessId_moduleId: { businessId: sellerBusinessId, moduleId: 'marketplace' },
-        },
-        data: { active: true },
-      });
+      await setModule(sellerBusinessId, true);
     });
 
     it('403s when the module is disabled for the tenant', async () => {
-      await prisma.businessModule.update({
-        where: { businessId_moduleId: { businessId: buyerBusinessId, moduleId: 'marketplace' } },
-        data: { active: false },
-      });
+      await setModule(buyerBusinessId, false);
       await api(app).get('/api/v1/marketplace/catalog').set(bearer(buyerToken)).expect(403);
-      await prisma.businessModule.update({
-        where: { businessId_moduleId: { businessId: buyerBusinessId, moduleId: 'marketplace' } },
-        data: { active: true },
-      });
+      await setModule(buyerBusinessId, true);
     });
   });
 });

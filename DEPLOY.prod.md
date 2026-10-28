@@ -50,7 +50,7 @@ Every prod target aborts with a hint if `.env.prod` is missing.
   `OCR_LANGS=fr` by default; `fr,ar` adds an Arabic pass and roughly doubles latency.
 - Receipt images persist in the `tijaru-uploads` volume mounted at `/srv/uploads`.
 - Backend joins the `nginx-proxy` network with alias `tijaru-backend`.
-- Container runs `prisma migrate deploy` on start, then serves. No seed in prod.
+- Container just serves; schema is applied separately by sqitch (`make prod-db-up`). No seed in prod.
 - Image: multi-stage `Dockerfile.prod` (build context = repo root) — debian-slim,
   dev deps pruned, non-root.
 

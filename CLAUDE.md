@@ -12,7 +12,7 @@ All-in-one commerce platform for Moroccan/EU SMBs — stock, POS, clients, factu
 
 - web :8080 · api :3002 · postgres :5433 (`.env DATABASE_URL` may point at wrong project DB — always override with 5433)
 - Four independent apps, **three git repos** (see D-010):
-  - **this repo** = `backend/` (NestJS+Prisma) at the root + `ocr-service/` (Python+FastAPI+RapidOCR) nested inside it, plus all product docs.
+  - **this repo** = `backend/` (NestJS+Kysely) at the root + `ocr-service/` (Python+FastAPI+RapidOCR) nested inside it, plus all product docs.
   - `../web` (React+Vite) — own repo.
   - `../mobile` (Expo) — own repo.
   No monorepo, no workspace: separate `package.json`, install and deploy per app.

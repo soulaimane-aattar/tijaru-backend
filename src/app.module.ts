@@ -18,6 +18,7 @@ import { StorageModule } from './common/storage/storage.module';
 import { TenantInterceptor } from './common/tenant/tenant.interceptor';
 import { ConfigModule, ENV_TOKEN } from './config/config.module';
 import type { Env } from './config/env';
+import { KyselyModule } from './database';
 import { ActivityModule } from './modules/activity/activity.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -48,6 +49,7 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module';
 
 @Module({
   imports: [
+    KyselyModule,
     ConfigModule,
     StorageModule,
     MailModule,
@@ -99,9 +101,9 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module';
   ],
   controllers: [DocumentAuditController],
   providers: [
-    // PrismaService + TenantContext come from the global ConfigModule — a single
+    // TenantContext comes from the global ConfigModule — a single
     // instance each, so the tenant ALS store is shared between the HTTP
-    // interceptor and the Prisma middleware.
+    // interceptor and `Db`.
     { provide: APP_FILTER, useClass: HttpExceptionFilter },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },

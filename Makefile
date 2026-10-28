@@ -38,8 +38,8 @@ ps: ## Dev stack status
 seed: ## Recreate dev backend with demo data
 	SEED_DEMO=true $(DEV) up -d --force-recreate backend
 
-dev-migrate: ## Apply pending migrations in the dev container
-	$(DEV) exec backend npx prisma migrate deploy
+dev-migrate: ## Apply pending migrations (sqitch)
+	$(MAKE) db-up
 
 # ─── sqitch ────────────────────────────────────────────────────────────────
 SQITCH := ./sqitch

@@ -1,4 +1,4 @@
-import { TenantContext, TENANT_MODELS } from './tenant-context';
+import { TenantContext } from './tenant-context';
 
 describe('TenantContext', () => {
   it('returns undefined outside any scope', () => {
@@ -17,16 +17,5 @@ describe('TenantContext', () => {
     const ctx = new TenantContext();
     const seen = ctx.run('outer', () => ctx.run('inner', () => ctx.getBusinessId()));
     expect(seen).toBe('inner');
-  });
-
-  it('lists Product as tenant-scoped and Business as not', () => {
-    expect(TENANT_MODELS.has('Product')).toBe(true);
-    expect(TENANT_MODELS.has('Business')).toBe(false);
-    expect(TENANT_MODELS.has('PlatformAdmin')).toBe(false);
-  });
-
-  it('auto-scopes the Expense model', () => {
-    expect(TENANT_MODELS.has('Expense')).toBe(true);
-    expect(TENANT_MODELS.has('ExpenseCategoryDef')).toBe(true);
   });
 });

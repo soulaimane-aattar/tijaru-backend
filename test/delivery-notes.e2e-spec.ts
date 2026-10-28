@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import type { INestApplication } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
 
+import { closeTestDb, testDb } from './helpers/db';
+import { createTenant } from './helpers/tenant';
 import { api, bearer, bootTestApp, login, seedFresh } from './helpers/test-app';
 
 /**
@@ -21,7 +22,6 @@ import { api, bearer, bootTestApp, login, seedFresh } from './helpers/test-app';
  */
 describe('Delivery Notes / Bons (e2e)', () => {
   let app: INestApplication;
-  let prisma: PrismaClient;
   let ownerToken: string;
   let cashierToken: string;
   let otherTenantToken: string;
@@ -34,9 +34,12 @@ describe('Delivery Notes / Bons (e2e)', () => {
   let productB: { id: string; label: string; price: number };
 
   const stockAt = async (pid: string, whId: string): Promise<number> => {
-    const row = await prisma.stockLevel.findUnique({
-      where: { productId_warehouseId: { productId: pid, warehouseId: whId } },
-    });
+    const row = await testDb
+      .selectFrom('app.stock_levels')
+      .select('qty')
+      .where('productId', '=', pid)
+      .where('warehouseId', '=', whId)
+      .executeTakeFirst();
     return row?.qty ?? 0;
   };
 
@@ -45,52 +48,56 @@ describe('Delivery Notes / Bons (e2e)', () => {
   beforeAll(async () => {
     await seedFresh();
     app = await bootTestApp();
-    prisma = new PrismaClient();
 
     ownerToken = (await login(app, 'owner')).accessToken;
     cashierToken = (await login(app, 'cashier')).accessToken;
 
     // Spin up a rival tenant so cross-tenant reads can be verified as 404.
     // The seed's password hash is reused so the standard demo password works.
-    const seeded = await prisma.user.findFirstOrThrow({ where: { email: 'youssef@elamrani.ma' } });
-    const other = await prisma.business.create({
-      data: { name: 'Rival Trading', ice: '111111111111111' },
-    });
-    // Module gate would otherwise 403 before tenant isolation is exercised.
-    await prisma.businessModule.create({
-      data: { businessId: other.id, moduleId: 'delivery-notes', active: true },
-    });
-    await prisma.user.create({
-      data: {
-        businessId: other.id,
-        name: 'Rival Owner',
-        email: 'rival-bon@example.ma',
-        passwordHash: seeded.passwordHash,
-        role: 'owner',
-      },
+    await createTenant({
+      name: 'Rival Trading',
+      ice: '111111111111111',
+      moduleId: 'delivery-notes',
+      email: 'rival-bon@example.ma',
+      ownerName: 'Rival Owner',
     });
     otherTenantToken = (await login(app, 'rival-bon@example.ma')).accessToken;
 
     // Business defaults from the seed (owner tenant).
-    const wh = await prisma.warehouse.findFirstOrThrow({
-      where: { isDefault: true, business: { users: { some: { email: 'youssef@elamrani.ma' } } } },
-    });
+    const wh = await testDb
+      .selectFrom('app.warehouses as w')
+      .innerJoin('app_auth.users as u', 'u.business_id', 'w.business_id')
+      .select('w.id')
+      .where('w.isDefault', '=', true)
+      .where('u.email', '=', 'youssef@elamrani.ma')
+      .executeTakeFirstOrThrow();
     warehouseId = wh.id;
 
-    supplierId = (await prisma.supplier.findFirstOrThrow()).id;
-    customerId = (await prisma.customer.findFirstOrThrow()).id;
+    supplierId = (await testDb.selectFrom('app.suppliers').select('id').executeTakeFirstOrThrow()).id;
+    customerId = (await testDb.selectFrom('app.customers').select('id').executeTakeFirstOrThrow()).id;
 
-    const products = await prisma.product.findMany({
-      where: { stockLevels: { some: { warehouseId, qty: { gte: 20 } } } },
-      take: 2,
-      orderBy: { name: 'asc' },
-    });
+    const products = await testDb
+      .selectFrom('app.products as p')
+      .select(['p.id', 'p.name', 'p.sale'])
+      .where((eb) =>
+        eb.exists(
+          eb
+            .selectFrom('app.stock_levels as s')
+            .select('s.productId')
+            .whereRef('s.productId', '=', 'p.id')
+            .where('s.warehouseId', '=', warehouseId)
+            .where('s.qty', '>=', 20),
+        ),
+      )
+      .orderBy('p.name')
+      .limit(2)
+      .execute();
     productA = { id: products[0]!.id, label: products[0]!.name, price: Number(products[0]!.sale) };
     productB = { id: products[1]!.id, label: products[1]!.name, price: Number(products[1]!.sale) };
   });
 
   afterAll(async () => {
-    await prisma.$disconnect();
+    await closeTestDb();
     await app.close();
   });
 

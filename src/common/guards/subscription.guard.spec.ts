@@ -3,15 +3,13 @@ import type { Reflector } from '@nestjs/core';
 
 import type { AuthUser } from '../auth/auth-user.type';
 import { BusinessSuspendedError, ForbiddenError, SubscriptionExpiredError } from '../errors';
-import type { PrismaService } from '../prisma.service';
+import { fakeDb } from '../testing/db-fake';
 
 import { SubscriptionGuard } from './subscription.guard';
 
 function makeContext(user?: AuthUser): ExecutionContext {
   return {
-    switchToHttp: () => ({
-      getRequest: () => ({ user }),
-    }),
+    switchToHttp: () => ({ getRequest: () => ({ user }) }),
     getHandler: () => ({}),
     getClass: () => ({}),
   } as unknown as ExecutionContext;
@@ -31,101 +29,75 @@ function makeUser(overrides: Partial<AuthUser> = {}): AuthUser {
 
 describe('SubscriptionGuard', () => {
   let reflector: { getAllAndOverride: jest.Mock };
-  let prisma: { business: { findUnique: jest.Mock; update: jest.Mock } };
-  let guard: SubscriptionGuard;
+
+  const setup = (business?: Record<string, unknown>) => {
+    const f = fakeDb({ 'select:app.businesses': business });
+    const guard = new SubscriptionGuard(reflector as unknown as Reflector, f.db);
+    const reads = () => f.calls.filter((c) => c.op === 'select');
+    const updates = () => f.calls.filter((c) => c.op === 'update');
+    return { guard, reads, updates };
+  };
 
   beforeEach(() => {
     reflector = { getAllAndOverride: jest.fn().mockReturnValue(false) };
-    prisma = {
-      business: {
-        findUnique: jest.fn(),
-        update: jest.fn(),
-      },
-    };
-    guard = new SubscriptionGuard(reflector as unknown as Reflector, prisma as unknown as PrismaService);
   });
 
   it('allows public routes without checking the business', async () => {
     reflector.getAllAndOverride.mockReturnValue(true);
+    const { guard, reads } = setup();
 
-    const result = await guard.canActivate(makeContext(makeUser()));
-
-    expect(result).toBe(true);
-    expect(prisma.business.findUnique).not.toHaveBeenCalled();
+    expect(await guard.canActivate(makeContext(makeUser()))).toBe(true);
+    expect(reads()).toHaveLength(0);
   });
 
   it('allows super admins without checking the business', async () => {
-    const user = makeUser({ isSuperAdmin: true });
+    const { guard, reads } = setup();
 
-    const result = await guard.canActivate(makeContext(user));
-
-    expect(result).toBe(true);
-    expect(prisma.business.findUnique).not.toHaveBeenCalled();
+    expect(await guard.canActivate(makeContext(makeUser({ isSuperAdmin: true })))).toBe(true);
+    expect(reads()).toHaveLength(0);
   });
 
   it('allows requests with no businessId (platform-admin tokens)', async () => {
-    const user = makeUser({ businessId: '' });
+    const { guard, reads } = setup();
 
-    const result = await guard.canActivate(makeContext(user));
-
-    expect(result).toBe(true);
-    expect(prisma.business.findUnique).not.toHaveBeenCalled();
+    expect(await guard.canActivate(makeContext(makeUser({ businessId: '' })))).toBe(true);
+    expect(reads()).toHaveLength(0);
   });
 
   it('allows an active subscription with a future end date', async () => {
-    prisma.business.findUnique.mockResolvedValue({
-      plan: 'active',
-      subscriptionEnd: new Date(Date.now() + 86_400_000),
-    });
+    const { guard, reads, updates } = setup({ plan: 'active', subscription_end: new Date(Date.now() + 86_400_000) });
 
-    const result = await guard.canActivate(makeContext(makeUser()));
-
-    expect(result).toBe(true);
-    expect(prisma.business.update).not.toHaveBeenCalled();
+    expect(await guard.canActivate(makeContext(makeUser()))).toBe(true);
+    expect(reads()[0]!.where).toEqual([['id', '=', 'biz-1']]);
+    expect(updates()).toHaveLength(0);
   });
 
   it('allows a business with no subscription end date (trial/no expiry)', async () => {
-    prisma.business.findUnique.mockResolvedValue({
-      plan: 'trial',
-      subscriptionEnd: null,
-    });
+    const { guard } = setup({ plan: 'trial', subscription_end: null });
 
-    const result = await guard.canActivate(makeContext(makeUser()));
-
-    expect(result).toBe(true);
+    expect(await guard.canActivate(makeContext(makeUser()))).toBe(true);
   });
 
   it('throws subscription_expired and downgrades an active plan to expired', async () => {
-    prisma.business.findUnique.mockResolvedValue({
-      plan: 'active',
-      subscriptionEnd: new Date(Date.now() - 86_400_000),
-    });
+    const { guard, updates } = setup({ plan: 'active', subscription_end: new Date(Date.now() - 86_400_000) });
 
     await expect(guard.canActivate(makeContext(makeUser()))).rejects.toThrow(SubscriptionExpiredError);
     await expect(guard.canActivate(makeContext(makeUser()))).rejects.toMatchObject({
       response: expect.objectContaining({ code: 'subscription_expired' }),
     });
-    expect(prisma.business.update).toHaveBeenCalledWith({
-      where: { id: 'biz-1' },
-      data: { plan: 'expired' },
-    });
+    expect(updates()[0]!.set).toEqual({ plan: 'expired' });
+    expect(updates()[0]!.where).toEqual([['id', '=', 'biz-1']]);
   });
 
   it('throws subscription_expired without re-updating an already-expired plan', async () => {
-    prisma.business.findUnique.mockResolvedValue({
-      plan: 'expired',
-      subscriptionEnd: new Date(Date.now() - 86_400_000),
-    });
+    const { guard, updates } = setup({ plan: 'expired', subscription_end: new Date(Date.now() - 86_400_000) });
 
     await expect(guard.canActivate(makeContext(makeUser()))).rejects.toThrow(SubscriptionExpiredError);
-    expect(prisma.business.update).not.toHaveBeenCalled();
+    expect(updates()).toHaveLength(0);
   });
 
   it('throws business_suspended for a suspended business', async () => {
-    prisma.business.findUnique.mockResolvedValue({
-      plan: 'suspended',
-      subscriptionEnd: null,
-    });
+    const { guard } = setup({ plan: 'suspended', subscription_end: null });
 
     await expect(guard.canActivate(makeContext(makeUser()))).rejects.toThrow(BusinessSuspendedError);
     await expect(guard.canActivate(makeContext(makeUser()))).rejects.toMatchObject({
@@ -134,7 +106,7 @@ describe('SubscriptionGuard', () => {
   });
 
   it('throws when the business is not found', async () => {
-    prisma.business.findUnique.mockResolvedValue(null);
+    const { guard } = setup(undefined);
 
     await expect(guard.canActivate(makeContext(makeUser()))).rejects.toThrow(ForbiddenError);
   });

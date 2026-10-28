@@ -81,10 +81,7 @@ describe('PosService — checkout math', () => {
     r.findSaleProducts.mockResolvedValue([PROD_A]);
     r.getStockQty.mockResolvedValue(10);
 
-    await new PosService(r).checkout(
-      baseTicket({ discount: 2, payment: cashPayment(50) }),
-      actor,
-    );
+    await new PosService(r).checkout(baseTicket({ discount: 2, payment: cashPayment(50) }), actor);
     expect(r.executeCheckout.mock.calls[0]![0].total).toBe(10);
   });
 
@@ -113,9 +110,9 @@ describe('PosService — validations', () => {
   it('throws NotFoundError when a line references an unknown product', async () => {
     const r = repo();
     r.findSaleProducts.mockResolvedValue([]); // none found
-    await expect(
-      new PosService(r).checkout(baseTicket(), actor),
-    ).rejects.toBeInstanceOf(NotFoundError);
+    await expect(new PosService(r).checkout(baseTicket(), actor)).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
   });
 
   it('rejects insufficient stock at the warehouse', async () => {
@@ -167,10 +164,7 @@ describe('PosService — validations', () => {
     r.findSaleProducts.mockResolvedValue([PROD_A]);
     // No stock at warehouse — but the ticket is parked, so it should still succeed.
     r.getStockQty.mockResolvedValue(0);
-    await new PosService(r).checkout(
-      baseTicket({ parked: true, payment: cashPayment(0) }),
-      actor,
-    );
+    await new PosService(r).checkout(baseTicket({ parked: true, payment: cashPayment(0) }), actor);
     expect(r.executeCheckout).toHaveBeenCalledTimes(1);
     expect(r.executeCheckout.mock.calls[0]![0].parked).toBe(true);
   });
@@ -225,9 +219,9 @@ describe('PosService — park / resume', () => {
       parked: false,
       lines: [{ productId: PID_A, qty: 1 }],
     });
-    await expect(
-      new PosService(r).resume('t1', cashPayment(100), actor),
-    ).rejects.toMatchObject({ response: { code: 'not_parked' } });
+    await expect(new PosService(r).resume('t1', cashPayment(100), actor)).rejects.toMatchObject({
+      response: { code: 'not_parked' },
+    });
   });
 
   it('re-checkouts a parked ticket with a fresh payment and replaces the previous row', async () => {

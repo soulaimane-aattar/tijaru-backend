@@ -3,7 +3,9 @@ import { randomBytes } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 
 import { NotFoundError } from '../../../common/errors';
-import { PrismaService } from '../../../common/prisma.service';
+import { Db } from '../../../database';
+import { newId } from '../../../database/ids';
+import { camelRow } from '../../row-case';
 import { generateApiKey } from '../domain/webhook-signature';
 import { assertPublicWebhookUrl } from '../domain/webhook-url';
 import type { CreateApiKeyInput, CreateWebhookInput, UpdateWebhookInput } from '../dto/integrations.dto';
@@ -20,27 +22,29 @@ export type WebhookView = {
 
 @Injectable()
 export class IntegrationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly db: Db) {}
 
   // ─── webhooks ──────────────────────────────────────────────────────────────
 
   async listWebhooks(businessId: string): Promise<WebhookView[]> {
-    const rows = await this.prisma.webhook.findMany({
-      where: { businessId },
-      orderBy: { createdAt: 'desc' },
-      select: { id: true, url: true, events: true, active: true, createdAt: true },
-    });
-    return rows;
+    const rows = await this.db.q
+      .selectFrom('app.webhooks')
+      .select(['id', 'url', 'events', 'active', 'createdAt'])
+      .where('business_id', '=', businessId)
+      .orderBy('createdAt', 'desc')
+      .execute();
+    return rows.map((r) => ({ ...r, events: r.events ?? [] }));
   }
 
   async createWebhook(businessId: string, input: CreateWebhookInput): Promise<WebhookView> {
     assertPublicWebhookUrl(input.url);
     const secret = input.secret ?? randomBytes(24).toString('hex');
-    const row = await this.prisma.webhook.create({
-      data: { businessId, url: input.url, events: input.events, secret },
-      select: { id: true, url: true, events: true, active: true, createdAt: true },
-    });
-    return { ...row, secret };
+    const row = await this.db.q
+      .insertInto('app.webhooks')
+      .values({ id: newId(), business_id: businessId, url: input.url, events: input.events, secret, updatedAt: new Date() })
+      .returning(['id', 'url', 'events', 'active', 'createdAt'])
+      .executeTakeFirstOrThrow();
+    return { ...row, events: row.events ?? [], secret };
   }
 
   async updateWebhook(
@@ -49,15 +53,18 @@ export class IntegrationsService {
     input: UpdateWebhookInput,
   ): Promise<WebhookView> {
     if (input.url !== undefined) assertPublicWebhookUrl(input.url);
-    const { count } = await this.prisma.webhook.updateMany({
-      where: { id, businessId },
-      data: {
+    const r = await this.db.q
+      .updateTable('app.webhooks')
+      .set({
         ...(input.url === undefined ? {} : { url: input.url }),
         ...(input.events === undefined ? {} : { events: input.events }),
         ...(input.active === undefined ? {} : { active: input.active }),
-      },
-    });
-    if (count === 0) throw new NotFoundError('Webhook', id);
+        updatedAt: new Date(),
+      })
+      .where('id', '=', id)
+      .where('business_id', '=', businessId)
+      .executeTakeFirst();
+    if (Number(r.numUpdatedRows) === 0) throw new NotFoundError('Webhook', id);
     const [row] = await this.listWebhooks(businessId).then((rows) =>
       rows.filter((r) => r.id === id),
     );
@@ -65,45 +72,44 @@ export class IntegrationsService {
   }
 
   async deleteWebhook(businessId: string, id: string): Promise<void> {
-    const { count } = await this.prisma.webhook.deleteMany({ where: { id, businessId } });
-    if (count === 0) throw new NotFoundError('Webhook', id);
+    const r = await this.db.q
+      .deleteFrom('app.webhooks')
+      .where('id', '=', id)
+      .where('business_id', '=', businessId)
+      .executeTakeFirst();
+    if (Number(r.numDeletedRows) === 0) throw new NotFoundError('Webhook', id);
   }
 
   /** Recent deliveries for one hook — the tenant's debugging view. */
   async deliveries(businessId: string, id: string): Promise<unknown[]> {
-    const hook = await this.prisma.webhook.findFirst({ where: { id, businessId } });
+    const hook = await this.db.q
+      .selectFrom('app.webhooks')
+      .select('id')
+      .where('id', '=', id)
+      .where('business_id', '=', businessId)
+      .executeTakeFirst();
     if (!hook) throw new NotFoundError('Webhook', id);
-    return this.prisma.webhookDelivery.findMany({
-      where: { webhookId: id },
-      orderBy: { createdAt: 'desc' },
-      take: 50,
-      select: {
-        id: true,
-        event: true,
-        status: true,
-        attempts: true,
-        nextAt: true,
-        lastError: true,
-        createdAt: true,
-      },
-    });
+    const rows = await this.db.q
+      .selectFrom('app.webhook_deliveries')
+      .select(['id', 'event', 'status', 'attempts', 'next_at', 'last_error', 'createdAt'])
+      .where('webhook_id', '=', id)
+      .where('business_id', '=', businessId)
+      .orderBy('createdAt', 'desc')
+      .limit(50)
+      .execute();
+    return rows.map(camelRow);
   }
 
   // ─── api keys ──────────────────────────────────────────────────────────────
 
-  listApiKeys(businessId: string): Promise<unknown[]> {
-    return this.prisma.apiKey.findMany({
-      where: { businessId },
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        name: true,
-        prefix: true,
-        lastUsedAt: true,
-        revokedAt: true,
-        createdAt: true,
-      },
-    });
+  async listApiKeys(businessId: string): Promise<unknown[]> {
+    const rows = await this.db.q
+      .selectFrom('app.api_keys')
+      .select(['id', 'name', 'prefix', 'last_used_at', 'revoked_at', 'createdAt'])
+      .where('business_id', '=', businessId)
+      .orderBy('createdAt', 'desc')
+      .execute();
+    return rows.map(camelRow);
   }
 
   /** The full token exists only in this response — only its hash is stored. */
@@ -112,18 +118,22 @@ export class IntegrationsService {
     input: CreateApiKeyInput,
   ): Promise<{ id: string; name: string; prefix: string; token: string }> {
     const { token, prefix, hash } = generateApiKey();
-    const row = await this.prisma.apiKey.create({
-      data: { businessId, name: input.name, prefix, hash },
-      select: { id: true, name: true, prefix: true },
-    });
+    const row = await this.db.q
+      .insertInto('app.api_keys')
+      .values({ id: newId(), business_id: businessId, name: input.name, prefix, hash })
+      .returning(['id', 'name', 'prefix'])
+      .executeTakeFirstOrThrow();
     return { ...row, token };
   }
 
   async revokeApiKey(businessId: string, id: string): Promise<void> {
-    const { count } = await this.prisma.apiKey.updateMany({
-      where: { id, businessId, revokedAt: null },
-      data: { revokedAt: new Date() },
-    });
-    if (count === 0) throw new NotFoundError('ApiKey', id);
+    const r = await this.db.q
+      .updateTable('app.api_keys')
+      .set({ revoked_at: new Date() })
+      .where('id', '=', id)
+      .where('business_id', '=', businessId)
+      .where('revoked_at', 'is', null)
+      .executeTakeFirst();
+    if (Number(r.numUpdatedRows) === 0) throw new NotFoundError('ApiKey', id);
   }
 }

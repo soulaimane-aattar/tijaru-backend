@@ -1,11 +1,10 @@
 /**
  * Port: persistence contract for the products business logic.
  *
- * The application service depends on this abstraction only; the Prisma
+ * The application service depends on this abstraction only; the Kysely
  * implementation lives in `../infrastructure`. The abstract class doubles as
  * the Nest injection token (interfaces are erased at runtime).
  */
-import type { Prisma } from '@prisma/client';
 
 export interface ActivityLog {
   userId: string;
@@ -100,7 +99,7 @@ export abstract class ProductsRepository {
   /** True when a non-deleted warehouse with this id exists (tenant-scoped). */
   abstract warehouseExists(id: string): Promise<boolean>;
 
-  abstract logActivity(activity: ActivityLog, tx?: Prisma.TransactionClient): Promise<void>;
+  abstract logActivity(activity: ActivityLog): Promise<void>;
 
   /** Copy every field of `sourceId` into a new product, overriding identity fields. */
   abstract duplicateFrom(

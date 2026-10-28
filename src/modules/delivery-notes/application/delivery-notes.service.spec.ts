@@ -1,7 +1,7 @@
 import type { DocumentAuditService } from '../../../common/audit/document-audit.service';
 import type { AuthUser } from '../../../common/auth/auth-user.type';
 import { DomainError, NotFoundError } from '../../../common/errors';
-import type { PrismaService } from '../../../common/prisma.service';
+import type { Db } from '../../../database';
 import type { StockLedgerService } from '../../stock-ledger/application/stock-ledger.service';
 import type {
   DeliveryDetail,
@@ -86,14 +86,18 @@ const ledger = (): jest.Mocked<StockLedgerService> =>
     post: jest.fn().mockResolvedValue([]),
   }) as unknown as jest.Mocked<StockLedgerService>;
 
-/** `$transaction` runs the callback with a stand-in tx client; repo/ledger mocks ignore its identity. */
-const prisma = (): jest.Mocked<PrismaService> =>
-  ({
-    $transaction: jest.fn().mockImplementation((fn: (tx: unknown) => unknown) => fn({})),
-    business: {
-      findUnique: jest.fn().mockResolvedValue({ bonsAffectStock: true }),
-    },
-  }) as unknown as jest.Mocked<PrismaService>;
+/** `tx` runs the callback directly; `q` answers the business `bons_affect_stock` lookup. */
+const db = (biz: { bons_affect_stock: boolean } | undefined = { bons_affect_stock: true }) => {
+  const chain = {
+    select: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    executeTakeFirst: jest.fn().mockResolvedValue(biz),
+  };
+  return {
+    tx: jest.fn().mockImplementation((fn: (q: unknown) => unknown) => fn({})),
+    q: { selectFrom: jest.fn().mockReturnValue(chain) },
+  } as unknown as jest.Mocked<Db>;
+};
 
 const mockAudit = () => ({ log: jest.fn() }) as unknown as DocumentAuditService;
 
@@ -101,8 +105,8 @@ const makeSvc = (
   r: jest.Mocked<DeliveryNotesRepository>,
   p: jest.Mocked<ProductPriceLookup>,
   l: jest.Mocked<StockLedgerService> = ledger(),
-  tx: jest.Mocked<PrismaService> = prisma(),
-) => new DeliveryNotesService(r, p, l, tx, mockAudit());
+  d: jest.Mocked<Db> = db(),
+) => new DeliveryNotesService(r, p, l, d, mockAudit());
 
 const baseInput = (over: Partial<CreateDeliveryNoteInput> = {}): CreateDeliveryNoteInput =>
   ({
@@ -312,7 +316,6 @@ describe('DeliveryNotesService.sign', () => {
         ref: 'BL-2026-0001',
         lines: [{ productId: PROD, warehouseId: 'wh1', delta: -4 }],
       }),
-      expect.anything(),
     );
     expect(r.markSigned).toHaveBeenCalled();
   });
@@ -335,7 +338,6 @@ describe('DeliveryNotesService.sign', () => {
         reason: 'achat',
         lines: [{ productId: PROD, warehouseId: 'wh1', delta: 6 }],
       }),
-      expect.anything(),
     );
     expect(r.markSigned).toHaveBeenCalled();
   });
@@ -643,14 +645,11 @@ describe('DeliveryNotesService.sign — stock integration (configurable)', () =>
   it('bonsAffectStock=false → documentary signature only, no ledger post', async () => {
     const r = repo();
     r.findDetail.mockResolvedValue(detail());
-    const tx = prisma();
-    (tx.business.findUnique as jest.Mock).mockResolvedValue({ bonsAffectStock: false });
+    const d = db({ bons_affect_stock: false });
     const l = ledger();
-    await makeSvc(r, products(), l, tx).sign(BID, 'dn1', actor);
+    await makeSvc(r, products(), l, d).sign(BID, 'dn1', actor);
 
-    expect(tx.business.findUnique).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: BID }, select: { bonsAffectStock: true } }),
-    );
+    expect(d.q.selectFrom).toHaveBeenCalledWith('app.businesses');
     expect(l.post).not.toHaveBeenCalled();
     expect(r.markSigned).toHaveBeenCalledTimes(1);
   });
@@ -660,10 +659,8 @@ describe('DeliveryNotesService.sign — stock integration (configurable)', () =>
     r.findDetail.mockResolvedValue(
       detail({ lines: [{ id: 'l1', productId: PROD, label: 'Coca', ordered: 10, sent: 2, unitPrice: 5 }] }),
     );
-    const tx = prisma();
-    (tx.business.findUnique as jest.Mock).mockResolvedValue(null);
     const l = ledger();
-    await makeSvc(r, products(), l, tx).sign(BID, 'dn1', actor);
+    await makeSvc(r, products(), l, db(undefined)).sign(BID, 'dn1', actor);
 
     expect(l.post).toHaveBeenCalledTimes(1);
   });

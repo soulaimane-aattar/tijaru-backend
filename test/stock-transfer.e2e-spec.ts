@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import type { INestApplication } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
 
+import { closeTestDb, testDb } from './helpers/db';
 import { api, bearer, bootTestApp, login, seedFresh } from './helpers/test-app';
 
 /**
@@ -12,7 +12,6 @@ import { api, bearer, bootTestApp, login, seedFresh } from './helpers/test-app';
  */
 describe('Stock transfer — multistock (e2e)', () => {
   let app: INestApplication;
-  let prisma: PrismaClient;
   let tokens: Record<'owner' | 'stockkeeper' | 'cashier', string>;
   let productId: string;
   let businessId: string;
@@ -21,18 +20,21 @@ describe('Stock transfer — multistock (e2e)', () => {
   let rabatId: string;
 
   const stockAt = async (pid: string, whId: string): Promise<number> => {
-    const sl = await prisma.stockLevel.findUnique({
-      where: { productId_warehouseId: { productId: pid, warehouseId: whId } },
-    });
+    const sl = await testDb
+      .selectFrom('app.stock_levels')
+      .select('qty')
+      .where('productId', '=', pid)
+      .where('warehouseId', '=', whId)
+      .executeTakeFirst();
     return sl?.qty ?? 0;
   };
 
   const setStock = async (whId: string, qty: number): Promise<void> => {
-    await prisma.stockLevel.upsert({
-      where: { productId_warehouseId: { productId, warehouseId: whId } },
-      create: { productId, warehouseId: whId, businessId, qty },
-      update: { qty },
-    });
+    await testDb
+      .insertInto('app.stock_levels')
+      .values({ productId, warehouseId: whId, businessId, qty, updatedAt: new Date() })
+      .onConflict((oc) => oc.columns(['productId', 'warehouseId']).doUpdateSet({ qty }))
+      .execute();
   };
 
   const transfer = (
@@ -47,20 +49,22 @@ describe('Stock transfer — multistock (e2e)', () => {
   beforeAll(async () => {
     await seedFresh();
     app = await bootTestApp();
-    prisma = new PrismaClient();
 
-    const casa = await prisma.warehouse.findFirstOrThrow({ where: { isDefault: true } });
-    const marrakech = await prisma.warehouse.findFirstOrThrow({ where: { city: 'Marrakech' } });
-    const third = await prisma.warehouse.findFirstOrThrow({
-      where: { id: { notIn: [casa.id, marrakech.id] }, deletedAt: null },
-    });
+    const casa = await testDb.selectFrom('app.warehouses').select('id').where('isDefault', '=', true).executeTakeFirstOrThrow();
+    const marrakech = await testDb.selectFrom('app.warehouses').select('id').where('city', '=', 'Marrakech').executeTakeFirstOrThrow();
+    const third = await testDb
+      .selectFrom('app.warehouses')
+      .select('id')
+      .where('id', 'not in', [casa.id, marrakech.id])
+      .where('deletedAt', 'is', null)
+      .executeTakeFirstOrThrow();
     casaId = casa.id;
     marrakechId = marrakech.id;
     rabatId = third.id;
 
-    const product = await prisma.product.findFirstOrThrow({ where: { sku: 'SUC-1KG' } });
+    const product = await testDb.selectFrom('app.products').select(['id', 'business_id']).where('sku', '=', 'SUC-1KG').executeTakeFirstOrThrow();
     productId = product.id;
-    businessId = product.businessId;
+    businessId = product.business_id;
 
     tokens = {
       owner: (await login(app, 'owner')).accessToken,
@@ -70,13 +74,13 @@ describe('Stock transfer — multistock (e2e)', () => {
   });
 
   afterAll(async () => {
-    await prisma.$disconnect();
+    await closeTestDb();
     await app.close();
   });
 
   it('creates the destination stock level when that bin never held the product', async () => {
     await setStock(casaId, 12);
-    await prisma.stockLevel.deleteMany({ where: { productId, warehouseId: rabatId } });
+    await testDb.deleteFrom('app.stock_levels').where('productId', '=', productId).where('warehouseId', '=', rabatId).execute();
     expect(await stockAt(productId, rabatId)).toBe(0);
 
     const res = await transfer(tokens.stockkeeper, {

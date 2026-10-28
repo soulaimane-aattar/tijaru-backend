@@ -1,5 +1,5 @@
 import { ConflictError, NotFoundError } from '../../../common/errors';
-import type { PrismaService } from '../../../common/prisma.service';
+import type { Db } from '../../../database';
 import type { StockLedgerService } from '../../stock-ledger/application/stock-ledger.service';
 import type { InventoryCountView } from '../domain/inventory.repository';
 import type { InventoryRepository } from '../domain/inventory.repository';
@@ -50,13 +50,10 @@ const mockLedger = (): jest.Mocked<StockLedgerService> =>
     post: jest.fn().mockResolvedValue([{ id: 'm1' }]),
   }) as unknown as jest.Mocked<StockLedgerService>;
 
-/** A fake `tx` handle that's distinguishable by identity from `prisma` itself. */
-const FAKE_TX = { __tx: true } as never;
-
-const mockPrisma = (): jest.Mocked<PrismaService> =>
+const mockDb = (): jest.Mocked<Db> =>
   ({
-    $transaction: jest.fn().mockImplementation((fn: (tx: unknown) => unknown) => fn(FAKE_TX)),
-  }) as unknown as jest.Mocked<PrismaService>;
+    tx: jest.fn().mockImplementation((fn: (q: unknown) => unknown) => fn({})),
+  }) as unknown as jest.Mocked<Db>;
 
 const applyInput = (counted: number, productId = PID): ApplyCountInput => ({
   lines: [{ productId, counted }],
@@ -72,8 +69,8 @@ describe('InventoryService.apply', () => {
     );
     repo.findLiveStockLevels.mockResolvedValue([{ productId: PID, qty: 7 }]);
     const ledger = mockLedger();
-    const prisma = mockPrisma();
-    const svc = new InventoryService(repo, ledger, prisma);
+    const db = mockDb();
+    const svc = new InventoryService(repo, ledger, db);
 
     await svc.apply(COUNT_ID, applyInput(9), actor);
 
@@ -83,9 +80,8 @@ describe('InventoryService.apply', () => {
         reason: 'ajustement',
         lines: [expect.objectContaining({ productId: PID, warehouseId: WH, delta: 2 })],
       }),
-      FAKE_TX,
     );
-    expect(repo.markApplied).toHaveBeenCalledWith(COUNT_ID, FAKE_TX);
+    expect(repo.markApplied).toHaveBeenCalledWith(COUNT_ID);
   });
 
   it('splits mixed deltas into a positive (in) and negative (out) ledger post', async () => {
@@ -103,12 +99,17 @@ describe('InventoryService.apply', () => {
       { productId: PID2, qty: 5 },
     ]);
     const ledger = mockLedger();
-    const prisma = mockPrisma();
-    const svc = new InventoryService(repo, ledger, prisma);
+    const db = mockDb();
+    const svc = new InventoryService(repo, ledger, db);
 
     await svc.apply(
       COUNT_ID,
-      { lines: [{ productId: PID, counted: 9 }, { productId: PID2, counted: 2 }] },
+      {
+        lines: [
+          { productId: PID, counted: 9 },
+          { productId: PID2, counted: 2 },
+        ],
+      },
       actor,
     );
 
@@ -117,14 +118,12 @@ describe('InventoryService.apply', () => {
         type: 'in',
         lines: [expect.objectContaining({ productId: PID, delta: 2 })],
       }),
-      FAKE_TX,
     );
     expect(ledger.post).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'out',
         lines: [expect.objectContaining({ productId: PID2, delta: -3 })],
       }),
-      FAKE_TX,
     );
   });
 
@@ -132,21 +131,21 @@ describe('InventoryService.apply', () => {
     const repo = mockRepo();
     repo.findWithLines.mockResolvedValue(baseCount({ appliedAt: new Date() }));
     const ledger = mockLedger();
-    const prisma = mockPrisma();
-    const svc = new InventoryService(repo, ledger, prisma);
+    const db = mockDb();
+    const svc = new InventoryService(repo, ledger, db);
 
     await expect(svc.apply(COUNT_ID, applyInput(9), actor)).rejects.toBeInstanceOf(ConflictError);
 
     expect(ledger.post).not.toHaveBeenCalled();
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(db.tx).not.toHaveBeenCalled();
   });
 
   it('throws NotFoundError when the count does not exist', async () => {
     const repo = mockRepo();
     repo.findWithLines.mockResolvedValue(null);
     const ledger = mockLedger();
-    const prisma = mockPrisma();
-    const svc = new InventoryService(repo, ledger, prisma);
+    const db = mockDb();
+    const svc = new InventoryService(repo, ledger, db);
 
     await expect(svc.apply(COUNT_ID, applyInput(9), actor)).rejects.toBeInstanceOf(NotFoundError);
   });
@@ -156,12 +155,12 @@ describe('InventoryService.apply', () => {
     repo.findWithLines.mockResolvedValue(baseCount());
     repo.findLiveStockLevels.mockResolvedValue([{ productId: PID, qty: 9 }]);
     const ledger = mockLedger();
-    const prisma = mockPrisma();
-    const svc = new InventoryService(repo, ledger, prisma);
+    const db = mockDb();
+    const svc = new InventoryService(repo, ledger, db);
 
     await svc.apply(COUNT_ID, applyInput(9), actor);
 
     expect(ledger.post).not.toHaveBeenCalled();
-    expect(repo.markApplied).toHaveBeenCalledWith(COUNT_ID, FAKE_TX);
+    expect(repo.markApplied).toHaveBeenCalledWith(COUNT_ID);
   });
 });

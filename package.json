@@ -18,13 +18,9 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev",
-    "prisma:deploy": "prisma migrate deploy",
-    "prisma:seed": "ts-node prisma/seed.ts",
+    "seed": "ts-node prisma/seed.ts",
     "seed:platform-admin": "ts-node prisma/seed-platform-admin.ts",
-    "seed:default-modules": "tsx prisma/seed-default-modules.ts",
-    "prisma:studio": "prisma studio",
+    "seed:default-modules": "ts-node prisma/seed-default-modules.ts",
     "db:types": "kysely-codegen --out-file src/database/types.ts --dialect postgres"
   },
   "dependencies": {
@@ -36,12 +32,12 @@
     "@nestjs/schedule": "^4.1.2",
     "@nestjs/swagger": "^7.4.0",
     "@nestjs/throttler": "^6.2.1",
-    "@prisma/client": "^5.20.0",
     "bcrypt": "^5.1.1",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
+    "dotenv": "^16.4.5",
     "helmet": "^7.1.0",
-    "kysely": "^0.29.7",
+    "kysely": "^0.27.6",
     "nestjs-pino": "^4.1.0",
     "nestjs-zod": "^3.0.0",
     "nodemailer": "^10.2.1",
@@ -49,7 +45,6 @@
     "pg": "^8.23.1",
     "pino-http": "^10.2.0",
     "pino-pretty": "^11.2.2",
-    "prisma": "^5.20.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "sharp": "^0.35.3",
@@ -84,9 +79,6 @@
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.6.2"
-  },
-  "prisma": {
-    "seed": "ts-node prisma/seed.ts"
   },
   "jest": {
     "moduleFileExtensions": [

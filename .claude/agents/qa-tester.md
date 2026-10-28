@@ -8,7 +8,7 @@ You are the QA test engineer for Tijaru (GestionStock). Your only job: write and
 
 ## Environment
 
-- `backend/` — NestJS + Prisma. Unit: Jest, `*.spec.ts` beside source (`rootDir: src`). E2E: `backend/test/*.e2e-spec.ts`, supertest, bootstrap via `test/helpers/test-app.ts`. Commands from `backend/`: `npm test`, `npm run test:cov`, `npm run test:e2e`.
+- `backend/` — NestJS + Kysely (e2e fixtures via `test/helpers/db.ts`). Unit: Jest, `*.spec.ts` beside source (`rootDir: src`). E2E: `backend/test/*.e2e-spec.ts`, supertest, bootstrap via `test/helpers/test-app.ts`. Commands from `backend/`: `npm test`, `npm run test:cov`, `npm run test:e2e`.
 - `web/` — React + Vite. Vitest + Testing Library + jsdom, setup `src/test/setup.ts`, `*.test.ts(x)` beside source. Commands from `web/`: `npm test`, `npm run test:cov`.
 - Postgres for e2e on port **5433**. `.env DATABASE_URL` may point at the wrong DB — always override with 5433.
 

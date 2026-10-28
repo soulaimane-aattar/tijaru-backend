@@ -1,12 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import type { INestApplication } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
 
+import { newId } from '../src/database/ids';
+
+import { closeTestDb, testDb } from './helpers/db';
 import { api, bearer, bootTestApp, login, seedFresh } from './helpers/test-app';
 
 describe('POS (e2e) — acceptance §13 #3', () => {
   let app: INestApplication;
-  let prisma: PrismaClient;
   let salmaToken: string;
   let viewerlikeToken: string;
   let warehouseId: string;
@@ -14,42 +15,55 @@ describe('POS (e2e) — acceptance §13 #3', () => {
   let customerId: string;
 
   const stockAt = async (pid: string, whId: string): Promise<number> => {
-    const sl = await prisma.stockLevel.findUnique({
-      where: { productId_warehouseId: { productId: pid, warehouseId: whId } },
-    });
+    const sl = await testDb
+      .selectFrom('app.stock_levels')
+      .select('qty')
+      .where('productId', '=', pid)
+      .where('warehouseId', '=', whId)
+      .executeTakeFirst();
     return sl?.qty ?? 0;
   };
+
+  const countRows = async (table: 'app.movements' | 'app.po_tickets'): Promise<number> =>
+    Number((await testDb.selectFrom(table).select((eb) => eb.fn.countAll<string>().as('n')).executeTakeFirstOrThrow()).n);
 
   beforeAll(async () => {
     await seedFresh();
     app = await bootTestApp();
-    prisma = new PrismaClient();
     salmaToken = (await login(app, 'cashier')).accessToken;
     // Viewer-like = read-only. We use a real user with no stock.out to confirm RBAC gate.
-    const business = await prisma.business.findFirstOrThrow();
-    const viewer = await prisma.user.create({
-      data: {
-        businessId: business.id,
+    const business = await testDb.selectFrom('app.businesses').select('id').executeTakeFirstOrThrow();
+    const viewer = await testDb
+      .insertInto('app_auth.users')
+      .values({
+        id: newId(),
+        business_id: business.id,
         name: 'Viewer Bot',
         email: `viewer-${Date.now()}@elamrani.ma`,
         passwordHash: await (await import('bcrypt')).hash('demo1234', 10),
         role: 'viewer',
-      },
-    });
+        updatedAt: new Date(),
+      })
+      .returning('email')
+      .executeTakeFirstOrThrow();
     viewerlikeToken = (await login(app, viewer.email)).accessToken;
 
-    const marrakech = await prisma.warehouse.findFirstOrThrow({ where: { city: 'Marrakech' } });
+    const marrakech = await testDb.selectFrom('app.warehouses').select('id').where('city', '=', 'Marrakech').executeTakeFirstOrThrow();
     warehouseId = marrakech.id;
-    const picked = await prisma.product.findMany({
-      where: { stockLevels: { some: { warehouseId, qty: { gte: 10 } } } },
-      take: 3,
-    });
+    const picked = await testDb
+      .selectFrom('app.products')
+      .select(['id', 'name', 'sale', 'vat'])
+      .where('id', 'in', (eb) =>
+        eb.selectFrom('app.stock_levels').select('productId').where('warehouseId', '=', warehouseId).where('qty', '>=', 10),
+      )
+      .limit(3)
+      .execute();
     products = picked.map((p) => ({ id: p.id, name: p.name, sale: Number(p.sale), vat: p.vat }));
-    customerId = (await prisma.customer.findFirstOrThrow()).id;
+    customerId = (await testDb.selectFrom('app.customers').select('id').executeTakeFirstOrThrow()).id;
   });
 
   afterAll(async () => {
-    await prisma.$disconnect();
+    await closeTestDb();
     await app.close();
   });
 
@@ -101,9 +115,7 @@ describe('POS (e2e) — acceptance §13 #3', () => {
     });
 
     it('emitted one out-movement per line with ref=TKT-####', async () => {
-      const mvts = await prisma.movement.findMany({
-        where: { ref: ticketNumber },
-      });
+      const mvts = await testDb.selectFrom('app.movements').select(['type', 'reason']).where('ref', '=', ticketNumber).execute();
       expect(mvts).toHaveLength(3);
       for (const m of mvts) {
         expect(m.type).toBe('out');
@@ -119,9 +131,7 @@ describe('POS (e2e) — acceptance §13 #3', () => {
     });
 
     it('bumped session counters (sales++, revenue+=total)', async () => {
-      const session = await prisma.pOSession.findFirstOrThrow({
-        orderBy: { openedAt: 'desc' },
-      });
+      const session = await testDb.selectFrom('app.po_sessions').select(['sales', 'revenue']).orderBy('openedAt', 'desc').executeTakeFirstOrThrow();
       expect(session.sales).toBeGreaterThanOrEqual(1);
       expect(Number(session.revenue)).toBeGreaterThanOrEqual(total);
     });
@@ -146,8 +156,8 @@ describe('POS (e2e) — acceptance §13 #3', () => {
     it('insufficient stock rolls back entire transaction (422, no movement, no stock change)', async () => {
       const p = products[0]!;
       const before = await stockAt(p.id, warehouseId);
-      const mvtCountBefore = await prisma.movement.count();
-      const ticketCountBefore = await prisma.pOTicket.count();
+      const mvtCountBefore = await countRows('app.movements');
+      const ticketCountBefore = await countRows('app.po_tickets');
 
       await api(app)
         .post('/api/v1/pos/tickets')
@@ -163,8 +173,8 @@ describe('POS (e2e) — acceptance §13 #3', () => {
         .expect(422);
 
       expect(await stockAt(p.id, warehouseId)).toBe(before);
-      expect(await prisma.movement.count()).toBe(mvtCountBefore);
-      expect(await prisma.pOTicket.count()).toBe(ticketCountBefore);
+      expect(await countRows('app.movements')).toBe(mvtCountBefore);
+      expect(await countRows('app.po_tickets')).toBe(ticketCountBefore);
     });
 
     it('rejects cash tendered < total (422)', async () => {

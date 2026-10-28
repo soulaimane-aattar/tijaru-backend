@@ -2,7 +2,7 @@ import { ValidationPipe, VersioningType, type INestApplication } from '@nestjs/c
 import { Test } from '@nestjs/testing';
 import supertest from 'supertest';
 
-import { runSeed } from '../../prisma/seed';
+import { runSeed } from '../../prisma/seed'; // also loads .env (JWT secrets) via prisma/db.ts
 import { AppModule } from '../../src/app.module';
 
 export const DEMO = {

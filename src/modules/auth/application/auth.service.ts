@@ -72,7 +72,7 @@ export class AuthService {
 
     const overrides = this.overridesOf(user);
     const role = user.role as RoleId;
-    const roleCaps = await this.permissions.effectiveCapsForRole(role);
+    const roleCaps = await this.permissions.effectiveCapsForRole(role, user.businessId);
 
     const tokens = await this.issueTokens(
       { id: user.id, businessId: user.businessId, role, ver: user.tokenVersion, roleCaps, overrides },
@@ -113,7 +113,7 @@ export class AuthService {
 
     const overrides = this.overridesOf(session.user);
     const role = session.user.role as RoleId;
-    const roleCaps = await this.permissions.effectiveCapsForRole(role);
+    const roleCaps = await this.permissions.effectiveCapsForRole(role, session.user.businessId);
 
     return this.issueTokens(
       {
@@ -215,7 +215,7 @@ export class AuthService {
   ): Promise<unknown | null> {
     const profile = await this.authRepo.findProfile(userId);
     if (!profile) return null;
-    const roleCaps = await this.permissions.effectiveCapsForRole(role);
+    const roleCaps = await this.permissions.effectiveCapsForRole(role, businessId || undefined);
     const effective = new Set<CapabilityId>(roleCaps);
     for (const [cap, granted] of Object.entries(overrides)) {
       if (granted) effective.add(cap as CapabilityId);
