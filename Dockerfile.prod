@@ -1,24 +1,22 @@
 # Stock — backend (NestJS + Kysely). Production image: multi-stage, dev deps pruned.
-# Final image = debian-slim + openssl + prod-only node_modules + dist + prisma schema.
+# Final image = debian-slim + prod-only node_modules + dist.
 # DB migrations run externally via sqitch (make prod-db-up), not on boot.
 
 # ─── builder ───────────────────────────────────────────────────────────────
 FROM node:20-slim AS builder
 WORKDIR /app
 
-# openssl: Prisma engines. python3/make/g++: native deps (bcrypt) compile.
+# python3/make/g++: native deps (bcrypt) compile.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends openssl python3 make g++ \
+  && apt-get install -y --no-install-recommends python3 make g++ \
   && rm -rf /var/lib/apt/lists/*
 
 COPY package.json package-lock.json ./
 RUN npm ci
 
 COPY . .
-RUN npx prisma generate \
-  && npm run build \
-  # Drop dev deps in place — keeps compiled bcrypt + generated prisma client,
-  # keeps `prisma` CLI (now a prod dep) for `migrate deploy` at runtime.
+RUN npm run build \
+  # Drop dev deps in place — keeps compiled bcrypt.
   && npm prune --omit=dev \
   && npm cache clean --force
 
@@ -27,14 +25,9 @@ FROM node:20-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends openssl \
-  && rm -rf /var/lib/apt/lists/*
-
-# Only what production needs: pruned node_modules, compiled dist, prisma schema+migrations.
+# Only what production needs: pruned node_modules, compiled dist.
 COPY --from=builder --chown=node:node /app/node_modules ./node_modules
 COPY --from=builder --chown=node:node /app/dist ./dist
-COPY --from=builder --chown=node:node /app/prisma ./prisma
 COPY --from=builder --chown=node:node /app/package.json ./package.json
 
 # Receipt uploads mount point. Created here (owned by node) so the empty named
@@ -46,5 +39,4 @@ USER node
 EXPOSE 3000
 
 # DB migrations applied separately via `make prod-db-up` (sqitch).
-# Prisma generate still needed for the client during transition to Kysely.
 CMD ["node", "dist/src/main.js"]
