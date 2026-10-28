@@ -58,8 +58,10 @@ export class StockLedgerService {
       // Lock row with FOR UPDATE to prevent concurrent avgCost corruption.
       const rows = await client.$queryRaw<{ qty: number; avgCost: number }[]>`
         SELECT qty, "avgCost"::float8 AS "avgCost"
-        FROM "StockLevel"
-        WHERE "productId" = ${line.productId} AND "warehouseId" = ${line.warehouseId}
+        FROM app.stock_levels
+        WHERE "productId" = ${line.productId}
+          AND "warehouseId" = ${line.warehouseId}
+          AND "businessId" = ${businessId}
         FOR UPDATE
       `;
       const existing = rows[0] ?? null;

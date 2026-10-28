@@ -259,21 +259,21 @@ export class PrismaDeliveryNotesRepository extends DeliveryNotesRepository {
         SUM(dn.paid) AS "paid",
         COALESCE(SUM(RT.total), 0) AS "returned",
         SUM(L.total) - SUM(dn.paid) - COALESCE(SUM(RT.total), 0) AS "balance"
-      FROM delivery_notes dn
+      FROM app.delivery_notes dn
       JOIN LATERAL (
         SELECT COALESCE(SUM(l.sent * l.unit_price), 0) AS total
-        FROM delivery_note_lines l WHERE l.delivery_note_id = dn.id
+        FROM app.delivery_note_lines l WHERE l.delivery_note_id = dn.id
       ) L ON TRUE
       LEFT JOIN LATERAL (
         SELECT COALESCE(SUM(RL.total), 0) AS total
-        FROM delivery_notes r
+        FROM app.delivery_notes r
         JOIN LATERAL (
           SELECT COALESCE(SUM(rl.sent * rl.unit_price), 0) AS total
-          FROM delivery_note_lines rl WHERE rl.delivery_note_id = r.id
+          FROM app.delivery_note_lines rl WHERE rl.delivery_note_id = r.id
         ) RL ON TRUE
         WHERE r.return_of_id = dn.id AND r.type = 'retour'
       ) RT ON TRUE
-      LEFT JOIN customers c ON c.id = dn.customer_id
+      LEFT JOIN app.customers c ON c.id = dn.customer_id
       WHERE dn.business_id = ${businessId} AND dn.type = 'out' AND dn.customer_id IS NOT NULL
       GROUP BY dn.customer_id, c.name
       HAVING SUM(L.total) - SUM(dn.paid) - COALESCE(SUM(RT.total), 0) > 0

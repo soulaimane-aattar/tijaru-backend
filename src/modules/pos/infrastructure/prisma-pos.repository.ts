@@ -41,24 +41,6 @@ export class PrismaPosRepository extends PosRepository {
     return products.map((p) => ({ id: p.id, name: p.name, sale: dec(p.sale), vat: p.vat }));
   }
 
-  async findLastTicketRefs(
-    prefix: string,
-  ): Promise<{ ticketNumber: string | null; movementRef: string | null }> {
-    const [lastTicket, lastMvt] = await Promise.all([
-      this.prisma.pOTicket.findFirst({
-        where: { number: { startsWith: prefix } },
-        orderBy: { number: 'desc' },
-        select: { number: true },
-      }),
-      this.prisma.movement.findFirst({
-        where: { ref: { startsWith: prefix } },
-        orderBy: { ref: 'desc' },
-        select: { ref: true },
-      }),
-    ]);
-    return { ticketNumber: lastTicket?.number ?? null, movementRef: lastMvt?.ref ?? null };
-  }
-
   async getStockQty(productId: string, warehouseId: string): Promise<number> {
     const level = await this.prisma.stockLevel.findUnique({
       where: { productId_warehouseId: { productId, warehouseId } },
@@ -73,12 +55,18 @@ export class PrismaPosRepository extends PosRepository {
     replaceTicketId?: string,
   ): Promise<unknown> {
     return this.prisma.$transaction(async (tx) => {
-      // Atomic ticket number: lock the highest ticket row to serialize concurrent checkouts.
-      const [{ next_num: nextNum }] = await tx.$queryRaw<[{ next_num: string }]>`
-        SELECT COALESCE(MAX(CAST(SUBSTRING(number FROM 5) AS integer)), 0) + 1 AS next_num
-        FROM "POTicket"
-        WHERE "businessId" = ${data.businessId} AND number LIKE 'TKT-%'
-        FOR UPDATE
+      // Per-business advisory lock serializes concurrent checkouts until commit, so the
+      // MAX+1 below can't hand two tickets the same number. Movement refs are included
+      // because the sale's stock movement reuses the ticket number as its ref.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${data.businessId}))`;
+      const [{ next_num: nextNum }] = await tx.$queryRaw<[{ next_num: number }]>`
+        SELECT COALESCE(MAX(n), 0) + 1 AS next_num FROM (
+          SELECT SUBSTRING(number FROM 5)::int AS n FROM app.po_tickets
+          WHERE business_id = ${data.businessId} AND number ~ '^TKT-[0-9]+$'
+          UNION ALL
+          SELECT SUBSTRING(ref FROM 5)::int FROM app.movements
+          WHERE business_id = ${data.businessId} AND ref ~ '^TKT-[0-9]+$'
+        ) t
       `;
       data.number = `TKT-${String(Number(nextNum)).padStart(4, '0')}`;
 

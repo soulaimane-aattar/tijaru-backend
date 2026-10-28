@@ -14,8 +14,8 @@ type StockLevelRow = {
 };
 
 type MockPrisma = {
+  $queryRaw: jest.Mock;
   stockLevel: {
-    findUnique: jest.Mock;
     upsert: jest.Mock;
     updateMany: jest.Mock;
   };
@@ -24,8 +24,8 @@ type MockPrisma = {
 };
 
 const mockPrisma = (): MockPrisma => ({
+  $queryRaw: jest.fn().mockResolvedValue([]),
   stockLevel: {
-    findUnique: jest.fn(),
     upsert: jest.fn(),
     updateMany: jest.fn(),
   },
@@ -75,7 +75,7 @@ const stockRow = (over: Partial<StockLevelRow> = {}): StockLevelRow => ({
 describe('StockLedgerService.post', () => {
   it('increments stock and emits Movement on type=in', async () => {
     const { prisma, svc } = setup();
-    prisma.stockLevel.findUnique.mockResolvedValue(stockRow({ qty: 3, avgCost: 2 }));
+    prisma.$queryRaw.mockResolvedValue([stockRow({ qty: 3, avgCost: 2 })]);
     prisma.stockLevel.upsert.mockResolvedValue({});
 
     const result = await svc.post(
@@ -87,6 +87,13 @@ describe('StockLedgerService.post', () => {
     );
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({ productId: PID, warehouseId: WH, qty: 5, type: 'in' });
+
+    // The read that feeds avgCost must lock the bin row, scoped to the tenant.
+    const [strings, ...values] = prisma.$queryRaw.mock.calls[0] as [string[], ...string[]];
+    const sql = strings.join('?');
+    expect(sql).toContain('FROM app.stock_levels');
+    expect(sql).toContain('FOR UPDATE');
+    expect(values).toEqual([PID, WH, BID]);
   });
 
   it('rejects out when qty < |delta| (conditional update returns 0)', async () => {
@@ -110,7 +117,7 @@ describe('StockLedgerService.post', () => {
 
   it('creates stockLevel row when missing on positive delta', async () => {
     const { prisma, svc } = setup();
-    prisma.stockLevel.findUnique.mockResolvedValue(null);
+    prisma.$queryRaw.mockResolvedValue([]);
     prisma.stockLevel.upsert.mockResolvedValue({});
 
     await svc.post(
@@ -133,7 +140,7 @@ describe('StockLedgerService.post', () => {
   it('for transfer: decrements from warehouse and increments toWarehouseId in same tx', async () => {
     const { prisma, svc } = setup();
     prisma.stockLevel.updateMany.mockResolvedValue({ count: 1 });
-    prisma.stockLevel.findUnique.mockResolvedValue(stockRow({ warehouseId: WH2, qty: 0 }));
+    prisma.$queryRaw.mockResolvedValue([stockRow({ warehouseId: WH2, qty: 0 })]);
     prisma.stockLevel.upsert.mockResolvedValue({});
 
     const result = await svc.post(
@@ -160,7 +167,7 @@ describe('StockLedgerService.post', () => {
 
   it('updates avgCost using weighted average on positive delta with unitCost', async () => {
     const { prisma, svc } = setup();
-    prisma.stockLevel.findUnique.mockResolvedValue(stockRow({ qty: 10, avgCost: 5 }));
+    prisma.$queryRaw.mockResolvedValue([stockRow({ qty: 10, avgCost: 5 })]);
     prisma.stockLevel.upsert.mockResolvedValue({});
 
     await svc.post(
@@ -216,7 +223,7 @@ describe('StockLedgerService.post', () => {
 
   it('runs inside an outer tx when tx passed', async () => {
     const { prisma, svc } = setup();
-    prisma.stockLevel.findUnique.mockResolvedValue(null);
+    prisma.$queryRaw.mockResolvedValue([]);
     prisma.stockLevel.upsert.mockResolvedValue({});
 
     await svc.post(

@@ -26,7 +26,6 @@ const repo = (): jest.Mocked<PosRepository> =>
   ({
     ensureSession: jest.fn(),
     findSaleProducts: jest.fn(),
-    findLastTicketRefs: jest.fn().mockResolvedValue({ ticketNumber: null, movementRef: null }),
     getStockQty: jest.fn(),
     executeCheckout: jest.fn().mockImplementation((d) => Promise.resolve({ id: 't1', ...d })),
     findTicketForResume: jest.fn(),
@@ -74,7 +73,7 @@ describe('PosService — checkout math', () => {
     expect(data.ht).toBe(10);
     expect(data.tva).toBe(2);
     expect(data.total).toBe(12);
-    expect(data.number).toMatch(/^TKT-\d{4}$/);
+    expect(data.number).toBe(''); // assigned inside the repo transaction
   });
 
   it('subtracts the discount from the total', async () => {
@@ -98,13 +97,15 @@ describe('PosService — checkout math', () => {
     ).rejects.toBeInstanceOf(DomainError);
   });
 
-  it('increments the ticket number from the highest existing ref', async () => {
+  it('leaves ticket numbering to the repository transaction and logs the sale activity', async () => {
     const r = repo();
-    r.findLastTicketRefs.mockResolvedValue({ ticketNumber: 'TKT-0042', movementRef: null });
     r.findSaleProducts.mockResolvedValue([PROD_A]);
     r.getStockQty.mockResolvedValue(10);
     await new PosService(r).checkout(baseTicket(), actor);
-    expect(r.executeCheckout.mock.calls[0]![0].number).toBe('TKT-0043');
+    const [data, activity] = r.executeCheckout.mock.calls[0]!;
+    expect(data.number).toBe('');
+    expect(activity).toMatchObject({ action: 'stock.out', userId: 'u1' });
+    expect(activity!.desc).toContain('12.00 MAD');
   });
 });
 

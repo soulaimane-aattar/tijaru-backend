@@ -40,7 +40,17 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx prisma generate
-      - run: npx prisma migrate deploy
+      - name: Apply database migrations
+        env:
+          PGPASSWORD: stock
+        run: |
+          # 006-test-framework needs the pgTAP extension, which the postgres:16-alpine
+          # service image lacks; the app schema doesn't depend on it.
+          for f in $(ls migrations/deploy/*.sql | sort | grep -v 006-test-framework); do
+            echo "== $f"
+            psql -h localhost -U stock -d stock_test -v ON_ERROR_STOP=1 -q -f "$f"
+          done
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test -- --coverage
+      - run: npm run test:e2e

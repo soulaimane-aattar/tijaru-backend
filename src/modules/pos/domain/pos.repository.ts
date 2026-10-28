@@ -102,14 +102,6 @@ export abstract class PosRepository {
   /** Non-deleted products among `ids` (money converted to numbers). */
   abstract findSaleProducts(ids: string[]): Promise<SaleProduct[]>;
 
-  /**
-   * Highest existing ticket number and movement ref starting with `prefix`
-   * (seed data may reference tickets without a matching ticket row).
-   */
-  abstract findLastTicketRefs(
-    prefix: string,
-  ): Promise<{ ticketNumber: string | null; movementRef: string | null }>;
-
   /** Current quantity at the warehouse (0 when no stock level exists). */
   abstract getStockQty(productId: string, warehouseId: string): Promise<number>;
 

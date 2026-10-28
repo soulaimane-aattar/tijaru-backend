@@ -212,7 +212,7 @@ enum BuiltInRole {
   cashier
   viewer
 
-  @@schema("app_auth")
+  @@schema("app")
 }
 
 model User {

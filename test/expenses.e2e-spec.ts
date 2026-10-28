@@ -1,6 +1,7 @@
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { inflateSync } from 'node:zlib';
 
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { ValidationPipe, VersioningType, type INestApplication } from '@nestjs/common';
@@ -228,8 +229,17 @@ describe('Expenses (e2e)', () => {
 
   describe('GET /expenses/report', () => {
     /** pdfkit writes glyph runs as hex `<...>` TJ arrays; decode them for text assertions. */
+    // The report is Flate-compressed: inflate every stream, then read the hex-encoded text.
     const pdfText = (buf: Buffer): string => {
-      const s = buf.toString('latin1');
+      const raw = buf.toString('latin1');
+      const inflated = [...raw.matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/g)].map((m) => {
+        try {
+          return inflateSync(Buffer.from(m[1] ?? '', 'latin1')).toString('latin1');
+        } catch {
+          return ''; // images (JPEG) aren't Flate text
+        }
+      });
+      const s = [raw, ...inflated].join('\n');
       return [...s.matchAll(/<([0-9a-fA-F]+)>/g)]
         .map((m) => Buffer.from(m[1] ?? '', 'hex').toString('latin1'))
         .join('');

@@ -2,7 +2,11 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 
 import { Injectable } from '@nestjs/common';
 
-/** Prisma model names that carry businessId and are auto-scoped. */
+/**
+ * Prisma model names that carry businessId and are auto-scoped.
+ * Webhook/WebhookDelivery are deliberately absent: marketplace events are enqueued from the
+ * buyer's request for the seller's hooks, so auto-scoping would hide them.
+ */
 export const TENANT_MODELS: ReadonlySet<string> = new Set([
   'Warehouse',
   'User',
@@ -34,8 +38,6 @@ export const TENANT_MODELS: ReadonlySet<string> = new Set([
   'DeliveryNotePayment',
   'DeliveryNoteLine',
   'OrderLine',
-  'Webhook',
-  'WebhookDelivery',
   'ApiKey',
   'BugReport',
 ]);

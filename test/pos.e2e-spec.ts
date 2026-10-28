@@ -231,6 +231,33 @@ describe('POS (e2e) — acceptance §13 #3', () => {
     });
   });
 
+  describe('Ticket numbering', () => {
+    const sell = () =>
+      api(app)
+        .post('/api/v1/pos/tickets')
+        .set(bearer(salmaToken))
+        .send({
+          warehouseId,
+          lines: [{ productId: products[0]!.id, qty: 1 }],
+          payment: { method: 'cash', tendered: 9999 },
+        })
+        .expect(201);
+    const seq = (number: string): number => Number(number.slice('TKT-'.length));
+
+    it('numbers sequential checkouts consecutively', async () => {
+      const a = await sell();
+      const b = await sell();
+      expect(a.body.number).toMatch(/^TKT-\d{4}$/);
+      expect(seq(b.body.number)).toBe(seq(a.body.number) + 1);
+    });
+
+    it('gives concurrent checkouts distinct numbers', async () => {
+      const results = await Promise.all([sell(), sell(), sell()]);
+      const numbers = results.map((r) => r.body.number as string);
+      expect(new Set(numbers).size).toBe(3);
+    });
+  });
+
   describe('RBAC', () => {
     it('viewer cannot checkout (403)', async () => {
       await api(app)

@@ -90,7 +90,11 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module';
         },
       }),
     }),
-    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]),
+    ThrottlerModule.forRoot({
+      throttlers: [{ ttl: 60_000, limit: 120 }],
+      // e2e suites log in dozens of times from one IP; prod limits stay untouched.
+      skipIf: () => process.env.NODE_ENV === 'test',
+    }),
     JwtModule.register({ global: true }),
   ],
   controllers: [DocumentAuditController],
