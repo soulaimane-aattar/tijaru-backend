@@ -84,10 +84,11 @@ export class JwtAuthGuard implements CanActivate {
         device: request.headers['user-agent'],
       };
     } else {
+      if (!payload.role) throw new UnauthorizedError('Token missing role claim');
       request.user = {
         id: payload.sub,
         businessId: payload.bid ?? '',
-        role: payload.role!,
+        role: payload.role,
         tokenVersion: payload.ver,
         roleCaps: payload.caps ?? [],
         overrides: payload.overrides ?? {},

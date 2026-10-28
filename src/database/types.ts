@@ -82,6 +82,7 @@ export interface AppApiKeys {
 
 export interface AppAttendancePauses {
   attendance_id: string;
+  business_id: string;
   ended_at: Timestamp | null;
   id: string;
   started_at: Generated<Timestamp>;
@@ -114,6 +115,7 @@ export interface AppAuthCustomRoles {
 }
 
 export interface AppAuthRoleCapabilities {
+  business_id: string;
   capId: string;
   customRoleId: string;
   granted: boolean;
@@ -144,6 +146,7 @@ export interface AppAuthSecurityPolicies {
 }
 
 export interface AppAuthSessions {
+  business_id: string;
   city: string | null;
   createdAt: Generated<Timestamp>;
   device: string | null;
@@ -159,6 +162,7 @@ export interface AppAuthSessions {
 }
 
 export interface AppAuthUserOverrides {
+  business_id: string;
   capId: string;
   granted: boolean;
   userId: string;
@@ -183,6 +187,7 @@ export interface AppAuthUsers {
 }
 
 export interface AppAuthUserWarehouses {
+  business_id: string;
   userId: string;
   warehouseId: string;
 }
@@ -265,6 +270,7 @@ export interface AppCustomers {
 }
 
 export interface AppDeliveryNoteLines {
+  business_id: string;
   delivery_note_id: string;
   id: string;
   label: string;
@@ -320,6 +326,7 @@ export interface AppDocumentAudits {
 }
 
 export interface AppEstimateLines {
+  business_id: string;
   discount: Generated<Numeric>;
   estimate_id: string;
   id: string;
@@ -362,6 +369,7 @@ export interface AppExpenseCategoryDefs {
 }
 
 export interface AppExpensePhotos {
+  business_id: string;
   created_at: Generated<Timestamp>;
   expense_id: string;
   id: string;
@@ -390,6 +398,7 @@ export interface AppExpenses {
 }
 
 export interface AppInventoryCountLines {
+  business_id: string;
   counted: number;
   countId: string;
   expected: number;
@@ -408,6 +417,7 @@ export interface AppInventoryCounts {
 }
 
 export interface AppInvoiceLines {
+  business_id: string;
   discount: Generated<Numeric>;
   id: string;
   invoice_id: string;
@@ -454,6 +464,7 @@ export interface AppListings {
 }
 
 export interface AppListingTiers {
+  business_id: string;
   id: string;
   listing_id: string;
   min_qty: number;
@@ -489,6 +500,7 @@ export interface AppNotifications {
 }
 
 export interface AppOrderLines {
+  business_id: string;
   id: string;
   listing_id: string;
   name: string;
@@ -520,6 +532,25 @@ export interface AppOrders {
   vat_total: Numeric;
 }
 
+export interface AppPgAllForeignKeys {
+  fk_columns: string[] | null;
+  fk_constraint_name: string | null;
+  fk_schema_name: string | null;
+  fk_table_name: string | null;
+  fk_table_oid: number | null;
+  is_deferrable: boolean | null;
+  is_deferred: boolean | null;
+  match_type: string | null;
+  on_delete: string | null;
+  on_update: string | null;
+  pk_columns: string[] | null;
+  pk_constraint_name: string | null;
+  pk_index_name: string | null;
+  pk_schema_name: string | null;
+  pk_table_name: string | null;
+  pk_table_oid: number | null;
+}
+
 export interface AppPoSessions {
   business_id: string;
   closedAt: Timestamp | null;
@@ -531,6 +562,7 @@ export interface AppPoSessions {
 }
 
 export interface AppPoTicketLines {
+  business_id: string;
   id: string;
   priceTtc: Numeric;
   productId: string;
@@ -594,6 +626,7 @@ export interface AppProducts {
 }
 
 export interface AppPurchaseOrderLines {
+  business_id: string;
   id: string;
   price: Numeric;
   productId: string;
@@ -639,6 +672,22 @@ export interface AppSuppliers {
   updatedAt: Timestamp;
 }
 
+export interface AppTapFunky {
+  args: string | null;
+  is_definer: boolean | null;
+  is_strict: boolean | null;
+  is_visible: boolean | null;
+  kind: string | null;
+  langoid: number | null;
+  name: string | null;
+  oid: number | null;
+  owner: string | null;
+  returns: string | null;
+  returns_set: boolean | null;
+  schema: string | null;
+  volatility: string | null;
+}
+
 export interface AppWarehouses {
   active: Generated<boolean>;
   address: string | null;
@@ -656,6 +705,7 @@ export interface AppWarehouses {
 
 export interface AppWebhookDeliveries {
   attempts: Generated<number>;
+  business_id: string;
   createdAt: Generated<Timestamp>;
   event: string;
   id: string;
@@ -676,25 +726,6 @@ export interface AppWebhooks {
   secret: string;
   updatedAt: Timestamp;
   url: string;
-}
-
-export interface PgAllForeignKeys {
-  fk_columns: string[] | null;
-  fk_constraint_name: string | null;
-  fk_schema_name: string | null;
-  fk_table_name: string | null;
-  fk_table_oid: number | null;
-  is_deferrable: boolean | null;
-  is_deferred: boolean | null;
-  match_type: string | null;
-  on_delete: string | null;
-  on_update: string | null;
-  pk_columns: string[] | null;
-  pk_constraint_name: string | null;
-  pk_index_name: string | null;
-  pk_schema_name: string | null;
-  pk_table_name: string | null;
-  pk_table_oid: number | null;
 }
 
 export interface PlatformAdmins {
@@ -937,22 +968,6 @@ export interface SqitchTags {
   tag_id: string;
 }
 
-export interface TapFunky {
-  args: string | null;
-  is_definer: boolean | null;
-  is_strict: boolean | null;
-  is_visible: boolean | null;
-  kind: string | null;
-  langoid: number | null;
-  name: string | null;
-  oid: number | null;
-  owner: string | null;
-  returns: string | null;
-  returns_set: boolean | null;
-  schema: string | null;
-  volatility: string | null;
-}
-
 export interface DB {
   "app_auth.custom_roles": AppAuthCustomRoles;
   "app_auth.role_capabilities": AppAuthRoleCapabilities;
@@ -990,6 +1005,7 @@ export interface DB {
   "app.notifications": AppNotifications;
   "app.order_lines": AppOrderLines;
   "app.orders": AppOrders;
+  "app.pg_all_foreign_keys": AppPgAllForeignKeys;
   "app.po_sessions": AppPoSessions;
   "app.po_ticket_lines": AppPoTicketLines;
   "app.po_tickets": AppPoTickets;
@@ -999,10 +1015,10 @@ export interface DB {
   "app.purchase_orders": AppPurchaseOrders;
   "app.stock_levels": AppStockLevels;
   "app.suppliers": AppSuppliers;
+  "app.tap_funky": AppTapFunky;
   "app.warehouses": AppWarehouses;
   "app.webhook_deliveries": AppWebhookDeliveries;
   "app.webhooks": AppWebhooks;
-  pg_all_foreign_keys: PgAllForeignKeys;
   platform_admins: PlatformAdmins;
   platform_audit_logs: PlatformAuditLogs;
   "sqitch.changes": SqitchChanges;
@@ -1011,5 +1027,4 @@ export interface DB {
   "sqitch.projects": SqitchProjects;
   "sqitch.releases": SqitchReleases;
   "sqitch.tags": SqitchTags;
-  tap_funky: TapFunky;
 }

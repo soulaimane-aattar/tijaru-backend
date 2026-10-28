@@ -7,3 +7,4 @@
 004-tables 2026-10-27T00:03:00Z soulaimane <soulaimane.aattar@gmail.com> # All tables in app/app_auth/public schemas with indexes and FKs
 005-rls 2026-10-27T00:04:00Z soulaimane <soulaimane.aattar@gmail.com> # RLS helper + enable tenant isolation on all tenant tables
 006-test-framework 2026-10-27T00:05:00Z soulaimane <soulaimane.aattar@gmail.com> # pgTAP test helpers and fixtures
+007-security-hardening 2026-10-27T00:06:00Z soulaimane <soulaimane.aattar@gmail.com> # RLS hardening: WITH CHECK, child table isolation, updatedAt triggers, platform lockdown

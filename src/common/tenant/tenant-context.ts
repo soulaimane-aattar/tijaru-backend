@@ -28,6 +28,16 @@ export const TENANT_MODELS: ReadonlySet<string> = new Set([
   'AttendancePause',
   'Estimate',
   'EstimateLine',
+  'Invoice',
+  'InvoiceLine',
+  'DeliveryNote',
+  'DeliveryNotePayment',
+  'DeliveryNoteLine',
+  'OrderLine',
+  'Webhook',
+  'WebhookDelivery',
+  'ApiKey',
+  'BugReport',
 ]);
 
 type Store = { businessId: string };

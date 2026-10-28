@@ -73,6 +73,15 @@ export class PrismaPosRepository extends PosRepository {
     replaceTicketId?: string,
   ): Promise<unknown> {
     return this.prisma.$transaction(async (tx) => {
+      // Atomic ticket number: lock the highest ticket row to serialize concurrent checkouts.
+      const [{ next_num: nextNum }] = await tx.$queryRaw<[{ next_num: string }]>`
+        SELECT COALESCE(MAX(CAST(SUBSTRING(number FROM 5) AS integer)), 0) + 1 AS next_num
+        FROM "POTicket"
+        WHERE "businessId" = ${data.businessId} AND number LIKE 'TKT-%'
+        FOR UPDATE
+      `;
+      data.number = `TKT-${String(Number(nextNum)).padStart(4, '0')}`;
+
       const session = await tx.pOSession.upsert({
         where: { id: data.sessionId },
         create: scoped<Prisma.POSessionUncheckedCreateInput>({
@@ -142,7 +151,7 @@ export class PrismaPosRepository extends PosRepository {
             data: scoped<Prisma.ActivityUncheckedCreateInput>({
               userId: activity.userId,
               action: activity.action,
-              desc: activity.desc,
+              desc: `${data.number} ${activity.desc}`,
               ...(activity.device ? { device: activity.device } : {}),
             }),
           });

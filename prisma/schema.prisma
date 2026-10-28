@@ -150,6 +150,22 @@ model Business {
   webhooks            Webhook[]
   apiKeys             ApiKey[]
   bugReports          BugReport[]
+  // RLS child-table relations (business_id denormalized for tenant isolation)
+  invoiceLines        InvoiceLine[]        @relation("InvoiceLineBusiness")
+  estimateLines       EstimateLine[]       @relation("EstimateLineBusiness")
+  deliveryNoteLines   DeliveryNoteLine[]   @relation("DeliveryNoteLineBusiness")
+  expensePhotos       ExpensePhoto[]       @relation("ExpensePhotoBusiness")
+  purchaseOrderLines  PurchaseOrderLine[]  @relation("PurchaseOrderLineBusiness")
+  poTicketLines       POTicketLine[]       @relation("POTicketLineBusiness")
+  inventoryCountLines InventoryCountLine[] @relation("InventoryCountLineBusiness")
+  listingTiers        ListingTier[]        @relation("ListingTierBusiness")
+  orderLines          OrderLine[]          @relation("OrderLineBusiness")
+  webhookDeliveries   WebhookDelivery[]    @relation("WebhookDeliveryBusiness")
+  attendancePauses    AttendancePause[]    @relation("AttendancePauseBusiness")
+  sessionsRls         Session[]            @relation("SessionBusiness")
+  roleCapabilities    RoleCapability[]     @relation("RoleCapabilityBusiness")
+  userOverrides       UserOverride[]       @relation("UserOverrideBusiness")
+  userWarehouses      UserWarehouse[]      @relation("UserWarehouseBusiness")
 
   @@map("businesses")
   @@schema("app")
@@ -243,23 +259,29 @@ model User {
 model UserWarehouse {
   userId      String
   warehouseId String
+  businessId  String @default(dbgenerated("''")) @map("business_id")
 
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   warehouse Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  business  Business  @relation("UserWarehouseBusiness", fields: [businessId], references: [id], onDelete: Cascade)
 
   @@id([userId, warehouseId])
+  @@index([businessId])
   @@map("user_warehouses")
   @@schema("app_auth")
 }
 
 model UserOverride {
-  userId  String
-  capId   String
-  granted Boolean
+  userId     String
+  capId      String
+  businessId String  @default(dbgenerated("''")) @map("business_id")
+  granted    Boolean
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  business Business @relation("UserOverrideBusiness", fields: [businessId], references: [id], onDelete: Cascade)
 
   @@id([userId, capId])
+  @@index([businessId])
   @@map("user_overrides")
   @@schema("app_auth")
 }
@@ -285,11 +307,14 @@ model CustomRole {
 model RoleCapability {
   customRoleId String
   capId        String
+  businessId   String  @default(dbgenerated("''")) @map("business_id")
   granted      Boolean
 
   customRole CustomRole @relation(fields: [customRoleId], references: [id], onDelete: Cascade)
+  business   Business   @relation("RoleCapabilityBusiness", fields: [businessId], references: [id], onDelete: Cascade)
 
   @@id([customRoleId, capId])
+  @@index([businessId])
   @@map("role_capabilities")
   @@schema("app_auth")
 }
@@ -313,6 +338,7 @@ model RoleCustomization {
 model Session {
   id               String    @id @default(cuid())
   userId           String
+  businessId       String    @default(dbgenerated("''")) @map("business_id")
   refreshTokenHash String
   device           String?
   os               String?
@@ -324,10 +350,12 @@ model Session {
   createdAt        DateTime  @default(now())
   lastSeenAt       DateTime  @default(now())
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  business Business @relation("SessionBusiness", fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([expiresAt])
+  @@index([businessId])
   @@map("sessions")
   @@schema("app_auth")
 }
@@ -601,6 +629,7 @@ model PurchaseOrderLine {
   id              String  @id @default(cuid())
   purchaseOrderId String
   productId       String
+  businessId      String  @default(dbgenerated("''")) @map("business_id")
   qty             Int
   price           Decimal @db.Decimal(12, 2)
   vat             Int
@@ -608,8 +637,10 @@ model PurchaseOrderLine {
 
   purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
   product       Product       @relation(fields: [productId], references: [id], onDelete: Restrict)
+  business      Business      @relation("PurchaseOrderLineBusiness", fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([purchaseOrderId])
+  @@index([businessId])
   @@map("purchase_order_lines")
   @@schema("app")
 }
@@ -676,17 +707,20 @@ model POTicket {
 }
 
 model POTicketLine {
-  id        String  @id @default(cuid())
-  ticketId  String
-  productId String
-  qty       Int
-  priceTtc  Decimal @db.Decimal(12, 2)
-  vat       Int
+  id         String  @id @default(cuid())
+  ticketId   String
+  productId  String
+  businessId String  @default(dbgenerated("''")) @map("business_id")
+  qty        Int
+  priceTtc   Decimal @db.Decimal(12, 2)
+  vat        Int
 
-  ticket  POTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  product Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  ticket   POTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  product  Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  business Business @relation("POTicketLineBusiness", fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([ticketId])
+  @@index([businessId])
   @@map("po_ticket_lines")
 
   @@schema("app")
@@ -714,16 +748,19 @@ model InventoryCount {
 }
 
 model InventoryCountLine {
-  id        String @id @default(cuid())
-  countId   String
-  productId String
-  expected  Int
-  counted   Int
+  id         String @id @default(cuid())
+  countId    String
+  productId  String
+  businessId String @default(dbgenerated("''")) @map("business_id")
+  expected   Int
+  counted    Int
 
-  count   InventoryCount @relation(fields: [countId], references: [id], onDelete: Cascade)
-  product Product        @relation(fields: [productId], references: [id], onDelete: Restrict)
+  count    InventoryCount @relation(fields: [countId], references: [id], onDelete: Cascade)
+  product  Product        @relation(fields: [productId], references: [id], onDelete: Restrict)
+  business Business       @relation("InventoryCountLineBusiness", fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([countId])
+  @@index([businessId])
   @@map("inventory_count_lines")
 
   @@schema("app")
@@ -868,14 +905,17 @@ model Expense {
 }
 
 model ExpensePhoto {
-  id        String   @id @default(cuid())
-  expenseId String   @map("expense_id")
-  path      String
-  createdAt DateTime @default(now()) @map("created_at")
+  id         String   @id @default(cuid())
+  expenseId  String   @map("expense_id")
+  businessId String   @default(dbgenerated("''")) @map("business_id")
+  path       String
+  createdAt  DateTime @default(now()) @map("created_at")
 
-  expense Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  expense  Expense  @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  business Business @relation("ExpensePhotoBusiness", fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([expenseId])
+  @@index([businessId])
   @@map("expense_photos")
 
   @@schema("app")
@@ -928,19 +968,22 @@ model Invoice {
 }
 
 model InvoiceLine {
-  id        String  @id @default(cuid())
-  invoiceId String  @map("invoice_id")
-  productId String  @map("product_id")
-  label     String
-  qty       Decimal @db.Decimal(12, 3)
-  priceHt   Decimal @map("price_ht") @db.Decimal(12, 2)
-  vat       Int
-  discount  Decimal @default(0) @db.Decimal(12, 2)
+  id         String  @id @default(cuid())
+  invoiceId  String  @map("invoice_id")
+  productId  String  @map("product_id")
+  businessId String  @default(dbgenerated("''")) @map("business_id")
+  label      String
+  qty        Decimal @db.Decimal(12, 3)
+  priceHt    Decimal @map("price_ht") @db.Decimal(12, 2)
+  vat        Int
+  discount   Decimal @default(0) @db.Decimal(12, 2)
 
-  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+  invoice  Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  product  Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  business Business @relation("InvoiceLineBusiness", fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([invoiceId])
+  @@index([businessId])
   @@map("invoice_lines")
 
   @@schema("app")
@@ -1042,6 +1085,7 @@ model DeliveryNoteLine {
   id             String  @id @default(cuid())
   deliveryNoteId String  @map("delivery_note_id")
   productId      String  @map("product_id")
+  businessId     String  @default(dbgenerated("''")) @map("business_id")
   label          String
   ordered        Decimal @db.Decimal(12, 3)
   sent           Decimal @default(0) @db.Decimal(12, 3)
@@ -1049,8 +1093,10 @@ model DeliveryNoteLine {
 
   deliveryNote DeliveryNote @relation(fields: [deliveryNoteId], references: [id], onDelete: Cascade)
   product      Product      @relation(fields: [productId], references: [id], onDelete: Restrict)
+  business     Business     @relation("DeliveryNoteLineBusiness", fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([deliveryNoteId])
+  @@index([businessId])
   @@map("delivery_note_lines")
 
   @@schema("app")
@@ -1105,6 +1151,7 @@ model EstimateLine {
   id         String  @id @default(cuid())
   estimateId String  @map("estimate_id")
   productId  String  @map("product_id")
+  businessId String  @default(dbgenerated("''")) @map("business_id")
   label      String
   qty        Decimal @db.Decimal(12, 3)
   priceHt    Decimal @map("price_ht") @db.Decimal(12, 2)
@@ -1113,8 +1160,10 @@ model EstimateLine {
 
   estimate Estimate @relation(fields: [estimateId], references: [id], onDelete: Cascade)
   product  Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  business Business @relation("EstimateLineBusiness", fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([estimateId])
+  @@index([businessId])
   @@map("estimate_lines")
 
   @@schema("app")
@@ -1152,12 +1201,15 @@ model Attendance {
 model AttendancePause {
   id           String    @id @default(cuid())
   attendanceId String    @map("attendance_id")
+  businessId   String    @default(dbgenerated("''")) @map("business_id")
   startedAt    DateTime  @default(now()) @map("started_at")
   endedAt      DateTime? @map("ended_at")
 
   attendance Attendance @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
+  business   Business   @relation("AttendancePauseBusiness", fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([attendanceId])
+  @@index([businessId])
   @@map("attendance_pauses")
 
   @@schema("app")
@@ -1222,14 +1274,17 @@ model ListingTier {
   id           String  @id @default(cuid())
   listingId    String  @map("listing_id")
   priceGroupId String? @map("price_group_id")
+  businessId   String  @default(dbgenerated("''")) @map("business_id")
   minQty       Int     @map("min_qty")
   unitPrice    Decimal @map("unit_price") @db.Decimal(12, 2)
 
   listing    Listing     @relation(fields: [listingId], references: [id], onDelete: Cascade)
   priceGroup PriceGroup? @relation(fields: [priceGroupId], references: [id], onDelete: Cascade)
+  business   Business    @relation("ListingTierBusiness", fields: [businessId], references: [id], onDelete: Cascade)
 
   @@unique([listingId, priceGroupId, minQty])
   @@index([listingId])
+  @@index([businessId])
   @@map("listing_tiers")
 
   @@schema("app")
@@ -1282,21 +1337,24 @@ model Order {
 }
 
 model OrderLine {
-  id        String  @id @default(cuid())
-  orderId   String  @map("order_id")
-  listingId String  @map("listing_id")
-  productId String  @map("product_id")
-  name      String
-  qty       Int
-  unitPrice Decimal @map("unit_price") @db.Decimal(12, 2)
-  vat       Int
-  totalHt   Decimal @map("total_ht") @db.Decimal(14, 2)
+  id         String  @id @default(cuid())
+  orderId    String  @map("order_id")
+  listingId  String  @map("listing_id")
+  productId  String  @map("product_id")
+  businessId String  @default(dbgenerated("''")) @map("business_id")
+  name       String
+  qty        Int
+  unitPrice  Decimal @map("unit_price") @db.Decimal(12, 2)
+  vat        Int
+  totalHt    Decimal @map("total_ht") @db.Decimal(14, 2)
 
-  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  listing Listing @relation(fields: [listingId], references: [id], onDelete: Restrict)
-  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+  order    Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  listing  Listing  @relation(fields: [listingId], references: [id], onDelete: Restrict)
+  product  Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  business Business @relation("OrderLineBusiness", fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([orderId])
+  @@index([businessId])
   @@map("order_lines")
 
   @@schema("app")
@@ -1333,20 +1391,23 @@ enum WebhookDeliveryStatus {
 }
 
 model WebhookDelivery {
-  id        String                @id @default(cuid())
-  webhookId String                @map("webhook_id")
-  event     String
-  payload   Json
-  status    WebhookDeliveryStatus @default(pending)
-  attempts  Int                   @default(0)
-  nextAt    DateTime              @default(now()) @map("next_at")
-  lastError String?               @map("last_error")
-  createdAt DateTime              @default(now())
-  updatedAt DateTime              @updatedAt
+  id         String                @id @default(cuid())
+  webhookId  String                @map("webhook_id")
+  businessId String                @default(dbgenerated("''")) @map("business_id")
+  event      String
+  payload    Json
+  status     WebhookDeliveryStatus @default(pending)
+  attempts   Int                   @default(0)
+  nextAt     DateTime              @default(now()) @map("next_at")
+  lastError  String?               @map("last_error")
+  createdAt  DateTime              @default(now())
+  updatedAt  DateTime              @updatedAt
 
-  webhook Webhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+  webhook  Webhook  @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+  business Business @relation("WebhookDeliveryBusiness", fields: [businessId], references: [id], onDelete: Cascade)
 
   @@index([status, nextAt])
+  @@index([businessId])
   @@map("webhook_deliveries")
 
   @@schema("app")

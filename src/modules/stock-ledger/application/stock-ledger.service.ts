@@ -55,19 +55,19 @@ export class StockLedgerService {
   ): Promise<void> {
     if (line.delta === 0) return;
     if (line.delta > 0) {
-      const existing = await client.stockLevel.findUnique({
-        where: {
-          productId_warehouseId: { productId: line.productId, warehouseId: line.warehouseId },
-        },
-      });
+      // Lock row with FOR UPDATE to prevent concurrent avgCost corruption.
+      const rows = await client.$queryRaw<{ qty: number; avgCost: number }[]>`
+        SELECT qty, "avgCost"::float8 AS "avgCost"
+        FROM "StockLevel"
+        WHERE "productId" = ${line.productId} AND "warehouseId" = ${line.warehouseId}
+        FOR UPDATE
+      `;
+      const existing = rows[0] ?? null;
       const newQty = (existing?.qty ?? 0) + line.delta;
       const newAvg =
         line.unitCost != null && existing
           ? (Number(existing.avgCost) * existing.qty + line.unitCost * line.delta) / newQty
           : (line.unitCost ?? Number(existing?.avgCost ?? 0));
-      // Increment must be atomic: a read-modify-write here loses updates
-      // when a concurrent out/transfer touches the same bin between the
-      // read above and the write below.
       await client.stockLevel.upsert({
         where: {
           productId_warehouseId: { productId: line.productId, warehouseId: line.warehouseId },

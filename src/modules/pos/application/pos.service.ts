@@ -14,8 +14,6 @@ const sessionIdFor = (d = new Date()): string => {
   return `S-${y}${m}${day}`;
 };
 
-const TICKET_PREFIX = 'TKT-';
-
 @Injectable()
 export class PosService {
   constructor(private readonly pos: PosRepository) {}
@@ -31,14 +29,6 @@ export class PosService {
   }
 
   // ─── Tickets ──────────────────────────────────────────────────────────────
-
-  private async nextTicketNumber(): Promise<string> {
-    const { ticketNumber, movementRef } = await this.pos.findLastTicketRefs(TICKET_PREFIX);
-    const parseN = (s?: string | null): number =>
-      s ? parseInt(s.slice(TICKET_PREFIX.length), 10) || 0 : 0;
-    const n = Math.max(parseN(ticketNumber), parseN(movementRef)) + 1;
-    return `${TICKET_PREFIX}${String(n).padStart(4, '0')}`;
-  }
 
   /**
    * Checkout — atomic.
@@ -130,12 +120,11 @@ export class PosService {
     }
 
     const due = input.payment.method === 'credit' ? total : 0;
-    const ticketNumber = await this.nextTicketNumber();
 
     return this.pos.executeCheckout(
       {
         businessId: actor.businessId,
-        number: ticketNumber,
+        number: '', // assigned atomically inside the transaction
         cashierId: actor.id,
         warehouseId: input.warehouseId,
         customerId: input.customerId,
@@ -154,7 +143,7 @@ export class PosService {
         : {
             userId: actor.id,
             action: 'stock.out',
-            desc: `Vente ${ticketNumber} — ${input.lines.length} ligne(s) · ${total.toFixed(2)} MAD`,
+            desc: `Vente — ${input.lines.length} ligne(s) · ${total.toFixed(2)} MAD`,
             device: actor.device,
           },
       replaceTicketId,

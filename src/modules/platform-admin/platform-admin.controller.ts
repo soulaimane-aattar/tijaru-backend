@@ -20,6 +20,7 @@ import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 
 import { ExtendSubscriptionSchema, type ExtendSubscriptionInput } from './dto/extend-subscription.dto';
 import { ImpersonateSchema, type ImpersonateInput } from './dto/impersonate.dto';
+import { ResetPasswordSchema, type ResetPasswordInput } from './dto/reset-password.dto';
 import { UpdateBugReportStatusSchema } from './dto/update-bug-report-status.dto';
 import {
   UpdateBusinessSettingsSchema,
@@ -33,11 +34,11 @@ import { PlatformAdminService } from './platform-admin.service';
 
 @ApiTags('platform-admin')
 @Controller({ version: '1' })
+@Public()
+@UseGuards(PlatformAdminGuard)
 export class PlatformAdminController {
   constructor(private readonly svc: PlatformAdminService) {}
 
-  @Public()
-  @UseGuards(PlatformAdminGuard)
   @Get('admin/platform/businesses')
   @ApiOperation({ summary: 'List businesses by status (platform admin only).' })
   async listBusinesses(
@@ -47,8 +48,6 @@ export class PlatformAdminController {
     return this.svc.listBusinesses(status, plan);
   }
 
-  @Public()
-  @UseGuards(PlatformAdminGuard)
   @Get('admin/platform/users')
   @ApiOperation({ summary: 'List users across every business (platform admin only).' })
   async listUsers(
@@ -67,8 +66,6 @@ export class PlatformAdminController {
     });
   }
 
-  @Public()
-  @UseGuards(PlatformAdminGuard)
   @Get('admin/platform/bug-reports')
   @ApiOperation({ summary: 'List bug reports / suggestions across every business (platform admin only).' })
   async listBugReports(
@@ -87,8 +84,6 @@ export class PlatformAdminController {
     });
   }
 
-  @Public()
-  @UseGuards(PlatformAdminGuard)
   @Patch('admin/platform/bug-reports/:id')
   @ApiOperation({ summary: 'Set a bug report status: open | acknowledged | resolved (platform admin only).' })
   async updateBugReport(
@@ -98,8 +93,6 @@ export class PlatformAdminController {
     return this.svc.updateBugReportStatus(id, body.status);
   }
 
-  @Public()
-  @UseGuards(PlatformAdminGuard)
   @Get('admin/platform/bug-reports/:id/screenshot')
   @ApiOperation({ summary: 'Screenshot image of a bug report (platform admin only).' })
   async bugReportScreenshot(@Param('id') id: string): Promise<StreamableFile> {
@@ -107,8 +100,6 @@ export class PlatformAdminController {
     return new StreamableFile(data, { type: mime });
   }
 
-  @Public()
-  @UseGuards(PlatformAdminGuard)
   @Post('admin/platform/businesses/:id/approve')
   @HttpCode(200)
   @ApiOperation({ summary: 'Approve a pending business (platform admin only).' })
@@ -117,8 +108,6 @@ export class PlatformAdminController {
     return { ok: true };
   }
 
-  @Public()
-  @UseGuards(PlatformAdminGuard)
   @Post('admin/platform/businesses/:id/reject')
   @HttpCode(200)
   @ApiOperation({ summary: 'Reject a pending business (platform admin only).' })
@@ -127,32 +116,24 @@ export class PlatformAdminController {
     return { ok: true };
   }
 
-  @Public()
-  @UseGuards(PlatformAdminGuard)
   @Get('admin/platform/stats')
   @ApiOperation({ summary: 'Dashboard aggregates (platform admin only).' })
   async stats(): Promise<unknown> {
     return this.svc.getStats();
   }
 
-  @Public()
-  @UseGuards(PlatformAdminGuard)
   @Get('admin/platform/audit')
   @ApiOperation({ summary: 'Recent super-admin console actions (platform admin only).' })
   async audit(): Promise<unknown[]> {
     return this.svc.listAudit(20);
   }
 
-  @Public()
-  @UseGuards(PlatformAdminGuard)
   @Get('admin/platform/businesses/:id')
   @ApiOperation({ summary: 'Business detail with owner and modules (platform admin only).' })
   async getBusinessDetail(@Param('id') id: string): Promise<unknown> {
     return this.svc.getBusinessDetail(id);
   }
 
-  @Public()
-  @UseGuards(PlatformAdminGuard)
   @Patch('admin/platform/businesses/:id')
   @UsePipes(new ZodValidationPipe(UpdateBusinessSchema))
   @ApiOperation({ summary: 'Update business limits (platform admin only).' })
@@ -163,8 +144,6 @@ export class PlatformAdminController {
     return this.svc.updateBusiness(id, body);
   }
 
-  @Public()
-  @UseGuards(PlatformAdminGuard)
   @Post('admin/platform/businesses/:id/extend')
   @HttpCode(200)
   @UsePipes(new ZodValidationPipe(ExtendSubscriptionSchema))
@@ -176,8 +155,6 @@ export class PlatformAdminController {
     return this.svc.extendSubscription(id, body.duration);
   }
 
-  @Public()
-  @UseGuards(PlatformAdminGuard)
   @Post('admin/platform/businesses/:id/impersonate')
   @HttpCode(200)
   @ApiOperation({ summary: 'Get a business-scoped token to browse as that business (platform admin only).' })
@@ -189,8 +166,6 @@ export class PlatformAdminController {
     return this.svc.impersonate(id, req.platformAdminId, body.userId);
   }
 
-  @Public()
-  @UseGuards(PlatformAdminGuard)
   @Post('admin/platform/businesses/:id/suspend')
   @HttpCode(200)
   @ApiOperation({ summary: 'Suspend a business (platform admin only).' })
@@ -199,8 +174,6 @@ export class PlatformAdminController {
     return { ok: true };
   }
 
-  @Public()
-  @UseGuards(PlatformAdminGuard)
   @Post('admin/platform/businesses/:id/activate')
   @HttpCode(200)
   @ApiOperation({ summary: 'Activate a business (platform admin only).' })
@@ -209,20 +182,16 @@ export class PlatformAdminController {
     return { ok: true };
   }
 
-  @Public()
-  @UseGuards(PlatformAdminGuard)
   @Post('admin/platform/users/:id/reset-password')
   @HttpCode(200)
   @ApiOperation({ summary: 'Reset a user password. Optionally provide a custom password, otherwise generates a temp one.' })
   async resetUserPassword(
     @Param('id') id: string,
-    @Body() body: { password?: string },
+    @Body(new ZodValidationPipe(ResetPasswordSchema)) body: ResetPasswordInput,
   ): Promise<{ tempPassword: string }> {
     return this.svc.resetUserPassword(id, body?.password);
   }
 
-  @Public()
-  @UseGuards(PlatformAdminGuard)
   @Patch('admin/platform/businesses/:id/modules')
   @UsePipes(new ZodValidationPipe(UpdateModulesSchema))
   @ApiOperation({ summary: 'Toggle business modules on/off (platform admin only).' })
@@ -234,8 +203,6 @@ export class PlatformAdminController {
     return { ok: true };
   }
 
-  @Public()
-  @UseGuards(PlatformAdminGuard)
   @Patch('admin/platform/businesses/:id/settings')
   @UsePipes(new ZodValidationPipe(UpdateBusinessSettingsSchema))
   @ApiOperation({ summary: 'Toggle multi-stock / TVA for a business (platform admin only).' })
@@ -246,8 +213,6 @@ export class PlatformAdminController {
     return this.svc.updateSettings(id, body);
   }
 
-  @Public()
-  @UseGuards(PlatformAdminGuard)
   @Patch('admin/platform/businesses/:id/users/:userId')
   @UsePipes(new ZodValidationPipe(UpdateBusinessUserSchema))
   @ApiOperation({

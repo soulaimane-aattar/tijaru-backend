@@ -37,6 +37,7 @@ export class AuthController {
   @Public()
   @Post('login')
   @HttpCode(200)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @UsePipes(new ZodValidationPipe(LoginSchema))
   @ApiOperation({ summary: 'Unified login — checks platform admin first, then business user.' })
   async login(@Body() body: LoginInput, @Req() req: Request): Promise<unknown> {
@@ -73,6 +74,7 @@ export class AuthController {
   @Public()
   @Post('register')
   @HttpCode(201)
+  @Throttle({ default: { limit: 3, ttl: 60_000 } })
   @UsePipes(new ZodValidationPipe(RegisterSchema))
   @ApiOperation({ summary: 'Self-serve signup. Creates a pending Business + owner User.' })
   async register(@Body() body: RegisterInput): Promise<{ status: string }> {
@@ -87,6 +89,7 @@ export class AuthController {
   @Public()
   @Post('refresh')
   @HttpCode(200)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @UsePipes(new ZodValidationPipe(RefreshSchema))
   @ApiOperation({ summary: 'Rotate refresh token, issue new access + refresh.' })
   async refresh(@Body() body: RefreshInput, @Req() req: Request): Promise<unknown> {
