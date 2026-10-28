@@ -34,7 +34,7 @@ export class Db {
     return this.als.getStore() ?? this.root;
   }
 
-  /** Tenant of the current request (same ALS the Prisma middleware uses). */
+  /** Tenant of the current request (set by TenantInterceptor). */
   get businessId(): string {
     const id = this.tenant.getBusinessId();
     if (!id) throw new ForbiddenError('No tenant in scope');

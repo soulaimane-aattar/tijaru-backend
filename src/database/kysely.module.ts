@@ -15,7 +15,7 @@ const ENV = 'ENV';
 // Prisma-style `?schema=` is not a libpq option.
 const clean = (url: string) => url.replace(/\?schema=.*$/, '');
 
-// Columns are `timestamp without time zone` holding UTC (Prisma wrote them so); pg would parse as local time.
+// Columns are `timestamp without time zone` holding UTC; pg would parse as local time.
 defaults.parseInputDatesAsUTC = true; // serialize Date params as UTC too
 types.setTypeParser(1114, (s) => new Date(`${s.replace(' ', 'T')}Z`));
 

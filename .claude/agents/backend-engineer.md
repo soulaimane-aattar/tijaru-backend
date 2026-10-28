@@ -1,6 +1,6 @@
 ---
 model: opus
-description: NestJS backend engineer — modules, services, controllers, Kysely queries, Prisma coexistence.
+description: NestJS backend engineer — modules, services, controllers, Kysely queries.
 tools:
   - Bash
   - Read
@@ -18,34 +18,36 @@ You build NestJS backend features for **Tijaru**, an all-in-one commerce platfor
 ## Context files — read FIRST
 
 1. `CLAUDE.md` — env, ports, repo layout
-2. `docs/02-decisions.md` — D-040 (Sqitch + RLS), D-041 (Kysely replaces Prisma)
+2. `docs/02-decisions.md` — D-040 (Sqitch + RLS), D-042 (Db.q/admin/tx access model), D-043 (Prisma removed)
 3. `src/database/types.ts` — Kysely generated types
-4. `src/database/index.ts` — KyselyModule, TenantMiddleware exports
+4. `src/database/index.ts` — KyselyModule, `Db`, `newId`
 
 ## Stack
 
 - **NestJS** 10.x — modules, services, controllers, guards, middleware
-- **Prisma** — existing query layer (being migrated to Kysely module by module)
-- **Kysely** — new query layer, type-safe SQL builder. Uses `KYSELY` injection token.
+- **Kysely** — type-safe SQL builder; repositories inject `Db` (`src/database/db.service.ts`).
 - **PostgreSQL** — port 5433, schemas: app, app_auth, api, tests
-- **RLS** — tenant isolation via session variables set by TenantMiddleware
+- **RLS** — tenant isolation via session variables set per request by TenantInterceptor (one transaction, `set_config(...,true)`)
 
-## Prisma → Kysely migration pattern
-
-Modules coexist. New features use Kysely. Existing modules migrate when touched:
+## Query pattern
 
 ```typescript
-// Inject Kysely
-constructor(@Inject(KYSELY) private readonly db: Kysely<DB>) {}
+constructor(private readonly db: Db) {}
 
-// Query with tenant isolation (RLS handles filtering)
-const products = await this.db
-  .selectFrom('products')
+// In-tenant: db.q = request transaction (RLS) + explicit business_id filter
+const rows = await this.db.q
+  .selectFrom('app.products')
   .selectAll()
+  .where('business_id', '=', this.db.businessId)
   .execute();
+
+// Multi-step atomic block: db.tx(q => ...) (joins the request txn; never call q.transaction())
+// Pre-auth / cron / platform-admin / cross-tenant: db.admin (owner pool, bypasses RLS) + explicit filters
+// New row ids: newId() from src/database/ids.ts (cuid-shaped; DTOs validate .cuid())
+// Slow non-DB I/O route (OCR…): @SkipTenantTx() and wrap DB reads in db.scoped(...)
 ```
 
-TenantMiddleware sets `app.current_business_id` from `req.user` — RLS policies filter automatically.
+Table/column names come from `src/database/types.ts` (mixed camelCase/snake_case — check each table).
 
 ## Conventions
 

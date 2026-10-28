@@ -101,9 +101,9 @@ import { WarehousesModule } from './modules/warehouses/warehouses.module';
   ],
   controllers: [DocumentAuditController],
   providers: [
-    // PrismaService + TenantContext come from the global ConfigModule — a single
+    // TenantContext comes from the global ConfigModule — a single
     // instance each, so the tenant ALS store is shared between the HTTP
-    // interceptor and the Prisma middleware.
+    // interceptor and `Db`.
     { provide: APP_FILTER, useClass: HttpExceptionFilter },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },

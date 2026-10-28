@@ -20,7 +20,7 @@ Raise test coverage toward maximum on backend and web, driven by real coverage r
 ## Backend patterns (NestJS + Jest)
 
 - Unit tests: `*.spec.ts` next to source (jest `rootDir: src`, `testRegex .*\.spec\.ts$`).
-- Use `Test.createTestingModule` with mocked `PrismaService` (`jest.fn()` per delegate method: `prisma.product.findMany.mockResolvedValue(...)`). Never hit real DB in unit tests.
+- Use `Test.createTestingModule` with the repository port mocked (`jest.fn()` per method) or the recording `Db` fake in `src/common/testing/db-fake.ts`. Never hit real DB in unit tests.
 - E2E: `backend/test/*.e2e-spec.ts`, run with `npm run test:e2e`. Reuse `test/helpers/test-app.ts` for app bootstrap; supertest for HTTP. E2E hits real Postgres on **5433** — override `DATABASE_URL`, never trust `.env`.
 - Assert: status codes, response shape (zod DTOs), tenant isolation (user A cannot read tenant B data), auth guards (401 without token, 403 wrong role).
 
@@ -45,7 +45,7 @@ Raise test coverage toward maximum on backend and web, driven by real coverage r
 | Mistake | Fix |
 |---|---|
 | Writing tests without running coverage first | Measure, rank, then write |
-| Mocking Prisma at global module level, leaking between tests | `beforeEach` fresh mocks, `jest.clearAllMocks()` |
+| Mocking `Db` at global module level, leaking between tests | `beforeEach` fresh mocks, `jest.clearAllMocks()` |
 | Testing rendered French/English literals | Use i18n keys or test instance |
 | E2E against wrong DB | `DATABASE_URL` → port 5433 explicitly |
 | Chasing 100% on wiring files | Exclude modules/main/config; maximize logic coverage |

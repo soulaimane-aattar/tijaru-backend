@@ -31,7 +31,7 @@ Four independent app folders (no monorepo):
 
 ```
 GestionStock/
-├── backend/      # NestJS + Prisma + PostgreSQL — single source of truth
+├── backend/      # NestJS + Kysely + PostgreSQL — single source of truth
 ├── web/          # React + Vite admin
 ├── mobile/       # Expo + React Native (NativeWind)
 ├── ocr-service/  # Python 3.12 + FastAPI + RapidOCR — receipt OCR, stateless,

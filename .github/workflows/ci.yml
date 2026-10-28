@@ -39,7 +39,6 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx prisma generate
       - name: Apply database migrations
         env:
           PGPASSWORD: stock
