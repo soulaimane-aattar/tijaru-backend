@@ -6,6 +6,9 @@
 DEV     := docker compose -f docker-compose.yml
 PROD    := docker compose -f docker-compose.prod.yml --env-file .env.prod
 ENVPROD := .env.prod
+PG_CTR  ?= stock-postgres
+PG_USER ?= stock
+PG_DB   ?= stock
 
 .DEFAULT_GOAL := help
 .PHONY: help up down logs ps seed dev-migrate \
@@ -57,32 +60,32 @@ db-new: ## Add new migration: make db-new CHANGE=name DESC="description"
 	$(SQITCH) add $(CHANGE) -n "$(DESC)"
 
 tap: ## Run pgTAP tests
-	@docker exec stock-postgres rm -rf /tmp/tijaru-tests && docker exec stock-postgres mkdir -p /tmp/tijaru-tests
+	@docker exec $(PG_CTR) rm -rf /tmp/tijaru-tests && docker exec $(PG_CTR) mkdir -p /tmp/tijaru-tests
 	@for f in migrations/tests/*.sql; do \
-		docker cp "$$f" stock-postgres:/tmp/tijaru-tests/$$(basename "$$f"); \
+		docker cp "$$f" $(PG_CTR):/tmp/tijaru-tests/$$(basename "$$f"); \
 	done
-	@docker exec stock-postgres sh -c '\
+	@docker exec $(PG_CTR) sh -c '\
 		for f in /tmp/tijaru-tests/*.sql; do \
 			echo "=== $$f ==="; \
-			psql -U stock -d stock -f "$$f"; \
+			psql -U $(PG_USER) -d $(PG_DB) -f "$$f"; \
 		done'
 
 TENANT_DUMP := tenants-backup.sql
 
 db-backup: ## Full dev DB backup to backup-dev-<timestamp>.sql
 	@f=backup-dev-$$(date -u +%Y%m%d-%H%M%S).sql; \
-	docker exec stock-postgres pg_dump -U stock -d stock > $$f; \
+	docker exec $(PG_CTR) pg_dump -U $(PG_USER) -d $(PG_DB) > $$f; \
 	echo "wrote $$f ($$(wc -l < $$f) lines)"
 
 db-dump-tenants: ## Dump businesses + users to tenants-backup.sql (dev)
-	@docker exec stock-postgres pg_dump -U stock -d stock \
+	@docker exec $(PG_CTR) pg_dump -U $(PG_USER) -d $(PG_DB) \
 		--data-only --no-owner --no-privileges \
 		--table='app.businesses' --table='app_auth.users' \
 		> $(TENANT_DUMP) && echo "wrote $(TENANT_DUMP) ($$(wc -l < $(TENANT_DUMP)) lines)"
 
 db-load-tenants: ## Load tenants-backup.sql into dev DB (new schema)
 	@test -f $(TENANT_DUMP) || { echo "$(TENANT_DUMP) not found. Run: make db-dump-tenants first"; exit 1; }
-	@docker exec -i stock-postgres psql -U stock -d stock < $(TENANT_DUMP) \
+	@docker exec -i $(PG_CTR) psql -U $(PG_USER) -d $(PG_DB) < $(TENANT_DUMP) \
 		&& echo "loaded $(TENANT_DUMP) into dev DB"
 
 tap-full: ## Deploy + verify + run pgTAP tests
