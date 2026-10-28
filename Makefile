@@ -14,7 +14,7 @@ PG_DB   ?= stock
 .PHONY: help up down logs ps seed dev-migrate \
         deploy prod-build prod-up prod-down prod-restart prod-logs prod-ps \
         prod-migrate prod-db-up prod-db-verify prod-db-status \
-        prod-psql prod-backup prod-config check-env-prod \
+        prod-psql prod-backup prod-config check-env-prod prod-db-adopt \
         db-up db-down db-verify db-status db-new tap db-backup \
         db-dump-tenants db-load-tenants prod-dump-tenants prod-load-tenants
 
@@ -124,8 +124,21 @@ prod-config: check-env-prod ## Render the resolved prod compose config
 	$(PROD) config
 
 PROD_NETWORK ?= tijaru-backend_internal
+PROD_PG      ?= $(PROD) exec -T postgres
+PROD_DB_URI   = db:pg://$$POSTGRES_USER:$$POSTGRES_PASSWORD@tijaru-postgres:5432/$$POSTGRES_DB
+# prints legacy (Prisma, tables in public) | adopted | fresh
+LAYOUT        = echo "select case when to_regclass('app.businesses') is not null then 'adopted' when to_regclass('public.businesses') is not null then 'legacy' else 'fresh' end" | $(PROD_PG) sh -c 'psql -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" -Atq'
+
+prod-db-adopt: check-env-prod ## ONE-TIME: move legacy Prisma tables into the sqitch layout (backs up first)
+	@l=$$($(LAYOUT)); [ "$$l" = legacy ] || { echo "layout is '$$l', not legacy: nothing to adopt (use prod-db-up)"; exit 1; }
+	@$(MAKE) prod-backup
+	@. $(ENVPROD) && SQITCH_NETWORK=$(PROD_NETWORK) ./sqitch deploy --to 003-types "$(PROD_DB_URI)"
+	$(PROD_PG) sh -c 'psql -v ON_ERROR_STOP=1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"' < migrations/adopt/legacy-to-sqitch.sql
+	@. $(ENVPROD) && SQITCH_NETWORK=$(PROD_NETWORK) ./sqitch deploy --log-only --to 004-tables "$(PROD_DB_URI)"
+	@$(MAKE) prod-db-up
 
 prod-db-up: check-env-prod ## Deploy sqitch migrations to prod DB
+	@l=$$($(LAYOUT)); [ "$$l" != legacy ] || { echo "legacy Prisma layout detected: run 'make prod-db-adopt' first (one-time)"; exit 1; }
 	@. $(ENVPROD) && SQITCH_NETWORK=$(PROD_NETWORK) \
 		./sqitch deploy "db:pg://$$POSTGRES_USER:$$POSTGRES_PASSWORD@tijaru-postgres:5432/$$POSTGRES_DB"
 
@@ -145,8 +158,9 @@ prod-psql: check-env-prod ## psql shell on the prod database
 
 prod-backup: check-env-prod ## Dump prod DB to backup-<utc-timestamp>.sql
 	@f=backup-$$(date -u +%Y%m%d-%H%M%S).sql; \
-	$(PROD) exec -T postgres sh -c 'pg_dump -U "$$POSTGRES_USER" "$$POSTGRES_DB"' > $$f; \
-	echo "wrote $$f"
+	$(PROD_PG) sh -c 'pg_dump -U "$$POSTGRES_USER" "$$POSTGRES_DB"' > $$f && [ -s $$f ] \
+		|| { echo "backup FAILED (empty dump)"; rm -f $$f; exit 1; }; \
+	echo "wrote $$f ($$(wc -l < $$f) lines)"
 
 prod-dump-tenants: check-env-prod ## Dump prod businesses + users to tenants-backup.sql
 	@$(PROD) exec -T postgres sh -c \
