@@ -10,6 +10,8 @@ export const CreateCustomerSchema = z.object({
     .optional(),
   // Credit ceiling for dette alerts. null clears the limit.
   creditLimit: z.number().min(0).nullable().optional(),
+  // null = uncategorised.
+  categoryId: z.string().min(1).nullable().optional(),
 });
 export type CreateCustomerInput = z.infer<typeof CreateCustomerSchema>;
 
@@ -20,3 +22,14 @@ export const ListCustomersQuerySchema = z.object({
   search: z.string().optional(),
 });
 export type ListCustomersQuery = z.infer<typeof ListCustomersQuerySchema>;
+
+export const CreateCustomerCategorySchema = z.object({
+  label: z.string().trim().min(1).max(60),
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'color must be #rrggbb'),
+  // Debt ceiling shared by the category's customers. null = no limit.
+  creditLimit: z.number().min(0).nullable().optional(),
+});
+export type CreateCustomerCategoryInput = z.infer<typeof CreateCustomerCategorySchema>;
+
+export const UpdateCustomerCategorySchema = CreateCustomerCategorySchema.partial();
+export type UpdateCustomerCategoryInput = z.infer<typeof UpdateCustomerCategorySchema>;

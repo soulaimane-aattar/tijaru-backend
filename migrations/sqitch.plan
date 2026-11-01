@@ -9,3 +9,5 @@
 006-test-framework 2026-10-27T00:05:00Z soulaimane <soulaimane.aattar@gmail.com> # pgTAP test helpers and fixtures
 007-security-hardening 2026-10-27T00:06:00Z soulaimane <soulaimane.aattar@gmail.com> # RLS hardening: WITH CHECK, child table isolation, updatedAt triggers, platform lockdown
 008-fix-updated-at-triggers 2026-10-28T00:00:00Z soulaimane <soulaimane.aattar@gmail.com> # Drop updatedAt triggers on tables without that column (categories, activities, order_lines)
+009-order-lines-buyer-read 2026-10-28T12:00:00Z soulaimane <soulaimane.aattar@gmail.com> # order_lines readable by seller and buyer (via parent order); writes stay seller-only
+010-customer-categories 2026-10-31T00:00:00Z soulaimane <soulaimane.aattar@gmail.com> # Customer categories (label, colour, debt limit) + customers.category_id

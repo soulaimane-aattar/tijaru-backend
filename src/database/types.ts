@@ -254,9 +254,19 @@ export interface AppCategories {
   tone: string;
 }
 
+export interface AppCustomerCategories {
+  business_id: string;
+  color: Generated<string>;
+  created_at: Generated<Timestamp>;
+  credit_limit: Numeric | null;
+  id: string;
+  label: string;
+}
+
 export interface AppCustomers {
   business_id: string;
   buyer_business_id: string | null;
+  category_id: string | null;
   city: string | null;
   createdAt: Generated<Timestamp>;
   credit_limit: Numeric | null;
@@ -985,6 +995,7 @@ export interface DB {
   "app.business_modules": AppBusinessModules;
   "app.businesses": AppBusinesses;
   "app.categories": AppCategories;
+  "app.customer_categories": AppCustomerCategories;
   "app.customers": AppCustomers;
   "app.delivery_note_lines": AppDeliveryNoteLines;
   "app.delivery_note_payments": AppDeliveryNotePayments;

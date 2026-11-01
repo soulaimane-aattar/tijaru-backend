@@ -21,9 +21,11 @@ import { sellableSeller } from './sellable-seller';
 const PG_UNIQUE_VIOLATION = '23505';
 
 /**
- * Orders span two tenants (seller + buyer) and `order_lines` belong to the seller under RLS,
- * so reads and the cross-tenant writes (create, notify, customer upsert) use `db.admin`
- * (owner role, explicit filters). The one write that must be atomic with the stock ledger —
+ * Order reads (list/detail, both sides) run on `db.q`: `orders` and, since migration 009,
+ * `order_lines` are visible to seller and buyer under RLS. `db.admin` (owner role, explicit filters)
+ * remains only where RLS cannot express the access: the cross-tenant catalog read (`findListings`),
+ * cross-tenant writes (create, customer upsert, notify), counterparty names, and the number scan
+ * (`nextNumber` must see the seller's whole sequence, buyers cannot see other buyers' orders). The one write that must be atomic with the stock ledger —
  * the status flip on `shipped` — goes through `db.tx` (the request transaction) so
  * `ledger.post` and the order update commit or roll back together.
  */
@@ -176,11 +178,10 @@ export class KyselyOrdersRepository extends OrdersRepository {
     }
   }
 
+  /** RLS-scoped (`db.q`): only orders where the caller is seller or buyer come back. */
   private headers() {
-    return this.db.admin
+    return this.db.q
       .selectFrom('app.orders as o')
-      .innerJoin('app.businesses as s', 's.id', 'o.seller_business_id')
-      .innerJoin('app.businesses as b', 'b.id', 'o.buyer_business_id')
       .select([
         'o.id',
         'o.number',
@@ -195,12 +196,41 @@ export class KyselyOrdersRepository extends OrdersRepository {
         'o.external_ref',
         'o.createdAt',
         'o.status_changed_at',
-        's.name as seller_name',
-        'b.name as buyer_name',
       ]);
   }
 
-  private static toRow(o: Awaited<ReturnType<ReturnType<KyselyOrdersRepository['headers']>['execute']>>[number]): OrderRow {
+  /**
+   * The counterparty's `businesses` row is invisible under RLS (own business only), so names are
+   * resolved on the owner pool — by ids taken from rows RLS already let through, never from input.
+   */
+  private async withNames<T extends { seller_business_id: string; buyer_business_id: string }>(
+    rows: T[],
+  ): Promise<Array<T & { seller_name: string; buyer_name: string }>> {
+    if (rows.length === 0) return [];
+    const ids = [...new Set(rows.flatMap((r) => [r.seller_business_id, r.buyer_business_id]))];
+    const names = await this.db.admin.selectFrom('app.businesses').select(['id', 'name']).where('id', 'in', ids).execute();
+    const byId = new Map(names.map((n) => [n.id, n.name]));
+    return rows.map((r) => ({
+      ...r,
+      seller_name: byId.get(r.seller_business_id) ?? '',
+      buyer_name: byId.get(r.buyer_business_id) ?? '',
+    }));
+  }
+
+  private static toRow(o: {
+    id: string;
+    number: string;
+    status: AppOrderstatus;
+    seller_business_id: string;
+    seller_name: string;
+    buyer_business_id: string;
+    buyer_name: string;
+    subtotal_ht: unknown;
+    vat_total: unknown;
+    total_ttc: unknown;
+    createdAt: Date;
+    status_changed_at: Date;
+  }): OrderRow {
     return {
       id: o.id,
       number: o.number,
@@ -218,9 +248,9 @@ export class KyselyOrdersRepository extends OrdersRepository {
   }
 
   async findDetail(id: string): Promise<OrderDetail | null> {
-    const o = await this.headers().where('o.id', '=', id).executeTakeFirst();
+    const [o] = await this.withNames(await this.headers().where('o.id', '=', id).execute());
     if (!o) return null;
-    const lines = await this.db.admin
+    const lines = await this.db.q
       .selectFrom('app.order_lines')
       .select(['id', 'listing_id', 'product_id', 'name', 'qty', 'unit_price', 'vat', 'total_ht'])
       .where('order_id', '=', id)
@@ -244,9 +274,10 @@ export class KyselyOrdersRepository extends OrdersRepository {
   }
 
   async list(params: ListOrdersParams): Promise<ListOrdersResult> {
+    // The side filter stays explicit: RLS shows both roles, a business can be on both sides.
     const col = params.side === 'seller' ? 'o.seller_business_id' : 'o.buyer_business_id';
     let qb = this.headers().where(col, '=', params.businessId);
-    let cq = this.db.admin.selectFrom('app.orders as o').where(col, '=', params.businessId);
+    let cq = this.db.q.selectFrom('app.orders as o').where(col, '=', params.businessId);
     if (params.status) {
       qb = qb.where('o.status', '=', params.status);
       cq = cq.where('o.status', '=', params.status);
@@ -260,7 +291,7 @@ export class KyselyOrdersRepository extends OrdersRepository {
       cq.select((eb) => eb.fn.countAll<string>().as('n')).executeTakeFirstOrThrow(),
     ]);
     return {
-      items: rows.map(KyselyOrdersRepository.toRow),
+      items: (await this.withNames(rows)).map(KyselyOrdersRepository.toRow),
       total: Number(total.n),
       page: params.page,
       pageSize: params.pageSize,
@@ -320,8 +351,7 @@ export class KyselyOrdersRepository extends OrdersRepository {
         .execute();
     });
 
-    // Not re-read: inside the request transaction the flip is uncommitted and the owner
-    // connection (db.admin) would still see the old status.
+    // Not re-read: saves a round trip, the flip is already in this request transaction.
     return {
       ...order,
       status: to,
@@ -331,15 +361,19 @@ export class KyselyOrdersRepository extends OrdersRepository {
   }
 
   async notify(businessId: string, type: AppNotificationtype, title: string, body: string): Promise<void> {
-    // The recipient is the *other* tenant — cross-tenant write.
-    await this.db.admin
-      .insertInto('app.notifications')
-      .values({ id: newId(), business_id: businessId, type, title, body })
-      .execute();
+    // The recipient is the *other* tenant — cross-tenant write on the owner pool, so it must not
+    // outlive a rolled-back request transaction.
+    await this.db.afterCommit(() =>
+      this.db.admin
+        .insertInto('app.notifications')
+        .values({ id: newId(), business_id: businessId, type, title, body })
+        .execute(),
+    );
   }
 
+  /** Caller's own business only (the buyer naming itself) — visible under RLS. */
   async businessName(id: string): Promise<string> {
-    const b = await this.db.admin.selectFrom('app.businesses').select('name').where('id', '=', id).executeTakeFirstOrThrow();
+    const b = await this.db.q.selectFrom('app.businesses').select('name').where('id', '=', id).executeTakeFirstOrThrow();
     return b.name;
   }
 }

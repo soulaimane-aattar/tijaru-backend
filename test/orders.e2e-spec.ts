@@ -185,6 +185,21 @@ describe('Marketplace orders — lifecycle (e2e)', () => {
         .set(bearer(thirdToken))
         .expect(404);
     });
+
+    it('serves the lines to both sides (RLS), nothing to a third tenant', async () => {
+      const seller = await api(app).get(`/api/v1/orders/received/${orderId}`).set(bearer(sellerToken)).expect(200);
+      const buyer = await api(app).get(`/api/v1/orders/sent/${orderId}`).set(bearer(buyerToken)).expect(200);
+      expect(seller.body.lines.length).toBeGreaterThan(0);
+      expect(buyer.body.lines).toEqual(seller.body.lines);
+      expect(buyer.body.sellerName).toBeTruthy();
+      expect(buyer.body.buyerName).toBe('Acheteur SARL');
+      // a seller must not read its own received order through the buyer-side filter, and vice versa
+      const sellerSent = await api(app).get('/api/v1/orders/sent').set(bearer(sellerToken)).expect(200);
+      expect(sellerSent.body.items).toEqual([]);
+      const buyerReceived = await api(app).get('/api/v1/orders/received').set(bearer(buyerToken)).expect(200);
+      expect(buyerReceived.body.items).toEqual([]);
+      await api(app).get(`/api/v1/orders/received/${orderId}`).set(bearer(thirdToken)).expect(404);
+    });
   });
 
   describe('transitions', () => {

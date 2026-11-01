@@ -12,6 +12,7 @@ export type CreateCustomerData = {
   city?: string | undefined;
   ice?: string | undefined;
   creditLimit?: number | null | undefined;
+  categoryId?: string | null | undefined;
 };
 
 export type UpdateCustomerData = {
@@ -26,9 +27,26 @@ export abstract class CustomersRepository {
 
   abstract create(data: CreateCustomerData): Promise<unknown>;
 
-  /** Rows updated (0 when the customer does not exist). */
-  abstract update(id: string, data: UpdateCustomerData): Promise<number>;
+  /** Updated row, or null when the customer does not exist. */
+  abstract update(id: string, data: UpdateCustomerData): Promise<unknown | null>;
 
   /** Rows deleted (0 when the customer does not exist). */
   abstract delete(id: string): Promise<number>;
+}
+
+export type CategoryData = {
+  label?: string | undefined;
+  color?: string | undefined;
+  creditLimit?: number | null | undefined;
+};
+
+export abstract class CustomerCategoriesRepository {
+  abstract findAll(): Promise<unknown[]>;
+  /** Throws ConflictError on a duplicate label (case-insensitive, per business). */
+  abstract create(data: CategoryData & { label: string; color: string }): Promise<unknown>;
+  /** Updated row, or null when missing. Throws ConflictError on a duplicate label. */
+  abstract update(id: string, data: CategoryData): Promise<unknown | null>;
+  /** Rows deleted (0 when missing); customers fall back to uncategorised. */
+  abstract delete(id: string): Promise<number>;
+  abstract findById(id: string): Promise<unknown | null>;
 }
