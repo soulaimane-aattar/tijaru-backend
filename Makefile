@@ -16,7 +16,8 @@ PG_DB   ?= stock
         prod-migrate prod-db-up prod-db-verify prod-db-status \
         prod-psql prod-backup prod-config check-env-prod prod-db-adopt \
         db-up db-down db-verify db-status db-new tap db-backup \
-        db-dump-tenants db-load-tenants prod-dump-tenants prod-load-tenants
+        db-dump-tenants db-load-tenants prod-dump-tenants prod-load-tenants \
+        demo-seed
 
 help: ## List targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -87,6 +88,18 @@ db-load-tenants: ## Load tenants-backup.sql into dev DB (new schema)
 	@test -f $(TENANT_DUMP) || { echo "$(TENANT_DUMP) not found. Run: make db-dump-tenants first"; exit 1; }
 	@docker exec -i $(PG_CTR) psql -U $(PG_USER) -d $(PG_DB) < $(TENANT_DUMP) \
 		&& echo "loaded $(TENANT_DUMP) into dev DB"
+
+demo-seed: ## Demo account: make demo-seed ENV=dev|prod ACTION=up|down
+	@test -n "$(ENV)" || { echo "Usage: make demo-seed ENV=dev|prod ACTION=up|down"; exit 1; }
+	@test -n "$(ACTION)" || { echo "Usage: make demo-seed ENV=dev|prod ACTION=up|down"; exit 1; }
+	@if [ "$(ACTION)" = "up" ]; then SCRIPT=scripts/seed-demo-account.sql; \
+	elif [ "$(ACTION)" = "down" ]; then SCRIPT=scripts/unseed-demo-account.sql; \
+	else echo "ACTION must be up or down"; exit 1; fi; \
+	if [ "$(ENV)" = "dev" ]; then \
+		docker exec -i $(PG_CTR) psql -v ON_ERROR_STOP=1 -U $(PG_USER) -d $(PG_DB) < $$SCRIPT; \
+	elif [ "$(ENV)" = "prod" ]; then \
+		$(PROD) exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"' < $$SCRIPT; \
+	else echo "ENV must be dev or prod"; exit 1; fi
 
 tap-full: ## Deploy + verify + run pgTAP tests
 	@$(MAKE) db-up
@@ -173,3 +186,4 @@ prod-load-tenants: check-env-prod ## Load tenants-backup.sql into prod DB
 	@$(PROD) exec -T postgres sh -c \
 		'psql -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"' < $(TENANT_DUMP) \
 		&& echo "loaded $(TENANT_DUMP) into prod DB"
+
