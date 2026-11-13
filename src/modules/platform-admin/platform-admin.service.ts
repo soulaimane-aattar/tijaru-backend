@@ -558,6 +558,47 @@ export class PlatformAdminService {
     return updated;
   }
 
+  /** Hard-delete a business; every child table cascades (ON DELETE CASCADE). Audited by name. */
+  async deleteBusiness(id: string): Promise<void> {
+    const biz = await this.biz(id);
+    await this.q.deleteFrom('app.businesses').where('id', '=', id).execute();
+    // Best-effort: DB row is already gone, a stray file must not fail the request.
+    await this.storage.removeBusinessFiles(id).catch(() => undefined);
+    await this.audit({ action: 'delete-business', tone: 'err', targetId: id, targetName: biz.name });
+  }
+
+  /**
+   * Soft-delete a user, kill sessions and invalidate refresh tokens.
+   * ponytail: an already-issued access JWT stays valid until its TTL (guard is stateless); add a ver check in JwtGuard if that matters.
+   */
+  async deleteUser(userId: string): Promise<void> {
+    const user = await this.q
+      .selectFrom('app_auth.users')
+      .select(['id', 'name', 'business_id'])
+      .where('id', '=', userId)
+      .where('deletedAt', 'is', null)
+      .executeTakeFirst();
+    if (!user) throw new NotFoundError('User', userId);
+    await this.q
+      .updateTable('app_auth.users')
+      .set((eb) => ({ deletedAt: new Date(), active: false, tokenVersion: eb('tokenVersion', '+', 1) }))
+      .where('id', '=', userId)
+      .execute();
+    await this.q
+      .updateTable('app_auth.sessions')
+      .set({ revokedAt: new Date() })
+      .where('userId', '=', userId)
+      .where('revokedAt', 'is', null)
+      .execute();
+    await this.audit({
+      action: 'delete-user',
+      tone: 'err',
+      targetType: 'user',
+      targetId: userId,
+      targetName: user.name,
+    });
+  }
+
   /**
    * Admin-initiated password reset: generates a one-time temp password, revokes the user's
    * active sessions, and bumps tokenVersion so the old refresh token is rejected. The plaintext

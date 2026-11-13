@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
 import { Inject, Injectable } from '@nestjs/common';
@@ -74,6 +74,17 @@ export class LocalStorageService {
 
   async remove(relativePath: string): Promise<void> {
     await rm(this.resolveSafe(relativePath), { force: true });
+  }
+
+  /** Remove every `<subdir>/<businessId>` folder (business deletion). Missing folders are fine. */
+  async removeBusinessFiles(businessId: string): Promise<void> {
+    if (!/^[\w-]+$/.test(businessId)) throw new Error('Invalid business id');
+    const subdirs = await readdir(this.root, { withFileTypes: true }).catch(() => []);
+    await Promise.all(
+      subdirs
+        .filter((d) => d.isDirectory())
+        .map((d) => rm(join(this.root, d.name, businessId), { recursive: true, force: true })),
+    );
   }
 
   /** Reject any path that escapes the uploads root. */

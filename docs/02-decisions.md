@@ -2,6 +2,11 @@
 
 > One entry per significant decision. Newest on top. Format: date · decision · why · rejected alternatives.
 
+## D-045 — 2026-11-13 · Super-admin delete: business = hard delete (FK cascade + upload folders), user = soft delete
+- **Decision:** `DELETE /admin/platform/businesses/:id` hard-deletes (all 48 FKs to `app.businesses` are `ON DELETE CASCADE`, `app.customers` `SET NULL`; verified on live DB) then best-effort `LocalStorageService.removeBusinessFiles`. `DELETE /admin/platform/users/:id` sets `deletedAt`/`active=false`, bumps `tokenVersion`, revokes sessions. Both audited. Web: typed-name confirm for business, simple confirm for user. Last-owner deletion allowed (admin removes the business instead).
+- **Known limit:** already-issued access JWT valid until TTL (guard stateless). Soft-deleted user's email may stay reserved.
+- **Rejected:** soft-delete business (child data + RLS everywhere keeps living); last-owner block (owners are the main users listed); per-request DB check of `ver` in JwtGuard (cost on every request).
+
 ## D-044 — 2026-10-28 · `Db.afterCommit` defers cross-connection side effects; order reads move to RLS (`db.q`) via migration 009
 - **Decision:** (1) `Db.afterCommit(fn)`: inside `scope()`/standalone `tx()` callbacks queue in the ALS store next to the trx and run (awaited, in order) only after a successful commit; rollback drops them; outside a txn they run immediately; failures are logged, never thrown. Marketplace `notify()` and `WebhookDispatcher.enqueue()` (now `Promise<void>`) go through it. (2) Migration 009 replaces `order_lines_tenant_isolation` with per-command policies: SELECT = seller (`business_id`) OR party to the parent order; INSERT/UPDATE/DELETE seller-only. Order list/detail (both sides) now use `db.q`.
 - **Stays on `db.admin` (RLS cannot express):** `findListings` + tiers and marketplace catalog/sellers (cross-tenant catalog gated by `sellableSeller`); `ensureCustomer` (writes seller's customers); `nextNumber` (must see seller's whole sequence); order create txn (buyer inserts seller-owned lines); counterparty `businesses.name` lookup (businesses RLS = own row; ids come from RLS-filtered orders); notify / webhook outbox writes (other tenant). `businessName` (buyer's own) moved to `db.q`. `listing_tiers` unchanged (no `db.q` read path of other tenants' listings).

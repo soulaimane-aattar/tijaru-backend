@@ -59,4 +59,15 @@ describe('LocalStorageService', () => {
     await storage.remove(path);
     await expect(storage.remove(path)).resolves.toBeUndefined();
   });
+
+  it('removes only the given business folder across every subdir', async () => {
+    const a = await storage.save('receipts', 'biz1', JPEG, 'jpg');
+    const b = await storage.save('logos', 'biz1', PNG, 'png');
+    const other = await storage.save('receipts', 'biz2', JPEG, 'jpg');
+    await storage.removeBusinessFiles('biz1');
+    await expect(storage.read(a)).rejects.toThrow();
+    await expect(storage.read(b)).rejects.toThrow();
+    await expect(storage.read(other)).resolves.toEqual(JPEG);
+    await expect(storage.removeBusinessFiles('../x')).rejects.toThrow(/invalid/i);
+  });
 });

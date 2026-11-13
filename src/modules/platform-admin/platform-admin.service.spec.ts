@@ -16,13 +16,13 @@ const mockEnv = {
 type Deps = { jwt?: unknown; env?: unknown; perms?: unknown; mail?: unknown };
 
 /** Service on a fake `Db`; `script` keys are `"<op>:<table>"` (see db-fake). */
-const make = (script: Record<string, unknown> = {}, deps: Deps = {}) => {
+const make = (script: Record<string, unknown> = {}, deps: Deps & { storage?: unknown } = {}) => {
   const f = fakeDb(script);
   const svc = new PlatformAdminService(
     f.db,
     (deps.jwt ?? mockJwt()) as never,
     (deps.env ?? mockEnv) as never,
-    {} as never,
+    (deps.storage ?? {}) as never,
     (deps.perms ?? {}) as never,
     (deps.mail ?? {}) as never,
   );
@@ -344,6 +344,43 @@ describe('PlatformAdminService', () => {
       const { svc, on } = make(usersScript('0'));
       await svc.listUsers({ page: 1, pageSize: 25 });
       expect(on('select', 'app_auth.users as u')[0]!.where).toContainEqual(['u.deletedAt', 'is', null]);
+    });
+  });
+
+  describe('deleteBusiness', () => {
+    it('deletes the row, wipes its files and audits it', async () => {
+      const storage = { removeBusinessFiles: jest.fn().mockResolvedValue(undefined) };
+      const { svc, on } = make(bizScript(), { storage });
+      await svc.deleteBusiness('b1');
+      expect(on('delete', 'app.businesses')[0]!.where).toContainEqual(['id', '=', 'b1']);
+      expect(storage.removeBusinessFiles).toHaveBeenCalledWith('b1');
+      expect(on('insert', 'platform_audit_logs')).toHaveLength(1);
+    });
+
+    it('still succeeds when file cleanup fails', async () => {
+      const storage = { removeBusinessFiles: jest.fn().mockRejectedValue(new Error('disk')) };
+      const { svc } = make(bizScript(), { storage });
+      await expect(svc.deleteBusiness('b1')).resolves.toBeUndefined();
+    });
+
+    it('404s on unknown business', async () => {
+      const { svc } = make({ 'select:app.businesses': undefined });
+      await expect(svc.deleteBusiness('nope')).rejects.toBeInstanceOf(NotFoundError);
+    });
+  });
+
+  describe('deleteUser', () => {
+    it('soft-deletes, revokes sessions and audits', async () => {
+      const { svc, on } = make({ 'select:app_auth.users': { id: 'u1', name: 'Ali', business_id: 'b1' } });
+      await svc.deleteUser('u1');
+      expect(JSON.stringify(on('update', 'app_auth.users')[0]!.set)).toContain('deletedAt');
+      expect(on('update', 'app_auth.sessions')).toHaveLength(1);
+      expect(on('insert', 'platform_audit_logs')).toHaveLength(1);
+    });
+
+    it('404s on unknown or already-deleted user', async () => {
+      const { svc } = make({ 'select:app_auth.users': undefined });
+      await expect(svc.deleteUser('nope')).rejects.toBeInstanceOf(NotFoundError);
     });
   });
 

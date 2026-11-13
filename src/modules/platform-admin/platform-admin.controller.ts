@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   Param,
@@ -224,5 +225,21 @@ export class PlatformAdminController {
     @Body() body: UpdateBusinessUserInput,
   ): Promise<unknown> {
     return this.svc.updateBusinessUser(id, userId, body);
+  }
+
+  @Delete('admin/platform/businesses/:id')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Permanently delete a business and all its data (platform admin only).' })
+  async deleteBusiness(@Param('id') id: string): Promise<{ ok: true }> {
+    await this.svc.deleteBusiness(id);
+    return { ok: true };
+  }
+
+  @Delete('admin/platform/users/:id')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Delete a user (soft delete, sessions revoked) (platform admin only).' })
+  async deleteUser(@Param('id') id: string): Promise<{ ok: true }> {
+    await this.svc.deleteUser(id);
+    return { ok: true };
   }
 }

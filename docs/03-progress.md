@@ -23,6 +23,13 @@
 
 ## Log
 
+### 2026-11-13 — Super-admin: delete business / delete user (web)
+
+- **Step:** backend `DELETE admin/platform/businesses/:id` + `DELETE admin/platform/users/:id` (+ audit, `LocalStorageService.removeBusinessFiles`); web `PABusinessListPage` (typed-name confirm) + `PAUsersPage` "Supprimer" buttons, `paApi.deleteBusiness/deleteUser`.
+- **Result:** ✅ `tsc` clean (backend + web), jest platform-admin + storage 59/59 (new: deleteBusiness ×3, deleteUser ×2, removeBusinessFiles), vitest platform-admin 11/11. Live DB FK check: 48 CASCADE / 1 SET NULL / 0 RESTRICT onto `app.businesses`. Not driven in browser.
+- **Decisions:** D-045.
+- **Next:** verify in browser; optional: JwtGuard `ver` check, delete button on business detail page.
+
 ### 2026-10-28 — Marketplace hardening: `Db.afterCommit` + order reads under RLS (migration 009)
 
 - **Step:** branch `feat/marketplace-hardening`. `Db.afterCommit` (commit runs callbacks, rollback drops, no txn = immediate, errors logged) used by marketplace `notify` and webhook `enqueue`. Sqitch 009 `order-lines-buyer-read`: SELECT for seller+buyer via parent order, writes seller-only. Order list/detail on `db.q`, names via admin by RLS-filtered ids.
