@@ -136,4 +136,10 @@ export abstract class AuthRepository {
 
   /** Overwrite the user's password hash. */
   abstract updatePassword(userId: string, passwordHash: string): Promise<void>;
+
+  /**
+   * Anonymize the user and purge their sessions/overrides/warehouse links, atomically.
+   * Returns 'has_staff' (nothing changed) if the user is an owner and other non-deleted users remain.
+   */
+  abstract deleteAccount(userId: string): Promise<'ok' | 'has_staff'>;
 }

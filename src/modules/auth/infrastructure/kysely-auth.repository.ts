@@ -268,4 +268,45 @@ export class KyselyAuthRepository extends AuthRepository {
       .where('id', '=', userId)
       .execute();
   }
+
+  /** Apple 5.1.1(v): erase PII, free the email, drop sessions. User row kept (FK history). */
+  async deleteAccount(userId: string): Promise<'ok' | 'has_staff'> {
+    return this.db.admin.transaction().execute(async (trx) => {
+      // One conditional UPDATE = owner-has-staff check and delete in a single statement (no check-then-act race).
+      const res = await trx
+        .updateTable('app_auth.users as u')
+        .set((eb) => ({
+          email: `deleted+${userId}@deleted.invalid`,
+          name: 'Deleted user',
+          phone: null,
+          active: false,
+          deletedAt: new Date(),
+          updatedAt: new Date(),
+          tokenVersion: eb('u.tokenVersion', '+', 1),
+        }))
+        .where('u.id', '=', userId)
+        .where('u.deletedAt', 'is', null)
+        .where((eb) =>
+          eb.or([
+            eb('u.role', '!=', 'owner'),
+            eb.not(
+              eb.exists(
+                eb
+                  .selectFrom('app_auth.users as o')
+                  .select('o.id')
+                  .whereRef('o.business_id', '=', 'u.business_id')
+                  .whereRef('o.id', '!=', 'u.id')
+                  .where('o.deletedAt', 'is', null),
+              ),
+            ),
+          ]),
+        )
+        .executeTakeFirst();
+      if (Number(res.numUpdatedRows) === 0) return 'has_staff';
+      await trx.deleteFrom('app_auth.sessions').where('userId', '=', userId).execute();
+      await trx.deleteFrom('app_auth.user_overrides').where('userId', '=', userId).execute();
+      await trx.deleteFrom('app_auth.user_warehouses').where('userId', '=', userId).execute();
+      return 'ok';
+    });
+  }
 }

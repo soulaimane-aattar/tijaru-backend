@@ -1,10 +1,10 @@
 import { randomBytes, createHash } from 'node:crypto';
 
-import { Inject, Injectable } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 
-import { ConflictError, ForbiddenError, NotFoundError, UnauthorizedError, ValidationError } from '../../../common/errors';
+import { ConflictError, DomainError, ForbiddenError, NotFoundError, UnauthorizedError, ValidationError } from '../../../common/errors';
 import { PermissionsResolver } from '../../../common/permissions-resolver.service';
 import { ENV_TOKEN } from '../../../config/config.module';
 import type { Env } from '../../../config/env';
@@ -149,6 +149,17 @@ export class AuthService {
     const hash = await bcrypt.hash(newPassword, this.env.BCRYPT_COST);
     await this.authRepo.updatePassword(userId, hash);
     await this.authRepo.bumpTokenVersion(userId);
+  }
+
+  async deleteAccount(userId: string, password: string): Promise<void> {
+    const user = await this.authRepo.findUserById(userId);
+    if (!user) throw new NotFoundError('User', userId);
+    if (!(await bcrypt.compare(password, user.passwordHash))) {
+      throw new ValidationError('Password is incorrect');
+    }
+    if ((await this.authRepo.deleteAccount(userId)) === 'has_staff') {
+      throw new DomainError('owner_has_staff', 'Remove all staff members before deleting your account', HttpStatus.CONFLICT);
+    }
   }
 
   private overridesOf(user: AuthUserView): Partial<Record<CapabilityId, boolean>> {

@@ -6,6 +6,7 @@ import type { Request } from 'express';
 
 import type { AuthUser } from '../../common/auth/auth-user.type';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { ForbiddenError } from '../../common/errors';
 import { Public } from '../../common/guards/jwt.guard';
 import { MailService } from '../../common/mail/mail.service';
 import { registrationReceived } from '../../common/mail/mail.templates';
@@ -18,6 +19,7 @@ import { CAPABILITIES, CAPABILITY_IDS, ROLES, ROLE_IDS } from '../../domain/perm
 import { AuthService } from './application/auth.service';
 import { PlatformAdminMfaService } from './application/platform-admin-mfa.service';
 import { type ChangePasswordInput, ChangePasswordSchema } from './dto/change-password.dto';
+import { type DeleteAccountInput, DeleteAccountSchema } from './dto/delete-account.dto';
 import {
   type LoginInput,
   LoginSchema,
@@ -124,6 +126,20 @@ export class AuthController {
     @CurrentUser() user: AuthUser,
   ): Promise<void> {
     await this.auth.changePassword(user.id, body.currentPassword, body.newPassword);
+  }
+
+  @Post('delete-account')
+  @HttpCode(204)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Self-service account deletion (password-confirmed). Anonymizes the user.' })
+  async deleteAccount(
+    @Body(new ZodValidationPipe(DeleteAccountSchema)) body: DeleteAccountInput,
+    @CurrentUser() user: AuthUser,
+  ): Promise<void> {
+    // A platform admin impersonating a tenant user must never erase that user's account.
+    if (user.impersonatedBy) throw new ForbiddenError('impersonation_cannot_delete_account');
+    await this.auth.deleteAccount(user.id, body.password);
   }
 
   @Get('me')
