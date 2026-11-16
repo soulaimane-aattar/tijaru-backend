@@ -23,6 +23,64 @@
 
 ## Log
 
+### 2026-11-16 — Mobile POS: stock cap on cart quantity
+
+- **Step:** `mobile/src/features/pos/stock.ts` `availableQty(product, warehouseId)` = stock at the checkout warehouse (none = 0; no active warehouse = total). `store.ts`: `add` caps at it (0.5 kg left → adds 0.5, nothing added if the warehouse has none), `setQty` clamps typed quantity. `ProductCard` now uses warehouse stock (was total across warehouses) for out-of-stock state, cap and the `×N` label, matching what the server debits.
+- **Result:** ✅ new `__tests__/pos-stock-cap.test.ts` 5/5; mobile jest 13/13 suites, 109/109; `tsc` 53 lines (baseline). iOS sim: POS screen renders, card shows `×1`. NOT driven: tapping / typing in the cart; the red `pos/session/current` query toast on that screen is not from this change but I did not investigate it.
+- **Decisions:** none.
+- **Next:** hand-test POS with a kg product (add, type 7 on 2.5 stock → 2.5).
+
+### 2026-11-16 — Decimal quantities: audit follow-up
+
+- **Step:** migration 011 gets `SET LOCAL lock_timeout = '10s'` (fails fast instead of queueing behind a long transaction while `ALTER TYPE` rewrites tables); plan author line aligned. `src/common/quantity.spec.ts` (new). Delivery-note DTO lines (`ordered`, `sent`, update-sent, return `qty`) now use `zQty` / `zQtyOrZero` (≤ 3 decimals). Whole-unit quantity fields (mobile + web `cleanQty`) cut at a separator: `1,5` → `1`, never `15`.
+- **Result:** ✅ backend jest 651/651 (46 suites, +14 new), `tsc` clean; e2e delivery-notes + movements 41/41 against dev DB (011 re-registered locally, verify ok); web `tsc` 0, vitest quantity + POS 31/31; mobile decimal tests 10/10, `tsc` 53 lines (baseline). Traced delivery-note `sent`: ledger reads lines back from `numeric(12,3)` (`Number(l.sent)`), so it was already rounded — DTO cap is consistency only.
+- **Decisions:** none.
+- **Not fixed:** mobile POS has no client-side stock cap on typed quantity (backend rejects at checkout with `insufficient_stock`; needs per-warehouse stock in the mobile POS store). Real-device typing, Android, prod migration run still open.
+- **Next:** `make db-backup` → `make prod-db-up` off-hours → deploy backend → ship apps.
+
+### 2026-11-16 — Decimal quantities: web inputs
+
+- **Step:** `web/src/lib/quantity.ts` (+ test) and `src/ui/QtyInput.tsx` (raw text kept while typing, `,` and `.` accepted, max 3 decimals; decimals only for kg / g / litre / ml). Wired: product form (opening stock, min / max), QuickAdjust, inventory count, PO receive, POS cart (now editable), Svelte movement form; stock sums rounded on products / detail / dashboard / low-stock. No PO creation screen exists on web, so nothing to change there. Invoice / estimate / delivery-note forms already took decimals.
+- **Result:** ✅ re-run by me: `tsc` 0 errors; vitest 185 pass / 10 fail — same 10 failures as baseline (CustomersPage, InvoicesPage, SettingsPage, InvoiceFormPage), 7 new tests pass. Not verified: any browser typing; Svelte movement form (svelte-check only); backend 400 on 4th decimal from web.
+- **Decisions:** D-047.
+- **Next:** hand-test web + mobile; prod order `make prod-db-up` → backend → web / mobile.
+- **Known:** quantities display with `.` in fr / ar; POS add on stock < 1 adds that amount; edit-mode kg → piece does not round existing stock; invoice / estimate / BL qty inputs are `type="number"` (comma may be refused by some browsers).
+
+### 2026-11-16 — Decimal quantities: mobile inputs
+
+- **Step:** `mobile/src/lib/decimal.ts` `isDecimalUnit` / `cleanQty` / `parseQty` / `round3` / `fmtQty`; `src/ui/qty-input.tsx` (`QtyInput`, keeps raw text while typing). Decimals only for kg / g / litre / ml (whole for piece / carton / pack; unit unknown → allowed). Wired: product form (min / max / opening stock, re-parsed when unit changes), bon lines + return qty, purchase-order lines (new + `po-line-editor`), PO receive stepper, stock movement, inventory count, POS cart (± steps rounded, field editable; 0 does not drop the line while retyping). Backend: PO detail + inventory count lines now also return `product.unit`.
+- **Result:** ✅ mobile jest 12/12 suites, 104/104 (10 in `decimal.test.ts`, 5 new quantity cases); `tsc` 53 lines = unchanged baseline; backend `tsc` clean, PO + inventory unit tests 16/16. iOS sim: kg product draft opened, `8,5` price → TTC 10.20. NOT verified on device: typing in the stock / quantity fields (no input automation; stock fields below the fold), POS cart editing, PO receive, inventory count. Android not run.
+- **Decisions:** D-047.
+- **Next:** web (agent running), then hand-test on device: bon with a kg line, POS 1,25 kg, inventory count; deploy order: `make prod-db-up` → backend → apps.
+
+### 2026-11-16 — Decimal quantities: backend + migration 011 (1.250 kg)
+
+- **Step:** sqitch `011-decimal-quantities`: `integer` → `double precision` on `products.minStock/maxStock`, `stock_levels.qty/reservedQty`, `movements.qty`, `purchase_order_lines.qty/received`, `po_ticket_lines.qty`, `inventory_count_lines.expected/counted` (revert refuses if fractional rows exist). `src/common/quantity.ts` (`round3`, `sumQty`, `roundedSum` SQL helper, `zQty`/`zQtyOrZero` = max 3 decimals). DTOs products / PO / movements / POS / inventory accept decimals. StockLedger + PO receive round in SQL on every in-place update; PO over-receive check, inventory delta, product/report sums rounded; low-stock alert query no longer casts to int. Marketplace stays whole units.
+- **Result:** ✅ local dev DB only: `make db-backup` (`backup-dev-20261116-154713.sql`), `make db-up` + verify 011 ok, `db:types` output identical to before (no type ripple), `tsc` clean, jest 637/637 (45 suites), e2e 241/241 (18 suites, `--runInBand`) incl. 3 new in `movements.e2e-spec.ts`: 0.1 + 0.2 → exactly +0.3 then out 0.3 → back to start; 1.25 kept; 1.2345 → 400. Not done: `make tap`, prod.
+- **Decisions:** D-047.
+- **Next:** mobile + web inputs (decimals only for kg / g / litre / ml products). Prod: `make prod-db-up` (applies 011) BEFORE `make deploy`.
+
+### 2026-11-16 — Audit follow-up: draft hardening, login error codes, i18n, test fixture
+
+- **Step:** (mobile) `form-drafts.ts` `purgeDrafts('all')` on logout + `'expired'` housekeeping; `useFormDraft` options `{ ready, base }` — edit forms store the server values they were filled from and drop the draft if the record changed; unmount cleanup resumes after Fast Refresh; shared receipt skips draft restore; `cleanDecimal` reads pasted grouped amounts (`1,234.50`, `1.234,50`); RTL align helper now active on Android too; `common.ok`, `auth.whatsappValidationMsg`, `subscription.renewalMsg` in fr/en/ar; `bon-ticket.test.ts` fixture completed. (backend) `ForbiddenError(detail, code)`; login gate throws `account_pending` / `account_rejected` / `account_suspended`; mobile login matches code, title match kept as fallback for older deployed backend.
+- **Result:** ✅ mobile jest 12/12 suites, 100/100 tests (was 11/12); `tsc` no new errors (53 lines vs 54 baseline, all pre-existing). Backend `auth.service.spec.ts` 19/19 (3 new code assertions), `tsc` clean. iOS sim: injected fresh draft → restored; two drafts aged 25 h → purged on first form open; leaving form → draft removed. Not run: logout wipe (would sign the dev account out), base-mismatch drop, Android (no build on emulator — alignment claim rests on RN source: `TextAttributeProps.getTextAlignment` flips, `ReactTextInputManager.setTextAlign` does not).
+- **Decisions:** D-046 addendum.
+- **Next:** deploy backend before relying on codes alone; check Arabic forms once on an Android device.
+
+### 2026-11-16 — Mobile: Arabic (RTL) input text alignment on iOS
+
+- **Step:** `mobile/src/lib/bidi.ts` `startAlign` / `inputStartAlign` (iOS + RTL only). Applied in `<Field>` (label, input, hint, error) and the 7 non-centred raw `<TextInput>`s (search bars, new category/supplier name, inventory notes, delete-account password). Cause: iOS aligns Text/TextInput by content, so Latin text, numbers and placeholders sat on the left edge in Arabic. RN flips explicit `left` for `<Text>` in RTL but not for `<TextInput>` (hence two constants).
+- **Result:** ✅ iOS sim in `ar`: supplier, product, expense forms — placeholders, values and Field labels now on the right. `tsc`: no new errors. Android not checked (helper is a no-op there). Not fixed: plain `<Text>` labels in forms whose strings are still hardcoded French (product, expense, customer, supplier, movement) stay left in Arabic.
+- **Decisions:** none.
+- **Next:** translate those forms (fr/en/ar) — Arabic strings align right by themselves.
+
+### 2026-11-16 — Mobile: decimal `,`/`.` input + form draft autosave
+
+- **Step:** `mobile/src/lib/decimal.ts` (`cleanDecimal`/`parseDecimal`: `,` `.` `٫` + Arabic-Indic digits → `.`) applied to every decimal input (bon line price, bon payment, product sale/purchase, PO price, texte-libre price, expense amount/TVA, credit limit, POS tendered/split/discount). `mobile/src/lib/use-form-draft.ts` (`useFormDraft`: AsyncStorage, per-user key, debounced save + flush on AppState≠active, 24 h TTL, cleared on leave/save) wired into bon, PO, product, expense, customer, supplier, movement, warehouse, user forms (new + edit).
+- **Result:** ✅ jest `decimal.test.ts` 5/5 (suite 82/82 tests; `bon-ticket.test.ts` fails to compile — pre-existing `BonDetail` fixture, unrelated). `tsc`: no new errors. iOS sim (iPhone 17 Pro): product form `12,5` → `12.5`, TTC 15.00; draft key `tijaru.draft.<userId>.product.new` written; `simctl terminate` + relaunch + reopen form → fields restored; leaving form → key removed. Typing simulated by temp code (removed), not by real keyboard; other forms + incoming-call path (AppState flush) not driven.
+- **Decisions:** D-046.
+- **Next:** drive bon/expense forms by hand on device; decide if qty fields need decimals (kg/L units — still integer-only).
+
 ### 2026-11-13 — Super-admin: delete business / delete user (web)
 
 - **Step:** backend `DELETE admin/platform/businesses/:id` + `DELETE admin/platform/users/:id` (+ audit, `LocalStorageService.removeBusinessFiles`); web `PABusinessListPage` (typed-name confirm) + `PAUsersPage` "Supprimer" buttons, `paApi.deleteBusiness/deleteUser`.
