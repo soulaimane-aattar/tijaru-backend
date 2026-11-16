@@ -56,13 +56,14 @@ export class AuthService {
     }
 
     if (user.businessStatus !== 'active') {
-      const msg =
+      // Distinct codes so clients don't have to match on the English title.
+      const [msg, code] =
         user.businessStatus === 'pending'
-          ? 'Your account is awaiting approval'
+          ? ['Your account is awaiting approval', 'account_pending']
           : user.businessStatus === 'rejected'
-            ? 'Your application was not approved'
-            : 'Business is suspended';
-      throw new ForbiddenError(msg);
+            ? ['Your application was not approved', 'account_rejected']
+            : ['Business is suspended', 'account_suspended'];
+      throw new ForbiddenError(msg, code);
     }
 
     const ok = await bcrypt.compare(password, user.passwordHash);

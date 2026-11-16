@@ -73,6 +73,20 @@ describe('AuthService', () => {
       );
     });
 
+    it.each([
+      ['pending', 'account_pending'],
+      ['rejected', 'account_rejected'],
+      ['suspended', 'account_suspended'],
+    ])('business %s → problem code %s (clients match on code, not title)', async (status, code) => {
+      const repo = mockRepo();
+      const user = makeUser({ businessStatus: status });
+      user.passwordHash = await bcrypt.hash('pass1234', 4);
+      repo.findUserByEmail.mockResolvedValue(user);
+      const svc = new AuthService(repo, mockJwt(), mockPerms(), mockEnv);
+      const err = await svc.login('test@example.com', 'pass1234', meta).catch((e: unknown) => e);
+      expect((err as ForbiddenError).getResponse()).toMatchObject({ code, status: 403 });
+    });
+
     it('allows login when business is active', async () => {
       const repo = mockRepo();
       const user = makeUser({ businessStatus: 'active' });

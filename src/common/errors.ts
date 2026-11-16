@@ -28,8 +28,8 @@ export class NotFoundError extends DomainError {
 }
 
 export class ForbiddenError extends DomainError {
-  constructor(detail?: string) {
-    super('forbidden', detail ?? 'Forbidden', HttpStatus.FORBIDDEN);
+  constructor(detail?: string, code = 'forbidden') {
+    super(code, detail ?? 'Forbidden', HttpStatus.FORBIDDEN);
   }
 }
 
