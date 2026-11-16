@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 
 import type { AuthUser } from '../../../common/auth/auth-user.type';
 import { ConflictError, NotFoundError, ValidationError } from '../../../common/errors';
+import { sumQty } from '../../../common/quantity';
 import { LocalStorageService } from '../../../common/storage/local-storage.service';
 import { Db } from '../../../database';
 import type { AppMovementreason as MovementReason } from '../../../database/types';
@@ -57,7 +58,7 @@ export class ProductsService {
 
     // Low/out-of-stock depend on the sum across warehouses → business rule, applied here.
     const stockOf = (p: ProductStockView) => {
-      const sum = p.stockLevels.reduce((s, l) => s + l.qty, 0);
+      const sum = sumQty(p.stockLevels, (l) => l.qty);
       return { low: sum <= p.minStock && sum > 0, out: sum === 0 };
     };
 

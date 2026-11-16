@@ -11,3 +11,4 @@
 008-fix-updated-at-triggers 2026-10-28T00:00:00Z soulaimane <soulaimane.aattar@gmail.com> # Drop updatedAt triggers on tables without that column (categories, activities, order_lines)
 009-order-lines-buyer-read 2026-10-28T12:00:00Z soulaimane <soulaimane.aattar@gmail.com> # order_lines readable by seller and buyer (via parent order); writes stay seller-only
 010-customer-categories 2026-10-31T00:00:00Z soulaimane <soulaimane.aattar@gmail.com> # Customer categories (label, colour, debt limit) + customers.category_id
+011-decimal-quantities 2026-11-16T15:47:05Z soulaimane <soulaimane.aattar@gmail.com> # Decimal quantities (double precision, 3 decimals): stock, movements, purchase orders, POS ticket lines, inventory counts (1.250 kg)

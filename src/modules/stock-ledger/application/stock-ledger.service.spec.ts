@@ -74,6 +74,13 @@ const basePost = (over: Partial<LedgerPost> = {}): LedgerPost => ({
   ...over,
 });
 
+/** Delta bound in a `roundedSum(column, delta)` expression (round((col + $delta)::numeric, 3)). */
+const deltaOf = (expr: unknown): unknown => {
+  const node = (expr as { toOperationNode(): { parameters: { value?: unknown }[] } }).toOperationNode();
+  return node.parameters[1]?.value;
+};
+const qtyDelta = (args: unknown): unknown => deltaOf((args as { qty: unknown }).qty);
+
 const find = (calls: Call[], op: string, table: string) =>
   calls.filter((c) => c.op === op && c.table === table);
 
@@ -86,7 +93,7 @@ describe('StockLedgerService.post', () => {
     expect(db.tx).toHaveBeenCalledTimes(1);
     expect(find(calls, 'select', 'app.stock_levels')).toHaveLength(1);
     const [ins] = find(calls, 'insert', 'app.stock_levels');
-    expect(ins!.args.conflict).toMatchObject({ qty: { a: 'app.stock_levels.qty', op: '+', b: 5 } });
+    expect(qtyDelta(ins!.args.conflict)).toBe(5);
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({
       productId: PID,
@@ -142,7 +149,7 @@ describe('StockLedgerService.post', () => {
     );
 
     const [upd] = find(calls, 'update', 'app.stock_levels');
-    expect(upd!.args.set).toMatchObject({ qty: { op: '-', b: 3 } });
+    expect(qtyDelta(upd!.args.set)).toBe(-3);
     const [ins] = find(calls, 'insert', 'app.stock_levels');
     expect(ins!.args.values).toMatchObject({ warehouseId: WH2, qty: 3 });
     expect(result[0]).toMatchObject({ toWarehouseId: WH2 });
@@ -155,7 +162,8 @@ describe('StockLedgerService.post', () => {
     );
 
     const [ins] = find(calls, 'insert', 'app.stock_levels');
-    expect(ins!.args.conflict).toMatchObject({ qty: { op: '+', b: 10 }, avgCost: 7.5 });
+    expect(qtyDelta(ins!.args.conflict)).toBe(10);
+    expect(ins!.args.conflict).toMatchObject({ avgCost: 7.5 });
   });
 
   it('leaves avgCost untouched on negative delta', async () => {
@@ -170,7 +178,7 @@ describe('StockLedgerService.post', () => {
 
     expect(find(calls, 'insert', 'app.stock_levels')).toHaveLength(0);
     const [upd] = find(calls, 'update', 'app.stock_levels');
-    expect(upd!.args.set).toMatchObject({ qty: { op: '-', b: 2 } });
+    expect(qtyDelta(upd!.args.set)).toBe(-2);
     expect(upd!.args.where).toContainEqual(['qty', '>=', 2]);
   });
 

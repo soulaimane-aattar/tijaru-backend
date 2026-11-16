@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import type { AuthUser } from '../../../common/auth/auth-user.type';
 import { ConflictError, NotFoundError } from '../../../common/errors';
+import { round3 } from '../../../common/quantity';
 import { Db } from '../../../database';
 import { StockLedgerService } from '../../stock-ledger/application/stock-ledger.service';
 import type { LedgerLine } from '../../stock-ledger/domain/stock-ledger.types';
@@ -73,7 +74,7 @@ export class InventoryService {
       for (const line of count.lines) {
         const counted = inputByProduct.get(line.productId) ?? line.counted;
         const liveQty = liveMap.get(line.productId) ?? 0;
-        const delta = counted - liveQty;
+        const delta = round3(counted - liveQty);
         if (delta > 0) {
           positiveLines.push({ productId: line.productId, warehouseId: count.warehouseId, delta });
         } else if (delta < 0) {

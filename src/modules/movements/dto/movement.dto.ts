@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { zQty } from '../../../common/quantity';
+
 export const MovementTypeEnum = z.enum(['in', 'out', 'transfer']);
 export type MovementTypeValue = z.infer<typeof MovementTypeEnum>;
 
@@ -17,7 +19,7 @@ export const CreateMovementSchema = z
   .object({
     type: MovementTypeEnum,
     productId: z.string().cuid(),
-    qty: z.number().int().positive(),
+    qty: zQty,
     warehouseId: z.string().cuid(),
     toWarehouseId: z.string().cuid().optional(),
     reason: MovementReasonEnum,

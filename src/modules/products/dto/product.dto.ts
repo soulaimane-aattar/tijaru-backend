@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { zQtyOrZero } from '../../../common/quantity';
 import { VAT_RATES } from '../../../domain/value-objects/vat-rate';
 
 const UnitEnum = z.enum(['piece', 'kg', 'g', 'litre', 'ml', 'carton', 'pack']);
@@ -19,7 +20,7 @@ const ean13 = z
 
 export const StockEntrySchema = z.object({
   warehouseId: z.string().cuid(),
-  qty: z.number().int().min(0),
+  qty: zQtyOrZero,
 });
 
 export const CreateProductSchema = z.object({
@@ -36,8 +37,8 @@ export const CreateProductSchema = z.object({
   trackExpiry: z.boolean().default(false),
   expiry: z.coerce.date().optional(),
   batch: z.string().optional(),
-  minStock: z.number().int().min(0).default(0),
-  maxStock: z.number().int().min(0).default(0),
+  minStock: zQtyOrZero.default(0),
+  maxStock: zQtyOrZero.default(0),
   notes: z.string().max(2000).optional(),
   tone: HexColor.default('#94a3b8'),
   stock: z.array(StockEntrySchema).default([]),

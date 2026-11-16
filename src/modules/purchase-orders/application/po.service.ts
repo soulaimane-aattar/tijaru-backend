@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import type { AuthUser } from '../../../common/auth/auth-user.type';
 import { DomainError, NotFoundError } from '../../../common/errors';
+import { round3, sumQty } from '../../../common/quantity';
 import { Db } from '../../../database';
 import { StockLedgerService } from '../../stock-ledger/application/stock-ledger.service';
 import type { LedgerLine } from '../../stock-ledger/domain/stock-ledger.types';
@@ -80,10 +81,10 @@ export class POService {
     for (const r of input.lines) {
       const line = lineById.get(r.lineId);
       if (!line) throw new NotFoundError('POLine', r.lineId);
-      if (r.qty + line.received > line.qty) {
+      if (round3(r.qty + line.received) > line.qty) {
         throw new DomainError(
           'over_receive',
-          `Line ${line.id}: receive qty exceeds remaining (${r.qty} > ${line.qty - line.received})`,
+          `Line ${line.id}: receive qty exceeds remaining (${r.qty} > ${round3(line.qty - line.received)})`,
           422,
         );
       }
@@ -110,8 +111,8 @@ export class POService {
       }
 
       const totals = await this.purchaseOrders.findLineTotals(id);
-      const totalQty = totals.reduce((s, l) => s + l.qty, 0);
-      const totalRcvd = totals.reduce((s, l) => s + l.received, 0);
+      const totalQty = sumQty(totals, (l) => l.qty);
+      const totalRcvd = sumQty(totals, (l) => l.received);
       await this.purchaseOrders.updateStatus(
         id,
         totalRcvd >= totalQty ? 'received' : 'partiallyReceived',
@@ -120,7 +121,7 @@ export class POService {
       await this.purchaseOrders.logActivity({
         userId: actor.id,
         action: 'po.received',
-        desc: `Réception ${po.number} — ${input.lines.reduce((s, l) => s + l.qty, 0)} unité(s)`,
+        desc: `Réception ${po.number} — ${sumQty(input.lines, (l) => l.qty)} unité(s)`,
         ...(actor.device !== undefined ? { device: actor.device } : {}),
       });
     });

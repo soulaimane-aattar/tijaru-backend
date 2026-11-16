@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
+import { sql } from 'kysely';
 
+import { roundedSum } from '../../../common/quantity';
 import { Db } from '../../../database';
 import { newId } from '../../../database/ids';
 import { camelRow, defined } from '../../row-case';
@@ -95,7 +97,7 @@ export class KyselyPurchaseOrdersRepository extends PurchaseOrdersRepository {
         .selectFrom('app.purchase_order_lines as l')
         .leftJoin('app.products as p', 'p.id', 'l.productId')
         .selectAll('l')
-        .select(['p.id as p_id', 'p.name as p_name', 'p.sku as p_sku', 'p.tone as p_tone'])
+        .select(['p.id as p_id', 'p.name as p_name', 'p.sku as p_sku', 'p.tone as p_tone', 'p.unit as p_unit'])
         .where('l.business_id', '=', this.db.businessId)
         .where('l.purchaseOrderId', '=', id)
         .execute(),
@@ -104,9 +106,9 @@ export class KyselyPurchaseOrdersRepository extends PurchaseOrdersRepository {
       ...camelRow(po),
       supplier: supplier ? camelRow(supplier) : null,
       warehouse: warehouse ? camelRow(warehouse) : null,
-      lines: lines.map(({ p_id, p_name, p_sku, p_tone, ...l }) => ({
+      lines: lines.map(({ p_id, p_name, p_sku, p_tone, p_unit, ...l }) => ({
         ...camelRow(l),
-        product: { id: p_id, name: p_name, sku: p_sku, tone: p_tone },
+        product: { id: p_id, name: p_name, sku: p_sku, tone: p_tone, unit: p_unit },
       })),
     };
   }
@@ -208,7 +210,7 @@ export class KyselyPurchaseOrdersRepository extends PurchaseOrdersRepository {
   async incrementLineReceived(lineId: string, qty: number): Promise<void> {
     await this.db.q
       .updateTable('app.purchase_order_lines')
-      .set((eb) => ({ received: eb('received', '+', qty) }))
+      .set({ received: roundedSum(sql.ref('received'), qty) })
       .where('business_id', '=', this.db.businessId)
       .where('id', '=', lineId)
       .execute();

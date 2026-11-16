@@ -70,12 +70,12 @@ export class KyselyNotificationsRepository extends NotificationsRepository {
   async findLowStockCandidates(): Promise<LowStockCandidate[]> {
     const { rows } = await sql<LowStockCandidate>`
       SELECT p.business_id AS "businessId", p.id AS "productId", p.name AS "productName",
-             COALESCE(SUM(sl.qty), 0)::int AS "totalQty", p."minStock" AS "minStock"
+             round(COALESCE(SUM(sl.qty), 0)::numeric, 3)::float8 AS "totalQty", p."minStock" AS "minStock"
       FROM app.products p
       LEFT JOIN app.stock_levels sl ON sl."productId" = p.id
       WHERE p."deletedAt" IS NULL AND p."minStock" > 0
       GROUP BY p.business_id, p.id, p.name, p."minStock"
-      HAVING COALESCE(SUM(sl.qty), 0) < p."minStock"
+      HAVING round(COALESCE(SUM(sl.qty), 0)::numeric, 3) < p."minStock"::numeric
     `.execute(this.db.admin);
     return rows;
   }

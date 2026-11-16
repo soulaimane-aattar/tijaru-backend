@@ -1,10 +1,12 @@
 import { z } from 'zod';
 
+import { zQty } from '../../../common/quantity';
+
 const VatEnum = z.union([z.literal(0), z.literal(7), z.literal(10), z.literal(14), z.literal(20)]);
 
 const POLineSchema = z.object({
   productId: z.string().cuid(),
-  qty: z.number().int().positive(),
+  qty: zQty,
   price: z.number().min(0),
   vat: VatEnum,
 });
@@ -33,7 +35,7 @@ export const ReceivePOSchema = z.object({
     .array(
       z.object({
         lineId: z.string().cuid(),
-        qty: z.number().int().positive(),
+        qty: zQty,
       }),
     )
     .min(1),

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
+import { round3, sumQty } from '../../../common/quantity';
 import {
   ReportsRepository,
   type OutboundMovementRow,
@@ -11,7 +12,7 @@ const DAY_MS = 86_400_000;
 
 const withTotalStock = (p: ProductStockRow): ProductStockRow & { totalStock: number } => ({
   ...p,
-  totalStock: p.stockLevels.reduce((s, l) => s + l.qty, 0),
+  totalStock: sumQty(p.stockLevels, (l) => l.qty),
 });
 
 @Injectable()
@@ -61,10 +62,11 @@ export class ReportsService {
       byWarehouse.set(row.warehouseId, entry);
     }
     return {
-      total: { value: +grandValue.toFixed(2), units: grandUnits },
+      total: { value: +grandValue.toFixed(2), units: round3(grandUnits) },
       perWarehouse: [...byWarehouse.values()].map((e) => ({
         ...e,
         value: +e.value.toFixed(2),
+        units: round3(e.units),
       })),
     };
   }
@@ -80,6 +82,7 @@ export class ReportsService {
       else byProduct.set(m.productId, { product: m.product, qty: m.qty });
     }
     return [...byProduct.values()]
+      .map((e) => ({ ...e, qty: round3(e.qty) }))
       .sort((a, b) => b.qty - a.qty)
       .slice(0, 10);
   }

@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { zQty } from '../../../common/quantity';
+
 export const PaymentSchema = z.discriminatedUnion('method', [
   z.object({
     method: z.literal('cash'),
@@ -22,7 +24,7 @@ export type PaymentInput = z.infer<typeof PaymentSchema>;
 
 export const TicketLineSchema = z.object({
   productId: z.string().cuid(),
-  qty: z.number().int().positive(),
+  qty: zQty,
 });
 export type TicketLineInput = z.infer<typeof TicketLineSchema>;
 

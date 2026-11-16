@@ -72,6 +72,35 @@ describe('Movements (e2e)', () => {
     });
   });
 
+  describe('decimal quantities (migration 011)', () => {
+    const move = (type: 'in' | 'out', qty: number) =>
+      api(app)
+        .post('/api/v1/movements')
+        .set(bearer(tokens.stockkeeper))
+        .send({ type, productId, warehouseId: casaId, qty, reason: type === 'in' ? 'achat' : 'vente' });
+
+    it('0.1 + 0.2 lands on exactly +0.3, and the whole 0.3 can be taken back out', async () => {
+      const before = await stockAt(productId, casaId);
+      await move('in', 0.1).expect(201);
+      await move('in', 0.2).expect(201);
+      // Raw double addition would give before + 0.30000000000000004.
+      expect(await stockAt(productId, casaId)).toBe(Math.round((before + 0.3) * 1000) / 1000);
+      await move('out', 0.3).expect(201);
+      expect(await stockAt(productId, casaId)).toBe(before);
+    });
+
+    it('keeps 3 decimals (1.250 kg)', async () => {
+      const before = await stockAt(productId, casaId);
+      const res = await move('in', 1.25).expect(201);
+      expect(res.body.qty).toBe(1.25);
+      expect(await stockAt(productId, casaId)).toBe(Math.round((before + 1.25) * 1000) / 1000);
+    });
+
+    it('rejects a 4th decimal (400)', async () => {
+      await move('in', 1.2345).expect(400);
+    });
+  });
+
   describe('POST /movements — type "out"', () => {
     it('decrements stock', async () => {
       const before = await stockAt(productId, casaId);

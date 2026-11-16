@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { zQtyOrZero } from '../../../common/quantity';
+
 export const StartCountSchema = z.object({
   warehouseId: z.string().cuid(),
   notes: z.string().max(2000).optional(),
@@ -11,7 +13,7 @@ export const ApplyCountSchema = z.object({
     .array(
       z.object({
         productId: z.string().cuid(),
-        counted: z.number().int().min(0),
+        counted: zQtyOrZero,
       }),
     )
     .min(1),

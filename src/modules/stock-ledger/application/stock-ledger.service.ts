@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { type Kysely, sql } from 'kysely';
 
 import { ConflictError, ValidationError } from '../../../common/errors';
+import { round3, roundedSum } from '../../../common/quantity';
 import { Db } from '../../../database';
 import { newId } from '../../../database/ids';
 import type { DB } from '../../../database/types';
@@ -65,7 +66,7 @@ export class StockLedgerService {
         .where('businessId', '=', businessId)
         .forUpdate()
         .executeTakeFirst();
-      const newQty = (existing?.qty ?? 0) + line.delta;
+      const newQty = round3((existing?.qty ?? 0) + line.delta);
       const newAvg =
         line.unitCost != null && existing
           ? (Number(existing.avgCost) * existing.qty + line.unitCost * line.delta) / newQty
@@ -81,8 +82,8 @@ export class StockLedgerService {
           updatedAt: new Date(),
         })
         .onConflict((oc) =>
-          oc.columns(['productId', 'warehouseId']).doUpdateSet((eb) => ({
-            qty: eb('app.stock_levels.qty', '+', line.delta),
+          oc.columns(['productId', 'warehouseId']).doUpdateSet(() => ({
+            qty: roundedSum(sql.ref('app.stock_levels.qty'), line.delta),
             ...(line.unitCost != null ? { avgCost: newAvg } : {}),
             updatedAt: new Date(),
           })),
@@ -92,7 +93,7 @@ export class StockLedgerService {
       const needed = Math.abs(line.delta);
       const r = await q
         .updateTable('app.stock_levels')
-        .set((eb) => ({ qty: eb('qty', '-', needed), updatedAt: new Date() }))
+        .set({ qty: roundedSum(sql.ref('qty'), -needed), updatedAt: new Date() })
         .where('productId', '=', line.productId)
         .where('warehouseId', '=', line.warehouseId)
         .where('businessId', '=', businessId)

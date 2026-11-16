@@ -29,13 +29,13 @@ export class KyselyInventoryRepository extends InventoryRepository {
       .selectFrom('app.inventory_count_lines as l')
       .leftJoin('app.products as p', 'p.id', 'l.productId')
       .selectAll('l')
-      .select(['p.id as p_id', 'p.name as p_name', 'p.sku as p_sku'])
+      .select(['p.id as p_id', 'p.name as p_name', 'p.sku as p_sku', 'p.unit as p_unit'])
       .where('l.business_id', '=', this.db.businessId)
       .where('l.countId', 'in', countIds)
       .execute();
-    return rows.map(({ p_id, p_name, p_sku, ...l }) => ({
+    return rows.map(({ p_id, p_name, p_sku, p_unit, ...l }) => ({
       ...camelRow(l),
-      product: { id: p_id, name: p_name, sku: p_sku },
+      product: { id: p_id, name: p_name, sku: p_sku, unit: p_unit },
     }));
   }
 

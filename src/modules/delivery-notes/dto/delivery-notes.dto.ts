@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { zQty, zQtyOrZero } from '../../../common/quantity';
+
 export const DeliveryNoteTypeSchema = z.enum(['order', 'out', 'in_', 'retour']);
 export type DeliveryNoteType = z.infer<typeof DeliveryNoteTypeSchema>;
 
@@ -20,8 +22,8 @@ export type DeliveryNoteStatus = z.infer<typeof DeliveryNoteStatusSchema>;
 export const DeliveryNoteLineInputSchema = z.object({
   productId: z.string().cuid(),
   label: z.string().min(1).max(200),
-  ordered: z.number().positive(),
-  sent: z.number().min(0).default(0),
+  ordered: zQty,
+  sent: zQtyOrZero.default(0),
   unitPrice: z.number().nonnegative().optional(),
 });
 export type DeliveryNoteLineInput = z.infer<typeof DeliveryNoteLineInputSchema>;
@@ -58,7 +60,7 @@ export type CreateDeliveryNoteInput = z.infer<typeof CreateDeliveryNoteSchema>;
 
 export const UpdateSentSchema = z.object({
   lineId: z.string().cuid(),
-  sent: z.number().min(0),
+  sent: zQtyOrZero,
 });
 export type UpdateSentInput = z.infer<typeof UpdateSentSchema>;
 
@@ -86,7 +88,7 @@ export const CreateReturnSchema = z.object({
     .array(
       z.object({
         lineId: z.string().cuid(),
-        qty: z.number().positive(),
+        qty: zQty,
       }),
     )
     .min(1),
