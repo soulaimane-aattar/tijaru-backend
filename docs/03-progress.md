@@ -23,6 +23,13 @@
 
 ## Log
 
+### 2026-11-16 — Mobile: POS screen no longer calls the API when the POS module is off
+
+- **Step:** `usePosSession(enabled)`; `app/pos/index.tsx` reads `modules.includes('pos')`, skips the session query and `<Redirect>`s to home when off. Cause: `GET /pos/sessions/current` → `403 module_disabled:pos` logged as an error twice per open (home / more already hide POS; a deep link, stale route or dev reload still reached the screen).
+- **Result:** ✅ iOS sim (business with POS off): `tijaru://pos` lands on home, no 403 in the flow; `tsc` 53 lines (baseline); lint shows only the existing restricted-import errors in that file. Not run: POS-on business path after the change (hook default `enabled = true` keeps old behaviour). Uncommitted.
+- **Decisions:** none.
+- **Next:** none.
+
 ### 2026-11-16 — Mobile POS: stock cap on cart quantity
 
 - **Step:** `mobile/src/features/pos/stock.ts` `availableQty(product, warehouseId)` = stock at the checkout warehouse (none = 0; no active warehouse = total). `store.ts`: `add` caps at it (0.5 kg left → adds 0.5, nothing added if the warehouse has none), `setQty` clamps typed quantity. `ProductCard` now uses warehouse stock (was total across warehouses) for out-of-stock state, cap and the `×N` label, matching what the server debits.
